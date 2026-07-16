@@ -105,3 +105,37 @@ Makefile targets: `rust`, `bindings`, `run`, `test` (dev profile everywhere).
 binding regen needed). `swift build` green. Smoke tests with a mktemp data dir: plain
 launch alive after 8 s, core wrote `accounts.toml`; `DCNATIVE_AUTODEMO=1` launch alive
 after 10 s with a demo account on disk — 12 chats / 18 msgs in its `dc.db`, empty stderr.
+
+## 2026-07-16 — Code-review fixes: event-loss recovery, stale sidebar, retryable DcApp init
+
+Applied five confirmed review findings (all verified against the actual v2.49.0
+checkout in `~/.cargo/git/checkouts/core-eddc226e816ba9ee/dab7ca1`):
+
+- **`EventChannelOverflow` no longer swallowed** (`dcvm/src/app.rs`): core's broadcast
+  channel (capacity 10_000, drop-oldest) reports lost events as a single overflow event
+  with `id: 0` (verified in events.rs `recv()`), which `map_event` mapped to `None`. The
+  pump now synthesizes a full-refresh hint: `AccountsChanged` (manager-level) plus
+  `ChatlistChanged` per account. Tested deterministically by stalling the pump with a
+  gated listener and flooding 10_100 `Info` events through `ctx.emit_event`.
+- **`MsgsChanged { chat_id: 0 }` sentinel** (`dcvm/src/mapping.rs`): core's
+  `emit_msgs_changed_without_ids()` uses chat_id 0 as "no specific chat"; forwarding it
+  as `ChatChanged { chat_id: 0 }` was a phantom id outside the FFI contract. Now maps
+  (whole msg-event group, via `ChatId::is_unset()`) to `ChatlistChanged`.
+- **Stale sidebar with the real core** (`AppModel.swift`): `marknoticed_chat` emits only
+  `MsgsNoticed` + `ChatlistItemChanged` and `send_msg` only `MsgsChanged` — all mapping
+  to `chatChanged`, which only reloaded the open chat's messages, never the chat list;
+  badges/previews stayed stale forever (invisible in mock mode, which emits
+  `.chatlistChanged`). `chatChanged`/`incomingMessage` now also `reloadChats()`.
+- **Poisoned lazy DcApp task** (`CoreChatService.swift`): a transient `DcApp::new`
+  failure was cached in `appTask` until relaunch. Failures now clear the cached task,
+  generation-guarded so a concurrent retry's fresh task is never clobbered;
+  `selectedAccount()` logs instead of silently `try?`-ing the error away.
+- **Makefile had no non-interactive Swift check**: added `swift-build` (build-only) and
+  `check` (= `test` + `swift-build`). Finding confirmed live: SPM's manifest sandbox
+  (`sandbox-exec`) cannot nest inside this restricted dev shell when swift runs under
+  make — `SWIFT_FLAGS ?= --disable-sandbox` (overridable) fixes both `swift-build` and
+  `run`. Curiously, `swift build` invoked directly (not under make) worked either way.
+
+**Verification:** `cargo test` 9/9 green (4 unit + 5 integration, incl. the new overflow
+test). `make check` green end-to-end (cargo test → bindings regen → `swift build`);
+bindings regen produced zero diff, confirming no exported-API change.

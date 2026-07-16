@@ -13,6 +13,8 @@ struct AccountInfo: Identifiable, Equatable, Sendable {
     var addr: String?
     var displayName: String?
     var isConfigured: Bool
+    /// Self-avatar image path, if set.
+    var avatar: String?
 }
 
 /// Mirrors Rust `ChatItem`.
@@ -29,6 +31,40 @@ struct ChatItem: Identifiable, Equatable, Sendable {
     var isContactRequest: Bool
     /// "#rrggbb"
     var color: String
+    var isGroup: Bool = false
+    var isArchived: Bool = false
+    var isDeviceTalk: Bool = false
+    /// Chat profile image path, if any.
+    var avatar: String?
+}
+
+/// Mirrors Rust `ContactItem`.
+struct ContactItem: Identifiable, Equatable, Sendable {
+    var id: UInt32
+    var displayName: String
+    var addr: String
+    var color: String
+    var avatar: String?
+    var isVerified: Bool
+}
+
+/// Mirrors Rust `MessageKind` (core Viewtype).
+enum MessageKind: Equatable, Sendable {
+    case text, image, gif, sticker, audio, voice, video, webxdc, file, vcard, unknown
+}
+
+/// Mirrors Rust `QuoteInfo`.
+struct QuoteInfo: Equatable, Sendable {
+    var text: String
+    var senderName: String
+    var senderColor: String
+}
+
+/// Mirrors Rust `ReactionItem`.
+struct ReactionItem: Equatable, Sendable {
+    var emoji: String
+    var count: UInt32
+    var isFromSelf: Bool
 }
 
 /// Mirrors Rust `MessageItem`.
@@ -44,6 +80,19 @@ struct MessageItem: Identifiable, Equatable, Sendable {
     /// "#rrggbb"
     var senderColor: String
     var state: MessageState
+    var kind: MessageKind = .text
+    /// Absolute path into the account's blobdir.
+    var file: String?
+    var fileName: String?
+    /// Bytes; 0 if no file.
+    var fileSize: UInt64 = 0
+    /// Pixels; 0 if not applicable.
+    var width: UInt32 = 0
+    var height: UInt32 = 0
+    /// Milliseconds; 0 if not applicable.
+    var durationMs: UInt32 = 0
+    var quote: QuoteInfo?
+    var reactions: [ReactionItem] = []
 }
 
 /// Mirrors Rust `MessageState`.
@@ -130,6 +179,38 @@ protocol ChatService: Sendable {
     /// Network may be back (wake from sleep, connectivity change): all
     /// accounts retry/fetch immediately instead of awaiting the next poll.
     func maybeNetwork() async throws
+
+    // MARK: Messages (media, reactions, management)
+
+    /// Sends text and/or a file; `quotedMsgId` makes it a reply.
+    func sendMessage(
+        accountId: UInt32, chatId: UInt32,
+        text: String?, filePath: String?, quotedMsgId: UInt32?
+    ) async throws -> UInt32
+    /// Empty emoji string clears the own reaction.
+    func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) async throws
+    func deleteMessages(accountId: UInt32, msgIds: [UInt32]) async throws
+    func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) async throws
+    /// Marks messages seen: drives MDN read receipts + cross-device read sync.
+    func markSeen(accountId: UInt32, msgIds: [UInt32]) async throws
+
+    // MARK: Chat management
+
+    func acceptChat(accountId: UInt32, chatId: UInt32) async throws
+    func blockChat(accountId: UInt32, chatId: UInt32) async throws
+    func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws
+    func archivedChats(accountId: UInt32) async throws -> [ChatItem]
+    func searchChats(accountId: UInt32, query: String) async throws -> [ChatItem]
+    func searchMessages(accountId: UInt32, query: String) async throws -> [MessageItem]
+    func contacts(accountId: UInt32) async throws -> [ContactItem]
+    func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32]) async throws -> UInt32
+
+    // MARK: Profile / status
+
+    func setDisplayName(accountId: UInt32, name: String) async throws
+    func setAvatar(accountId: UInt32, path: String?) async throws
+    /// DC connectivity scale; 4000 = fully connected.
+    func connectivity(accountId: UInt32) async throws -> UInt32
 }
 
 // MARK: - Factory

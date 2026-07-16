@@ -585,12 +585,39 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      */
     func addDemoAccount() async throws  -> UInt32
     
+    /**
+     * Cancels an ongoing configure or backup transfer for this account.
+     */
+    func cancelOngoing(accountId: UInt32) async throws 
+    
     func chatList(accountId: UInt32) async throws  -> [ChatItem]
+    
+    /**
+     * Classifies a scanned/pasted QR payload. Pure parsing, no network.
+     */
+    func checkQr(accountId: UInt32, qr: String) async throws  -> QrKind
     
     /**
      * Creates (or finds) the contact and its 1:1 chat; returns the chat id.
      */
     func createChat(accountId: UInt32, email: String, name: String) async throws  -> UInt32
+    
+    /**
+     * Creates an account on a chatmail relay (default instance if none given)
+     * and configures it — the modern "no visible e-mail" onboarding. Progress
+     * arrives as `ConfigureProgress` events; on success IO for this account
+     * is already running.
+     */
+    func createInstantAccount(accountId: UInt32, displayName: String, instance: String?) async throws 
+    
+    /**
+     * Receives the full account (credentials, keys, chats) from another
+     * device showing an "Add Second Device" QR, over an encrypted P2P
+     * connection. The target account must be freshly created/unconfigured.
+     * Progress arrives as `ImexProgress` events (1000 = done); afterwards
+     * call `start_io`.
+     */
+    func joinSecondDevice(accountId: UInt32, qr: String) async throws 
     
     /**
      * Stores credentials and configures the account (autoconfig fills in the
@@ -737,6 +764,25 @@ open func addDemoAccount()async throws  -> UInt32  {
         )
 }
     
+    /**
+     * Cancels an ongoing configure or backup transfer for this account.
+     */
+open func cancelOngoing(accountId: UInt32)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_cancel_ongoing(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 open func chatList(accountId: UInt32)async throws  -> [ChatItem]  {
     return
         try  await uniffiRustCallAsync(
@@ -749,6 +795,25 @@ open func chatList(accountId: UInt32)async throws  -> [ChatItem]  {
             completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
             freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeChatItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Classifies a scanned/pasted QR payload. Pure parsing, no network.
+     */
+open func checkQr(accountId: UInt32, qr: String)async throws  -> QrKind  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_check_qr(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(qr)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeQrKind_lift,
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -768,6 +833,51 @@ open func createChat(accountId: UInt32, email: String, name: String)async throws
             completeFunc: ffi_dcvm_rust_future_complete_u32,
             freeFunc: ffi_dcvm_rust_future_free_u32,
             liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Creates an account on a chatmail relay (default instance if none given)
+     * and configures it — the modern "no visible e-mail" onboarding. Progress
+     * arrives as `ConfigureProgress` events; on success IO for this account
+     * is already running.
+     */
+open func createInstantAccount(accountId: UInt32, displayName: String, instance: String?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_create_instant_account(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(displayName),FfiConverterOptionString.lower(instance)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Receives the full account (credentials, keys, chats) from another
+     * device showing an "Add Second Device" QR, over an encrypted P2P
+     * connection. The target account must be freshly created/unconfigured.
+     * Progress arrives as `ImexProgress` events (1000 = done); afterwards
+     * call `start_io`.
+     */
+open func joinSecondDevice(accountId: UInt32, qr: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_join_second_device(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(qr)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -1501,6 +1611,117 @@ public func FfiConverterTypeMessageState_lower(_ value: MessageState) -> RustBuf
 
 
 /**
+ * Classification of a scanned/pasted QR payload (subset the UI cares about).
+ */
+
+public enum QrKind: Equatable, Hashable {
+    
+    /**
+     * `DCACCOUNT:` — create an account on this chatmail relay.
+     */
+    case account(domain: String
+    )
+    /**
+     * `DCBACKUP…` — receive an account from another device ("add second device").
+     */
+    case backup
+    /**
+     * A backup QR from a newer Delta Chat than this client supports.
+     */
+    case backupTooNew
+    /**
+     * `DCLOGIN:` — log in to an existing e-mail address.
+     */
+    case login(address: String
+    )
+    /**
+     * Anything else (contact verification, proxies, urls, ...): not yet supported here.
+     */
+    case unsupported
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension QrKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQrKind: FfiConverterRustBuffer {
+    typealias SwiftType = QrKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QrKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .account(domain: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .backup
+        
+        case 3: return .backupTooNew
+        
+        case 4: return .login(address: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .unsupported
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: QrKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .account(domain):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(domain, into: &buf)
+            
+        
+        case .backup:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .backupTooNew:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .login(address):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(address, into: &buf)
+            
+        
+        case .unsupported:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQrKind_lift(_ buf: RustBuffer) throws -> QrKind {
+    return try FfiConverterTypeQrKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQrKind_lower(_ value: QrKind) -> RustBuffer {
+    return FfiConverterTypeQrKind.lower(value)
+}
+
+
+
+/**
  * Errors crossing the FFI boundary.
  */
 public 
@@ -1602,6 +1823,12 @@ public enum VmEvent: Equatable, Hashable {
     )
     case configureProgress(permille: UInt32, comment: String?
     )
+    /**
+     * Import/export progress, e.g. receiving a second-device backup
+     * (permille 0 = error/canceled, 1 = started, 1000 = done).
+     */
+    case imexProgress(permille: UInt32
+    )
     case connectivityChanged
 
 
@@ -1637,7 +1864,10 @@ public struct FfiConverterTypeVmEvent: FfiConverterRustBuffer {
         case 5: return .configureProgress(permille: try FfiConverterUInt32.read(from: &buf), comment: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 6: return .connectivityChanged
+        case 6: return .imexProgress(permille: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 7: return .connectivityChanged
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -1672,8 +1902,13 @@ public struct FfiConverterTypeVmEvent: FfiConverterRustBuffer {
             FfiConverterOptionString.write(comment, into: &buf)
             
         
-        case .connectivityChanged:
+        case let .imexProgress(permille):
             writeInt(&buf, Int32(6))
+            FfiConverterUInt32.write(permille, into: &buf)
+            
+        
+        case .connectivityChanged:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -1865,6 +2100,16 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
+/**
+ * Exposed to shells so alternate relays can be offered next to the default.
+ */
+public func defaultInstanceUrl() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_dcvm_fn_func_default_instance_url(uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -1881,6 +2126,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_dcvm_checksum_func_default_instance_url() != 15908) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_accounts() != 61932) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1890,10 +2138,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_add_demo_account() != 25647) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_cancel_ongoing() != 30716) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_chat_list() != 45232) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_check_qr() != 22244) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_create_chat() != 39980) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_create_instant_account() != 22624) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_join_second_device() != 39313) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_login() != 55131) {

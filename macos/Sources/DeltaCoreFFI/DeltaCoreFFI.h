@@ -289,14 +289,34 @@ uint64_t uniffi_dcvm_fn_method_dcapp_add_account(uint64_t ptr
 uint64_t uniffi_dcvm_fn_method_dcapp_add_demo_account(uint64_t ptr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CANCEL_ONGOING
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CANCEL_ONGOING
+uint64_t uniffi_dcvm_fn_method_dcapp_cancel_ongoing(uint64_t ptr, uint32_t account_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_LIST
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_LIST
 uint64_t uniffi_dcvm_fn_method_dcapp_chat_list(uint64_t ptr, uint32_t account_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHECK_QR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHECK_QR
+uint64_t uniffi_dcvm_fn_method_dcapp_check_qr(uint64_t ptr, uint32_t account_id, RustBuffer qr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_CHAT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_CHAT
 uint64_t uniffi_dcvm_fn_method_dcapp_create_chat(uint64_t ptr, uint32_t account_id, RustBuffer email, RustBuffer name
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
+uint64_t uniffi_dcvm_fn_method_dcapp_create_instant_account(uint64_t ptr, uint32_t account_id, RustBuffer display_name, RustBuffer instance
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_JOIN_SECOND_DEVICE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_JOIN_SECOND_DEVICE
+uint64_t uniffi_dcvm_fn_method_dcapp_join_second_device(uint64_t ptr, uint32_t account_id, RustBuffer qr
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_LOGIN
@@ -357,6 +377,12 @@ void uniffi_dcvm_fn_init_callback_vtable_eventlistener(const UniffiVTableCallbac
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_EVENTLISTENER_ON_EVENT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_EVENTLISTENER_ON_EVENT
 void uniffi_dcvm_fn_method_eventlistener_on_event(uint64_t ptr, uint32_t account_id, RustBuffer event, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_FUNC_DEFAULT_INSTANCE_URL
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_FUNC_DEFAULT_INSTANCE_URL
+RustBuffer uniffi_dcvm_fn_func_default_instance_url(RustCallStatus *_Nonnull out_status
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_DCVM_RUSTBUFFER_ALLOC
@@ -619,6 +645,12 @@ void ffi_dcvm_rust_future_free_void(uint64_t handle
 void ffi_dcvm_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_FUNC_DEFAULT_INSTANCE_URL
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_FUNC_DEFAULT_INSTANCE_URL
+uint16_t uniffi_dcvm_checksum_func_default_instance_url(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCOUNTS
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCOUNTS
 uint16_t uniffi_dcvm_checksum_method_dcapp_accounts(void
@@ -637,15 +669,39 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_add_demo_account(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CANCEL_ONGOING
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CANCEL_ONGOING
+uint16_t uniffi_dcvm_checksum_method_dcapp_cancel_ongoing(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHAT_LIST
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHAT_LIST
 uint16_t uniffi_dcvm_checksum_method_dcapp_chat_list(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHECK_QR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHECK_QR
+uint16_t uniffi_dcvm_checksum_method_dcapp_check_qr(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_CHAT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_CHAT
 uint16_t uniffi_dcvm_checksum_method_dcapp_create_chat(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
+uint16_t uniffi_dcvm_checksum_method_dcapp_create_instant_account(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_JOIN_SECOND_DEVICE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_JOIN_SECOND_DEVICE
+uint16_t uniffi_dcvm_checksum_method_dcapp_join_second_device(void
     
 );
 #endif

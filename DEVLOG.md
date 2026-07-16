@@ -106,6 +106,39 @@ binding regen needed). `swift build` green. Smoke tests with a mktemp data dir: 
 launch alive after 8 s, core wrote `accounts.toml`; `DCNATIVE_AUTODEMO=1` launch alive
 after 10 s with a demo account on disk — 12 chats / 18 msgs in its `dc.db`, empty stderr.
 
+## 2026-07-16 — Chatmail-first onboarding: instant accounts + second-device join
+
+Modern DeltaChat hides the e-mail: onboarding is now "Create New Profile" (instant
+account on a chatmail relay) and "Add as Second Device" (receive the full existing
+account — credentials, keys, chats — from another device's DCBACKUP QR over encrypted
+iroh P2P). Classic e-mail login demoted to "Other options".
+
+**Core facts (v2.49.0, verified in checkout):**
+- `ctx.add_transport_from_qr("DCACCOUNT:<url>")` does everything for instant accounts:
+  HTTP POST to the relay (only for `https://` payloads; a bare domain generates random
+  credentials locally), configure, IO restart. Progress via `ConfigureProgress`.
+- The default relay (`https://nine.testrun.org/new`) is a **client-side** constant —
+  core has none. Exported as `default_instance_url()`.
+- Second device: `qr::check_qr` → `Qr::Backup2` → `imex::get_backup(ctx, qr)`;
+  progress via `ImexProgress` (0=error/cancel, 1000=done); receiver account must be
+  fresh/unconfigured (guarded in dcvm with a friendly error); `start_io()` afterwards.
+  Cancel = `ctx.stop_ongoing()`.
+
+**dcvm additions:** `VmEvent::ImexProgress`, `QrKind` classification (`map_qr`, TDD),
+`check_qr` / `create_instant_account` / `join_second_device` / `cancel_ongoing` on
+DcApp. Offline tests cover QR classification and join_second_device rejection paths
+(wrong QR kind, garbage input, already-configured account).
+
+**macOS:** QR arrives via clipboard (image *or* text) or an image file — decoded with
+CoreImage's built-in `CIDetector` QR support, no new dependency; no camera flow yet.
+Second-device UI is a sheet with paste/file pickers and imex progress.
+
+**Verification:** cargo test 17/17 green; swift build green; mock smoke run alive.
+**Live test (network):** `DCNATIVE_AUTOCREATE=1` dev hook exercised the real flow —
+created and configured `a7ghrcg2d@nine.testrun.org` on the default relay from the app,
+landing on the main screen. Second-device join needs a second real device, so only its
+error paths are machine-tested; the happy path awaits a manual run.
+
 ## 2026-07-16 — Code-review fixes: event-loss recovery, stale sidebar, retryable DcApp init
 
 Applied five confirmed review findings (all verified against the actual v2.49.0

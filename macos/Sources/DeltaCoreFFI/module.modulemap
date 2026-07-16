@@ -1,0 +1,7 @@
+module DeltaCoreFFI {
+    header "DeltaCoreFFI.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}

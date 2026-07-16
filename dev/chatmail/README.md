@@ -31,6 +31,20 @@ DCNATIVE_INSTANCE=DCACCOUNT:_cm.example make run        # app against local rela
 DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test -- --ignored  # opt-in network tests
 ```
 
+## Findings from running the tests against it
+
+- **filtermail rejects unencrypted outbound mail** (chatmail policy). A first
+  message to a bare address can never deliver; contacts must be established
+  via securejoin QR invites (`get_securejoin_qr`/`join_securejoin`) — the
+  handshake is filtermail's one plaintext exception. The round-trip test does
+  exactly this; the client UI will eventually need an invite-link/QR contact
+  flow for chatmail-to-chatmail first contact.
+- **Don't message an account mid-first-scan:** mail that arrives while an
+  account's scheduler is doing its initial post-configure inbox scan is
+  treated as pre-existing and silently skipped (core's "don't download old
+  mail" rule). Tests must wait for connectivity == Connected (4000) before
+  sending to a freshly created account, or the message is lost to the client.
+
 ## Caveats (as of 2026-07)
 
 - The image is amd64; on Apple Silicon the podman machine runs it via Rosetta.

@@ -21,7 +21,10 @@ case "${1:-up}" in
     # systemd container: podman supports these natively (--systemd=always).
     # Standard ports must stay standard: core's autoconfig and the
     # DCACCOUNT flow assume 443/465/587/993.
+    # Upstream image is amd64-only; force the platform (Rosetta on Apple
+    # Silicon podman machines executes it fine).
     podman run -d --name "$NAME" --replace \
+      --platform "${CHATMAIL_PLATFORM:-linux/amd64}" \
       --systemd=always \
       --tmpfs /run --tmpfs /tmp \
       -e MAIL_DOMAIN="$DOMAIN" \

@@ -23,6 +23,7 @@ uniffi = { version = "0.32", features = ["tokio"] }
 thiserror = "2"
 
 [dev-dependencies]
+serde_json = "1"
 tempfile = "3"
 
 [[bin]]

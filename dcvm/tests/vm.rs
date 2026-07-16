@@ -397,3 +397,73 @@ async fn join_second_device_rejects_configured_account() {
         "unexpected error: {err}"
     );
 }
+
+/// Rewrites the `direct_addresses` inside a `DCBACKUP…` QR payload to
+/// loopback, keeping the advertised port. Format: `DCBACKUPn:token&{json}`.
+fn loopback_qr(qr: &str) -> String {
+    let (prefix, json) = qr.split_once('&').expect("DCBACKUP qr format");
+    let mut node_addr: serde_json::Value = serde_json::from_str(json).expect("node_addr json");
+    let port = node_addr["direct_addresses"][0]
+        .as_str()
+        .and_then(|addr| addr.rsplit(':').next())
+        .expect("direct address with port")
+        .to_string();
+    node_addr["direct_addresses"] = serde_json::json!([format!("127.0.0.1:{port}")]);
+    format!("{prefix}&{node_addr}")
+}
+
+/// Full second-device happy path, offline: the demo account acts as the
+/// existing device (BackupProvider), a fresh account joins via the DCBACKUP
+/// QR string. The transfer runs over a direct localhost iroh connection —
+/// no mail server, no relay needed (same approach as core's own tests).
+#[tokio::test(flavor = "multi_thread")]
+async fn second_device_join_transfers_account_offline() {
+    let (app, collector, _dir) = make_app().await;
+
+    // "Existing device": pseudo-configured and seeded with chats.
+    let provider_id = app.add_demo_account().await.unwrap();
+    let provider_ctx = app.context(provider_id).await.expect("provider ctx");
+    let provider = dcvm::deltachat::imex::BackupProvider::prepare(&provider_ctx)
+        .await
+        .expect("BackupProvider::prepare");
+    let qr = dcvm::deltachat::qr::format_backup(&provider.qr()).expect("format_backup");
+    assert!(qr.starts_with("DCBACKUP"), "unexpected qr: {qr}");
+    // iroh advertises only external interface addresses (LAN/VPN), never
+    // loopback — and connecting to the host's own LAN IP is blocked in some
+    // sandboxes. Rewrite the QR to 127.0.0.1 so the transfer stays strictly
+    // on loopback and the test is hermetic on any network.
+    let qr = loopback_qr(&qr);
+    let provider_task = tokio::spawn(provider);
+
+    // "New device": fresh unconfigured account joins with the QR payload.
+    let joiner_id = app.add_account().await.unwrap();
+    app.join_second_device(joiner_id, qr)
+        .await
+        .expect("join_second_device");
+    provider_task
+        .await
+        .expect("provider task")
+        .expect("provider transfer");
+
+    // The joiner received the complete account.
+    let infos = app.accounts().await.unwrap();
+    let joiner = infos.iter().find(|a| a.id == joiner_id).unwrap();
+    assert!(joiner.is_configured, "joiner not configured: {joiner:?}");
+    assert_eq!(joiner.addr.as_deref(), Some("demo@example.org"));
+
+    let chats = app.chat_list(joiner_id).await.unwrap();
+    assert!(
+        chats.iter().any(|c| c.name == "Elena"),
+        "transferred chats missing, got: {:?}",
+        chats.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
+    let elena = chats.iter().find(|c| c.name == "Elena").unwrap();
+    let msgs = app.messages(joiner_id, elena.id).await.unwrap();
+    assert!(msgs.len() >= 3, "messages not transferred: {msgs:?}");
+
+    // Joiner saw transfer progress up to 1000 (done).
+    wait_for_event(&collector.events, "ImexProgress 1000 on joiner", |id, ev| {
+        id == joiner_id && *ev == VmEvent::ImexProgress { permille: 1000 }
+    })
+    .await;
+}

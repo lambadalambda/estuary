@@ -18,33 +18,20 @@ impl EventListener for Collector {
     }
 }
 
-impl Collector {
-    fn snapshot(&self) -> Vec<(u32, VmEvent)> {
-        self.events.lock().unwrap().clone()
-    }
-}
-
-/// Poll the collector until `pred` matches some received event, or panic after 10s.
+/// Poll collected events until `pred` matches one, or panic after 10s.
 async fn wait_for_event(
-    collector: &Collector,
+    events: &Mutex<Vec<(u32, VmEvent)>>,
     what: &str,
     pred: impl Fn(u32, &VmEvent) -> bool,
 ) -> (u32, VmEvent) {
+    let snapshot = || events.lock().unwrap().clone();
     for _ in 0..200 {
-        if let Some(hit) = collector
-            .snapshot()
-            .iter()
-            .find(|(id, ev)| pred(*id, ev))
-            .cloned()
-        {
+        if let Some(hit) = snapshot().iter().find(|(id, ev)| pred(*id, ev)).cloned() {
             return hit;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!(
-        "timed out waiting for event: {what}; got {:?}",
-        collector.snapshot()
-    );
+    panic!("timed out waiting for event: {what}; got {:?}", snapshot());
 }
 
 async fn make_app() -> (Arc<DcApp>, Arc<Collector>, tempfile::TempDir) {
@@ -74,7 +61,7 @@ async fn account_add_and_select() {
     assert_eq!(app.selected_account(), None);
 
     let id = app.add_account().await.expect("add_account");
-    wait_for_event(&collector, "AccountsChanged", |_, ev| {
+    wait_for_event(&collector.events, "AccountsChanged", |_, ev| {
         *ev == VmEvent::AccountsChanged
     })
     .await;
@@ -113,7 +100,7 @@ async fn create_chat_and_send_text() {
         .expect("send_text");
 
     // sending emits MsgsChanged -> ChatChanged for that chat
-    wait_for_event(&collector, "ChatChanged after send", |acc, ev| {
+    wait_for_event(&collector.events, "ChatChanged after send", |acc, ev| {
         acc == id && *ev == VmEvent::ChatChanged { chat_id }
     })
     .await;
@@ -171,7 +158,7 @@ hi alice, got a minute?\r\n";
         .await
         .expect("receive_imf");
 
-    let (_, ev) = wait_for_event(&collector, "IncomingMessage", |acc, ev| {
+    let (_, ev) = wait_for_event(&collector.events, "IncomingMessage", |acc, ev| {
         acc == id && matches!(ev, VmEvent::IncomingMessage { .. })
     })
     .await;
@@ -206,7 +193,7 @@ hi alice, got a minute?\r\n";
     assert_eq!(row.fresh_count, 1);
 
     app.mark_noticed(id, chat_id).await.expect("mark_noticed");
-    wait_for_event(&collector, "ChatChanged after mark_noticed", |acc, ev| {
+    wait_for_event(&collector.events, "ChatChanged after mark_noticed", |acc, ev| {
         acc == id && *ev == VmEvent::ChatChanged { chat_id }
     })
     .await;
@@ -218,6 +205,77 @@ hi alice, got a minute?\r\n";
         .find(|c| c.id == chat_id)
         .unwrap();
     assert_eq!(row.fresh_count, 0);
+}
+
+/// Listener that blocks the event pump on its first callback until released,
+/// so the test can deterministically overflow core's 10_000-event channel.
+struct GatedCollector {
+    events: Mutex<Vec<(u32, VmEvent)>>,
+    gate: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+    blocked: std::sync::atomic::AtomicBool,
+}
+
+impl EventListener for GatedCollector {
+    fn on_event(&self, account_id: u32, event: VmEvent) -> Result<(), VmError> {
+        if let Some(rx) = self.gate.lock().unwrap().take() {
+            self.blocked.store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = rx.recv_timeout(Duration::from_secs(30));
+        }
+        self.events.lock().unwrap().push((account_id, event));
+        Ok(())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn event_channel_overflow_synthesizes_refresh_events() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (release, gate_rx) = std::sync::mpsc::channel::<()>();
+    let collector = Arc::new(GatedCollector {
+        events: Mutex::new(Vec::new()),
+        gate: Mutex::new(Some(gate_rx)),
+        blocked: std::sync::atomic::AtomicBool::new(false),
+    });
+    let listener: Arc<dyn EventListener> = collector.clone();
+    let app = DcApp::new(dir.path().to_string_lossy().into_owned(), listener)
+        .await
+        .expect("DcApp::new");
+
+    // add_account emits AccountsChanged; the pump forwards it and blocks in
+    // on_event until `release` fires.
+    let id = app.add_account().await.expect("add_account");
+    for _ in 0..200 {
+        if collector.blocked.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        collector.blocked.load(std::sync::atomic::Ordering::SeqCst),
+        "pump never reached the listener"
+    );
+
+    // With the pump stalled, flood the (capacity 10_000, drop-oldest) channel
+    // past its capacity so the next recv() yields EventChannelOverflow.
+    let ctx = app.context(id).await.expect("context");
+    for i in 0..10_100u32 {
+        ctx.emit_event(dcvm::deltachat::EventType::Info(format!("flood {i}")));
+    }
+    release.send(()).expect("release pump");
+
+    // The pump must translate the overflow into a full-refresh hint:
+    // AccountsChanged (manager-level) + ChatlistChanged for every account.
+    wait_for_event(
+        &collector.events,
+        "AccountsChanged after overflow",
+        |acc, ev| acc == 0 && *ev == VmEvent::AccountsChanged,
+    )
+    .await;
+    wait_for_event(
+        &collector.events,
+        "ChatlistChanged after overflow",
+        |acc, ev| acc == id && *ev == VmEvent::ChatlistChanged,
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -233,7 +291,7 @@ async fn demo_account_seeds_conversations() {
     assert!(info.addr.is_some());
 
     // demo seeding produced incoming messages
-    wait_for_event(&collector, "IncomingMessage from demo seed", |acc, ev| {
+    wait_for_event(&collector.events, "IncomingMessage from demo seed", |acc, ev| {
         acc == id && matches!(ev, VmEvent::IncomingMessage { .. })
     })
     .await;

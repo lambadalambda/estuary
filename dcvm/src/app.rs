@@ -15,6 +15,7 @@ use deltachat::context::Context;
 use deltachat::login_param::{EnteredLoginParam, EnteredServerLoginParam};
 use deltachat::message::Message;
 use deltachat::receive_imf::receive_imf;
+use deltachat::EventType;
 use tokio::sync::RwLock;
 
 use crate::mapping::{color_to_hex, map_event, map_message_state, summary_preview};
@@ -77,12 +78,28 @@ impl DcApp {
             let selected = Arc::new(Mutex::new(accounts.get_selected_account_id()));
             let accounts = Arc::new(RwLock::new(accounts));
 
+            let pump_accounts = accounts.clone();
             RT.spawn(async move {
                 while let Some(event) = emitter.recv().await {
-                    if let Some(vm_event) = map_event(event.typ) {
-                        // Listener errors are ignored by design; only a closed
-                        // channel (None above) stops the pump.
-                        let _ = listener.on_event(event.id, vm_event);
+                    match event.typ {
+                        // Core's broadcast channel dropped events (capacity
+                        // 10_000, drop-oldest). We cannot know what was lost —
+                        // possibly ConfigureProgress or the last
+                        // ChatlistChanged — so synthesize a full refresh:
+                        // accounts plus every account's chat list.
+                        EventType::EventChannelOverflow { .. } => {
+                            let _ = listener.on_event(0, VmEvent::AccountsChanged);
+                            for id in pump_accounts.read().await.get_all() {
+                                let _ = listener.on_event(id, VmEvent::ChatlistChanged);
+                            }
+                        }
+                        typ => {
+                            if let Some(vm_event) = map_event(typ) {
+                                // Listener errors are ignored by design; only a
+                                // closed channel (None above) stops the pump.
+                                let _ = listener.on_event(event.id, vm_event);
+                            }
+                        }
                     }
                 }
             });

@@ -4,10 +4,11 @@
 //! `app` only composes these.
 
 use deltachat::message::MessageState as CoreMessageState;
+use deltachat::qr::Qr;
 use deltachat::summary::SummaryPrefix;
 use deltachat::EventType;
 
-use crate::types::{MessageState, VmEvent};
+use crate::types::{MessageState, QrKind, VmEvent};
 
 /// Core colors are `0x00rrggbb` u32s; the UI wants CSS `#rrggbb`.
 pub fn color_to_hex(color: u32) -> String {
@@ -31,6 +32,21 @@ pub fn summary_preview(prefix: Option<&SummaryPrefix>, text: &str) -> String {
     match prefix {
         Some(prefix) => format!("{prefix}: {text}"),
         None => text.to_string(),
+    }
+}
+
+/// Classify a parsed QR payload into the cases the onboarding UI handles.
+pub fn map_qr(qr: &Qr) -> QrKind {
+    match qr {
+        Qr::Account { domain } => QrKind::Account {
+            domain: domain.clone(),
+        },
+        Qr::Backup2 { .. } => QrKind::Backup,
+        Qr::BackupTooNew { .. } => QrKind::BackupTooNew,
+        Qr::Login { address, .. } => QrKind::Login {
+            address: address.clone(),
+        },
+        _ => QrKind::Unsupported,
     }
 }
 
@@ -71,6 +87,9 @@ pub fn map_event(typ: EventType) -> Option<VmEvent> {
         EventType::ConfigureProgress { progress, comment } => Some(VmEvent::ConfigureProgress {
             permille: u32::from(progress),
             comment,
+        }),
+        EventType::ImexProgress(permille) => Some(VmEvent::ImexProgress {
+            permille: u32::from(permille),
         }),
         EventType::ConnectivityChanged => Some(VmEvent::ConnectivityChanged),
         _ => None,
@@ -224,5 +243,42 @@ mod tests {
         // noise is dropped
         assert_eq!(map_event(EventType::Info("hello".into())), None);
         assert_eq!(map_event(EventType::Warning("hm".into())), None);
+    }
+
+    #[test]
+    fn imex_progress_maps() {
+        assert_eq!(
+            map_event(EventType::ImexProgress(1)),
+            Some(VmEvent::ImexProgress { permille: 1 })
+        );
+        assert_eq!(
+            map_event(EventType::ImexProgress(1000)),
+            Some(VmEvent::ImexProgress { permille: 1000 })
+        );
+        assert_eq!(
+            map_event(EventType::ImexProgress(0)),
+            Some(VmEvent::ImexProgress { permille: 0 })
+        );
+    }
+
+    #[test]
+    fn qr_kinds_classify() {
+        use crate::types::QrKind;
+
+        assert_eq!(
+            map_qr(&Qr::Account {
+                domain: "nine.testrun.org".into()
+            }),
+            QrKind::Account {
+                domain: "nine.testrun.org".into()
+            }
+        );
+        assert_eq!(map_qr(&Qr::BackupTooNew {}), QrKind::BackupTooNew);
+        assert_eq!(
+            map_qr(&Qr::Url {
+                url: "https://delta.chat".into()
+            }),
+            QrKind::Unsupported
+        );
     }
 }

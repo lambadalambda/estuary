@@ -59,7 +59,25 @@ pub enum VmEvent {
     ChatChanged { chat_id: u32 },
     IncomingMessage { chat_id: u32, msg_id: u32 },
     ConfigureProgress { permille: u32, comment: Option<String> },
+    /// Import/export progress, e.g. receiving a second-device backup
+    /// (permille 0 = error/canceled, 1 = started, 1000 = done).
+    ImexProgress { permille: u32 },
     ConnectivityChanged,
+}
+
+/// Classification of a scanned/pasted QR payload (subset the UI cares about).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum QrKind {
+    /// `DCACCOUNT:` — create an account on this chatmail relay.
+    Account { domain: String },
+    /// `DCBACKUP…` — receive an account from another device ("add second device").
+    Backup,
+    /// A backup QR from a newer Delta Chat than this client supports.
+    BackupTooNew,
+    /// `DCLOGIN:` — log in to an existing e-mail address.
+    Login { address: String },
+    /// Anything else (contact verification, proxies, urls, ...): not yet supported here.
+    Unsupported,
 }
 
 /// Errors crossing the FFI boundary.

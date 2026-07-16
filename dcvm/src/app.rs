@@ -410,6 +410,18 @@ impl DcApp {
         .await
     }
 
+    /// Hints that the network may be available again (wake from sleep,
+    /// connectivity regained): all accounts retry/fetch immediately instead
+    /// of waiting for the next poll interval.
+    pub async fn maybe_network(&self) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            accounts.read().await.maybe_network().await;
+            Ok(())
+        })
+        .await
+    }
+
     /// Cancels an ongoing configure or backup transfer for this account.
     pub async fn cancel_ongoing(&self, account_id: u32) -> Result<(), VmError> {
         let accounts = self.accounts.clone();

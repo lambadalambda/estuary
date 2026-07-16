@@ -263,6 +263,8 @@ actor MockChatService: ChatService {
         emit(accountId, .imexProgress(permille: 0))
     }
 
+    func maybeNetwork() {}
+
     // MARK: Simulation helpers
 
     private func simulateDelivery(

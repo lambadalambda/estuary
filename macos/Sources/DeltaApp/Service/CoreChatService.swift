@@ -151,6 +151,11 @@ actor CoreChatService: ChatService {
         do { try await app().cancelOngoing(accountId: accountId) }
         catch { throw mapError(error) }
     }
+
+    func maybeNetwork() async throws {
+        do { try await app().maybeNetwork() }
+        catch { throw mapError(error) }
+    }
 }
 
 // MARK: - Event listener bridge

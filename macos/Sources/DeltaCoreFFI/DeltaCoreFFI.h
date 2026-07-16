@@ -329,6 +329,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_login(uint64_t ptr, uint32_t account_id, Ru
 uint64_t uniffi_dcvm_fn_method_dcapp_mark_noticed(uint64_t ptr, uint32_t account_id, uint32_t chat_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MAYBE_NETWORK
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MAYBE_NETWORK
+uint64_t uniffi_dcvm_fn_method_dcapp_maybe_network(uint64_t ptr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MESSAGES
 uint64_t uniffi_dcvm_fn_method_dcapp_messages(uint64_t ptr, uint32_t account_id, uint32_t chat_id
@@ -714,6 +719,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_login(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MARK_NOTICED
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MARK_NOTICED
 uint16_t uniffi_dcvm_checksum_method_dcapp_mark_noticed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MAYBE_NETWORK
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MAYBE_NETWORK
+uint16_t uniffi_dcvm_checksum_method_dcapp_maybe_network(void
     
 );
 #endif

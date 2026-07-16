@@ -125,6 +125,9 @@ protocol ChatService: Sendable {
     func joinSecondDevice(accountId: UInt32, qr: String) async throws
     /// Cancels an ongoing configure/backup transfer.
     func cancelOngoing(accountId: UInt32) async throws
+    /// Network may be back (wake from sleep, connectivity change): all
+    /// accounts retry/fetch immediately instead of awaiting the next poll.
+    func maybeNetwork() async throws
 }
 
 // MARK: - Factory

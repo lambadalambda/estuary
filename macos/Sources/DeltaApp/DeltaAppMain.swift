@@ -4,6 +4,7 @@ import AppKit
 @main
 struct DeltaAppMain: App {
     @State private var model = AppModel(service: ServiceFactory.make())
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Running via `swift run` (no .app bundle): become a regular,
@@ -17,6 +18,13 @@ struct DeltaAppMain: App {
                 .task {
                     NSApp.activate(ignoringOtherApps: true)
                     await model.bootstrap()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // Wake from sleep / regained focus: fetch immediately
+                    // instead of waiting for the next poll interval.
+                    if phase == .active {
+                        Task { try? await model.service.maybeNetwork() }
+                    }
                 }
         }
     }

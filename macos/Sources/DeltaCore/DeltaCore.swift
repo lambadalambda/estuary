@@ -627,6 +627,13 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     
     func markNoticed(accountId: UInt32, chatId: UInt32) async throws 
     
+    /**
+     * Hints that the network may be available again (wake from sleep,
+     * connectivity regained): all accounts retry/fetch immediately instead
+     * of waiting for the next poll interval.
+     */
+    func maybeNetwork() async throws 
+    
     func messages(accountId: UInt32, chatId: UInt32) async throws  -> [MessageItem]
     
     func selectAccount(id: UInt32) async throws 
@@ -908,6 +915,27 @@ open func markNoticed(accountId: UInt32, chatId: UInt32)async throws   {
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_mark_noticed(
                         self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Hints that the network may be available again (wake from sleep,
+     * connectivity regained): all accounts retry/fetch immediately instead
+     * of waiting for the next poll interval.
+     */
+open func maybeNetwork()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_maybe_network(
+                        self.uniffiCloneHandle()
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_void,
@@ -2160,6 +2188,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_mark_noticed() != 19346) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_maybe_network() != 54996) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_messages() != 20834) {

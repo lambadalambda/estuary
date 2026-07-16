@@ -496,3 +496,119 @@ async fn instant_account_against_local_relay() {
         "no addr: {acc:?}"
     );
 }
+
+/// Opt-in: full message round trip between two instant accounts on the local
+/// relay — real SMTP submission and IMAP delivery, end to end.
+///
+/// Chatmail relays reject unencrypted outbound mail (filtermail), so a first
+/// contact by bare address cannot deliver. Like the real clients, the
+/// contact is established with a securejoin QR invite first; the text
+/// message then goes out encrypted.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a running local chatmail relay; set DCVM_TEST_RELAY"]
+async fn message_roundtrip_on_local_relay() {
+    use dcvm::deltachat::securejoin::{get_securejoin_qr, join_securejoin};
+    use dcvm::deltachat::EventType as CoreEventType;
+
+    let relay = std::env::var("DCVM_TEST_RELAY")
+        .expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
+    let (app, _collector, _dir) = make_app().await;
+
+    let alice = app.add_account().await.unwrap();
+    let bob = app.add_account().await.unwrap();
+    app.create_instant_account(alice, "Alice".into(), Some(relay.clone()))
+        .await
+        .expect("alice instant account");
+    app.create_instant_account(bob, "Bob".into(), Some(relay))
+        .await
+        .expect("bob instant account");
+    app.start_io().await.unwrap();
+
+    // Key exchange first: bob shares an invite QR, alice joins. The
+    // securejoin handshake messages are the one thing filtermail lets
+    // through unencrypted.
+    let alice_ctx = app.context(alice).await.unwrap();
+    let bob_ctx = app.context(bob).await.unwrap();
+
+    // Wait until both schedulers finished their initial post-configure inbox
+    // scan (Connectivity::Connected). Mail arriving DURING that first scan is
+    // treated as pre-existing and silently skipped (core's "don't download
+    // old mail" behavior) — alice's invite must not race it.
+    // (Connectivity's type lives in a private module; DC convention:
+    // 4000 = Connected. jsonrpc does the same `as u32` cast.)
+    for ctx in [&alice_ctx, &bob_ctx] {
+        tokio::time::timeout(Duration::from_secs(60), async {
+            while (ctx.get_connectivity() as u32) < 4000 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        })
+        .await
+        .expect("account never reached Connected");
+    }
+    let invite = get_securejoin_qr(&bob_ctx, None).await.expect("invite qr");
+    // Subscribe BEFORE joining: the receiver only sees events emitted after
+    // its creation, and a fast handshake can finish before join returns.
+    let mut raw_events = alice_ctx.get_event_emitter();
+    let chat = join_securejoin(&alice_ctx, &invite)
+        .await
+        .expect("join_securejoin")
+        .to_u32();
+
+    // If IMAP IDLE/push misbehaves, core falls back to slow periodic polling
+    // and the multi-roundtrip handshake stalls. maybe_network() forces an
+    // immediate fetch — nudge while waiting, like push notifications would.
+    let nudger = {
+        let app = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                let _ = app.maybe_network().await;
+            }
+        })
+    };
+
+    tokio::time::timeout(Duration::from_secs(180), async {
+        loop {
+            let ev = raw_events.recv().await.expect("core event stream closed");
+            if matches!(
+                ev.typ,
+                CoreEventType::SecurejoinJoinerProgress { progress: 1000, .. }
+            ) {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("securejoin handshake timed out");
+
+    app.send_text(alice, chat, "ping over the local relay".into())
+        .await
+        .unwrap();
+
+    // Bob receives it via real IMAP delivery (poll; delivery is near-instant
+    // on chatmail but the handshake may still be settling).
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let received = loop {
+        let mut found = None;
+        for c in app.chat_list(bob).await.unwrap() {
+            let msgs = app.messages(bob, c.id).await.unwrap();
+            if let Some(m) = msgs
+                .iter()
+                .find(|m| m.text.contains("ping over the local relay"))
+            {
+                found = Some(m.clone());
+                break;
+            }
+        }
+        if let Some(m) = found {
+            break m;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "bob never received the message"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    nudger.abort();
+    assert!(!received.is_outgoing);
+}

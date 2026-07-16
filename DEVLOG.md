@@ -1,5 +1,29 @@
 # DEVLOG
 
+## 2026-07-16 — Local test infrastructure: offline second-device test + podman chatmail relay
+
+**Second-device transfers need no server.** The DCBACKUP transfer is a direct iroh/QUIC
+connection with `RelayMode::Disabled` — core's own tests run provider→joiner in one
+process. `dcvm/tests/vm.rs` now covers the full happy path (demo account provides,
+fresh account joins, chats + ImexProgress verified) in ~1.5 s offline. Gotcha: iroh QRs
+advertise only LAN/VPN direct addresses, never loopback, and self-connect via the LAN IP
+is blocked in the agent sandbox — the test rewrites `direct_addresses` to `127.0.0.1`,
+which also makes it hermetic on any network.
+
+**Local chatmail relay (dev/chatmail/):** official `ghcr.io/chatmail/docker:main` image
+with `MAIL_DOMAIN=_cm.example`. Underscore domains are the officially anticipated local
+mode: the server self-signs certs and skips DNS checks, and core v2.49 skips TLS
+verification for `_`-hosts (src/net/tls.rs) — including the DCACCOUNT HTTPS POST, which
+otherwise only trusts compiled-in webpki roots. `DCACCOUNT:<bare-domain>` skips HTTP
+entirely (credentials invented locally, mailbox created on first login — what core's own
+CI does against `CHATMAIL_DOMAIN`). Wired up: `DCNATIVE_INSTANCE` env in the app,
+`DCVM_TEST_RELAY` + `#[ignore]`d `instant_account_against_local_relay` test.
+**Unverified end-to-end:** the podman VM cannot boot in the agent session
+(Virtualization.framework "Internal Virtualization error" regardless of memory/EFI
+reset — environment restriction; UDP loopback works, VZ doesn't). Needs
+`podman machine start` from a normal terminal, plus one-time
+`127.0.0.1 _cm.example` in /etc/hosts (sudo). Image is amd64 → Rosetta on this host.
+
 ## 2026-07-16 — Project start
 
 **Decision: shared Rust viewmodel + per-platform native shells, macOS first.**

@@ -63,6 +63,11 @@ final class AppModel {
             loginError = error.localizedDescription
             screen = .onboarding
         }
+        // Dev/smoke-test hook: jump straight into the demo account.
+        if screen == .onboarding,
+           ProcessInfo.processInfo.environment["DCNATIVE_AUTODEMO"] == "1" {
+            await tryDemo()
+        }
     }
 
     private func startEventLoop() {

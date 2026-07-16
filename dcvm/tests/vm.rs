@@ -328,3 +328,72 @@ async fn demo_account_seeds_conversations() {
     // at least one chat shows unread messages for the badge demo
     assert!(real_chats.iter().any(|c| c.fresh_count > 0));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn qr_classification_offline() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+
+    // DCACCOUNT classification is pure parsing — no relay is contacted.
+    assert_eq!(
+        app.check_qr(id, "DCACCOUNT:nine.testrun.org".into())
+            .await
+            .unwrap(),
+        dcvm::QrKind::Account {
+            domain: "nine.testrun.org".into()
+        }
+    );
+    assert_eq!(
+        app.check_qr(id, "DCACCOUNT:https://nine.testrun.org/new".into())
+            .await
+            .unwrap(),
+        dcvm::QrKind::Account {
+            domain: "nine.testrun.org".into()
+        }
+    );
+    // An http url is a valid QR but not one onboarding supports.
+    assert_eq!(
+        app.check_qr(id, "https://delta.chat/some/page?x=1".into())
+            .await
+            .unwrap(),
+        dcvm::QrKind::Unsupported
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn join_second_device_rejects_wrong_qr_kinds() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+
+    // Not a backup QR at all -> friendly error, nothing configured.
+    let err = app
+        .join_second_device(id, "DCACCOUNT:nine.testrun.org".into())
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("second device"),
+        "unexpected error: {err}"
+    );
+    assert!(!app.accounts().await.unwrap()[0].is_configured);
+
+    // Garbage input -> error, not a panic.
+    app.join_second_device(id, "not a qr code at all".into())
+        .await
+        .unwrap_err();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn join_second_device_rejects_configured_account() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+
+    let err = app
+        .join_second_device(id, "DCACCOUNT:nine.testrun.org".into())
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("already configured"),
+        "unexpected error: {err}"
+    );
+}

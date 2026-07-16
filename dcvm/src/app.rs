@@ -18,8 +18,18 @@ use deltachat::receive_imf::receive_imf;
 use deltachat::EventType;
 use tokio::sync::RwLock;
 
-use crate::mapping::{color_to_hex, map_event, map_message_state, summary_preview};
-use crate::types::{AccountInfo, ChatItem, MessageItem, VmError, VmEvent};
+use crate::mapping::{color_to_hex, map_event, map_message_state, map_qr, summary_preview};
+use crate::types::{AccountInfo, ChatItem, MessageItem, QrKind, VmError, VmEvent};
+
+/// Default chatmail relay used for instant account creation. A client-side
+/// choice (core has no default); same instance the official clients use.
+pub const DEFAULT_CHATMAIL_INSTANCE: &str = "https://nine.testrun.org/new";
+
+/// Exposed to shells so alternate relays can be offered next to the default.
+#[uniffi::export]
+pub fn default_instance_url() -> String {
+    DEFAULT_CHATMAIL_INSTANCE.to_string()
+}
 
 /// Global runtime: the event pump and all core work live here, so behavior is
 /// identical whether methods are driven by Swift (UniFFI) or by Rust tests.
@@ -310,6 +320,103 @@ impl DcApp {
             let contact_id = Contact::create(&ctx, &name, &email).await?;
             let chat_id = ChatId::create_for_contact(&ctx, contact_id).await?;
             Ok(chat_id.to_u32())
+        })
+        .await
+    }
+
+    /// Classifies a scanned/pasted QR payload. Pure parsing, no network.
+    pub async fn check_qr(&self, account_id: u32, qr: String) -> Result<QrKind, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let parsed = deltachat::qr::check_qr(&ctx, &qr).await?;
+            Ok(map_qr(&parsed))
+        })
+        .await
+    }
+
+    /// Creates an account on a chatmail relay (default instance if none given)
+    /// and configures it — the modern "no visible e-mail" onboarding. Progress
+    /// arrives as `ConfigureProgress` events; on success IO for this account
+    /// is already running.
+    pub async fn create_instant_account(
+        &self,
+        account_id: u32,
+        display_name: String,
+        instance: Option<String>,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let name = display_name.trim();
+            if !name.is_empty() {
+                ctx.set_config(Config::Displayname, Some(name)).await?;
+            }
+            let instance = instance.unwrap_or_else(|| DEFAULT_CHATMAIL_INSTANCE.to_string());
+            // Accept a full DCACCOUNT: payload, an https url, or a bare domain.
+            let qr = if instance.to_uppercase().starts_with("DCACCOUNT:") {
+                instance
+            } else {
+                format!("DCACCOUNT:{instance}")
+            };
+            ctx.add_transport_from_qr(&qr).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Receives the full account (credentials, keys, chats) from another
+    /// device showing an "Add Second Device" QR, over an encrypted P2P
+    /// connection. The target account must be freshly created/unconfigured.
+    /// Progress arrives as `ImexProgress` events (1000 = done); afterwards
+    /// call `start_io`.
+    pub async fn join_second_device(&self, account_id: u32, qr: String) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            if ctx.is_configured().await? {
+                return Err(VmError::Core {
+                    msg: format!(
+                        "account {account_id} is already configured; \
+                         joining as second device needs a fresh account"
+                    ),
+                });
+            }
+            let parsed = deltachat::qr::check_qr(&ctx, &qr)
+                .await
+                .map_err(|e| VmError::Core {
+                    msg: format!("not a valid Second Device QR code: {e:#}"),
+                })?;
+            match map_qr(&parsed) {
+                QrKind::Backup => {}
+                QrKind::BackupTooNew => {
+                    return Err(VmError::Core {
+                        msg: "the other device runs a newer Delta Chat; \
+                              update this app to join"
+                            .into(),
+                    });
+                }
+                other => {
+                    return Err(VmError::Core {
+                        msg: format!(
+                            "this is not an \"Add Second Device\" QR code (got {other:?})"
+                        ),
+                    });
+                }
+            }
+            deltachat::imex::get_backup(&ctx, parsed).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Cancels an ongoing configure or backup transfer for this account.
+    pub async fn cancel_ongoing(&self, account_id: u32) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            ctx.stop_ongoing().await;
+            Ok(())
         })
         .await
     }

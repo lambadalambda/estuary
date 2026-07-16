@@ -18,6 +18,12 @@ that reversal cheap.
 - Local core source for reference reading: the submodule checkout at
   `deltachat-ios/deltachat-ios/libraries/deltachat-core-rust`.
 
+**Finding: fresh lockfile breaks the build.** With a fresh `Cargo.lock`, cargo resolves
+`socket2 0.6.5`, which no longer compiles with the `netwatch 0.5.0` pinned by core v2.49.0
+(E0277/E0599). Fix: mirror deltachat-desktop's known-good lock — `cargo update tokio@… --precise
+1.48.0` then `socket2@… --precise 0.6.1` (newer tokio requires socket2 ^0.6.3, so tokio must be
+downgraded first). `Cargo.lock` is committed for reproducibility.
+
 **Environment notes:**
 - No system Rust; installed rustup (Rust 1.97) into `~/.cargo` / `~/.rustup`.
 - Swift 6.3.3 / xcodebuild on macOS 26, arm64.

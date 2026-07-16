@@ -1,5 +1,16 @@
 # DEVLOG
 
+## 2026-07-16 — Camera QR scanning + .app bundle
+
+"Add Second Device" can now scan the QR live off the other device's screen:
+AVCaptureSession → per-frame (throttled, queue-confined) CIDetector; first hit
+auto-fills the payload and starts the join. No new dependencies.
+TCC nuance: camera permission for a bare `swift run` binary gets attributed to the
+terminal; `make run-app` builds a minimal ad-hoc-signed DeltaApp.app with
+NSCameraUsageDescription so the prompt is properly attributed and persists.
+Camera path is build-verified only in the agent session (no TCC interaction possible);
+first real scan happens on the user's machine.
+
 ## 2026-07-16 — Local relay verified end-to-end; two hard-won findings
 
 The podman chatmail relay works (amd64 image forced via `--platform`, runs under

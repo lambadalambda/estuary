@@ -3,6 +3,7 @@ import SwiftUI
 struct MainView: View {
     @Bindable var model: AppModel
     @State private var showNewChat = false
+    @State private var showNewGroup = false
     @State private var confirmRemoveAccount = false
 
     var body: some View {
@@ -10,19 +11,42 @@ struct MainView: View {
             List(model.chats, selection: $model.selectedChatId) { chat in
                 ChatRowView(chat: chat)
                     .tag(chat.id)
+                    .contextMenu {
+                        Button(chat.isArchived ? "Unarchive" : "Archive") {
+                            Task {
+                                await model.setArchived(
+                                    chatId: chat.id, archived: !chat.isArchived)
+                            }
+                        }
+                    }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
-            .navigationTitle("Chats")
+            .navigationTitle(model.showingArchive ? "Archived" : "Chats")
+            .searchable(text: $model.searchQuery, placement: .sidebar, prompt: "Search chats")
+            .onChange(of: model.searchQuery) {
+                Task { await model.searchChanged() }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     accountMenu
                 }
                 ToolbarItem {
                     Button {
-                        showNewChat = true
+                        Task { await model.toggleArchive() }
                     } label: {
-                        Label("New Chat", systemImage: "square.and.pencil")
+                        Label(
+                            model.showingArchive ? "Back to Chats" : "Archived Chats",
+                            systemImage: model.showingArchive
+                                ? "archivebox.fill" : "archivebox")
+                    }
+                }
+                ToolbarItem {
+                    Menu {
+                        Button("New Chat…") { showNewChat = true }
+                        Button("New Group…") { showNewGroup = true }
+                    } label: {
+                        Label("New", systemImage: "square.and.pencil")
                     }
                 }
             }
@@ -52,6 +76,12 @@ struct MainView: View {
         .sheet(isPresented: $showNewChat) {
             NewChatSheet(model: model)
         }
+        .sheet(isPresented: $showNewGroup) {
+            NewGroupSheet(model: model)
+        }
+        .sheet(isPresented: $model.showSettings) {
+            SettingsSheet(model: model)
+        }
     }
 
     private var accountMenu: some View {
@@ -68,6 +98,7 @@ struct MainView: View {
                 }
             }
             Divider()
+            Button("Profile Settings…") { model.showSettings = true }
             Button("Add Profile…") { model.beginAddAccount() }
             Button("Remove This Profile…", role: .destructive) {
                 confirmRemoveAccount = true
@@ -92,7 +123,9 @@ struct ChatRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AvatarView(name: chat.name, colorHex: chat.color, size: 36)
+            ChatAvatarView(
+                name: chat.name, colorHex: chat.color,
+                avatarPath: chat.avatar, size: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -158,6 +191,184 @@ struct AvatarView: View {
                     .font(.system(size: size * 0.45, weight: .semibold))
                     .foregroundStyle(.white)
             }
+    }
+}
+
+/// Real profile image when available, initials circle otherwise.
+struct ChatAvatarView: View {
+    let name: String
+    let colorHex: String
+    let avatarPath: String?
+    var size: CGFloat = 36
+
+    var body: some View {
+        if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            AvatarView(name: name, colorHex: colorHex, size: size)
+        }
+    }
+}
+
+// MARK: - New group sheet
+
+struct NewGroupSheet: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var contacts: [ContactItem] = []
+    @State private var selection = Set<UInt32>()
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New Group")
+                .font(.title2.bold())
+            TextField("Group name", text: $name)
+                .textFieldStyle(.roundedBorder)
+            Text("Members")
+                .font(.headline)
+            List(contacts, selection: $selection) { contact in
+                HStack {
+                    ChatAvatarView(
+                        name: contact.displayName, colorHex: contact.color,
+                        avatarPath: contact.avatar, size: 24)
+                    Text(contact.displayName)
+                    if contact.isVerified {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                    Spacer()
+                    Text(contact.addr)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag(contact.id)
+            }
+            .frame(minHeight: 200)
+            Text("Groups are end-to-end encrypted: members need an established key (verified contacts work best).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let error {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") {
+                    Task {
+                        if let failure = await model.createGroup(
+                            name: name.trimmingCharacters(in: .whitespaces),
+                            memberIds: Array(selection)
+                        ) {
+                            error = failure
+                        } else {
+                            dismiss()
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .task { contacts = await model.loadContacts() }
+    }
+}
+
+// MARK: - Settings sheet
+
+struct SettingsSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var displayName = ""
+    @State private var showAvatarPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Profile Settings")
+                .font(.title2.bold())
+
+            HStack(spacing: 12) {
+                ChatAvatarView(
+                    name: model.currentAccount?.displayName
+                        ?? model.currentAccount?.addr ?? "?",
+                    colorHex: "#5f7a8a",
+                    avatarPath: model.currentAccount?.avatar,
+                    size: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button("Change Avatar…") { showAvatarPicker = true }
+                    if model.currentAccount?.avatar != nil {
+                        Button("Remove Avatar") {
+                            Task { await model.updateAvatar(path: nil) }
+                        }
+                    }
+                }
+            }
+
+            TextField("Display name", text: $displayName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { Task { await model.updateDisplayName(displayName) } }
+
+            LabeledContent("Address", value: model.currentAccount?.addr ?? "—")
+                .font(.callout)
+
+            LabeledContent("Connectivity") {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(model.connectivityValue >= 4000 ? .green : .orange)
+                        .frame(width: 9, height: 9)
+                    Text(connectivityLabel(model.connectivityValue))
+                        .font(.callout)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    Task {
+                        await model.updateDisplayName(displayName)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .task {
+            displayName = model.currentAccount?.displayName ?? ""
+            await model.refreshConnectivity()
+        }
+        .fileImporter(isPresented: $showAvatarPicker, allowedContentTypes: [.image]) { result in
+            if case .success(let url) = result {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                let path = url.path
+                Task { await model.updateAvatar(path: path) }
+            }
+        }
+    }
+
+    private func connectivityLabel(_ value: UInt32) -> String {
+        switch value {
+        case 4000...: "Connected"
+        case 3000..<4000: "Updating…"
+        case 2000..<3000: "Connecting…"
+        case 1..<2000: "Not connected"
+        default: "Unknown"
+        }
     }
 }
 

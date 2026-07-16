@@ -1,11 +1,15 @@
+import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 private let bottomAnchorID = "bottom-anchor"
 
 struct ChatDetailView: View {
-    let model: AppModel
+    @Bindable var model: AppModel
     let chat: ChatItem
     @State private var draft = ""
+    @State private var showAttachPicker = false
+    @State private var forwardingMsgId: UInt32?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +21,9 @@ struct ChatDetailView: View {
                             case .dayMarker(_, let label):
                                 DayMarkerView(label: label)
                             case .message(let message, let showAuthor):
-                                MessageBubbleView(message: message, showAuthor: showAuthor)
+                                MessageBubbleView(
+                                    model: model, message: message, showAuthor: showAuthor,
+                                    onForward: { forwardingMsgId = message.id })
                             }
                         }
                         Color.clear
@@ -46,32 +52,104 @@ struct ChatDetailView: View {
         }
         .navigationTitle(chat.name)
         .navigationSubtitle(chat.isContactRequest ? "Contact request" : "")
+        .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
+            if case .success(let url) = result {
+                sendFile(url: url)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url, url.isFileURL {
+                        Task { @MainActor in sendFile(url: url) }
+                    }
+                }
+            }
+            return true
+        }
+        .sheet(item: $forwardingMsgId) { msgId in
+            ForwardSheet(model: model, msgId: msgId)
+        }
+    }
+
+    private func sendFile(url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        // Core copies the file into its blobdir, so the path only needs to be
+        // readable now.
+        let caption = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        let path = url.path
+        Task { await model.sendAttachment(path: path, caption: caption) }
     }
 
     @ViewBuilder
     private var composer: some View {
         if chat.isContactRequest {
-            Text("This is a contact request. Accept/block is not part of this prototype.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(12)
-                .frame(maxWidth: .infinity)
-        } else {
-            HStack(spacing: 8) {
-                TextField("Message \(chat.name)…", text: $draft)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .onSubmit(sendDraft)
-                Button(action: sendDraft) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+            HStack(spacing: 12) {
+                Button("Accept") {
+                    Task { await model.acceptSelectedChat() }
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
+                .buttonStyle(.borderedProminent)
+                Button("Block", role: .destructive) {
+                    Task { await model.blockSelectedChat() }
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+        } else {
+            VStack(spacing: 0) {
+                if let replyTo = model.replyTo {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Color(hex: replyTo.senderColor))
+                            .frame(width: 3)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(replyTo.senderName)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color(hex: replyTo.senderColor))
+                            Text(replyTo.text.isEmpty ? (replyTo.fileName ?? "Attachment") : replyTo.text)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button {
+                            model.replyTo = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                }
+                HStack(spacing: 8) {
+                    Button {
+                        showAttachPicker = true
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    TextField("Message \(chat.name)…", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .onSubmit(sendDraft)
+                    Button(action: sendDraft) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
             .background(.bar)
         }
     }
@@ -85,6 +163,45 @@ struct ChatDetailView: View {
         guard !text.isEmpty else { return }
         draft = ""
         Task { await model.send(text) }
+    }
+}
+
+extension UInt32: @retroactive Identifiable {
+    public var id: UInt32 { self }
+}
+
+// MARK: - Forward sheet
+
+struct ForwardSheet: View {
+    let model: AppModel
+    let msgId: UInt32
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Forward to…")
+                .font(.title3.bold())
+            List(model.chats.filter { !$0.isContactRequest }) { chat in
+                Button {
+                    dismiss()
+                    Task { await model.forwardMessage(msgId: msgId, to: chat.id) }
+                } label: {
+                    HStack {
+                        AvatarView(name: chat.name, colorHex: chat.color, size: 24)
+                        Text(chat.name)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(minHeight: 240)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
     }
 }
 
@@ -107,9 +224,13 @@ struct DayMarkerView: View {
 
 // MARK: - Message bubble
 
+private let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🎉"]
+
 struct MessageBubbleView: View {
+    let model: AppModel
     let message: MessageItem
     let showAuthor: Bool
+    var onForward: () -> Void = {}
 
     var body: some View {
         if message.isInfo {
@@ -124,12 +245,22 @@ struct MessageBubbleView: View {
         } else if message.isOutgoing {
             HStack(alignment: .bottom) {
                 Spacer(minLength: 80)
-                bubble
+                bubbleWithReactions
             }
         } else {
             HStack(alignment: .bottom) {
-                bubble
+                bubbleWithReactions
                 Spacer(minLength: 80)
+            }
+        }
+    }
+
+    private var bubbleWithReactions: some View {
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            bubble
+                .contextMenu { contextMenu }
+            if !message.reactions.isEmpty {
+                ReactionChipsView(model: model, message: message)
             }
         }
     }
@@ -141,9 +272,34 @@ struct MessageBubbleView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(Color(hex: message.senderColor))
             }
-            Text(message.text)
-                .textSelection(.enabled)
-                .foregroundStyle(message.isOutgoing ? .white : .primary)
+            if let quote = message.quote {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color(hex: quote.senderColor))
+                        .frame(width: 3)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if !quote.senderName.isEmpty {
+                            Text(quote.senderName)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color(hex: quote.senderColor))
+                        }
+                        Text(quote.text)
+                            .font(.caption)
+                            .lineLimit(2)
+                            .opacity(0.8)
+                    }
+                }
+                .padding(6)
+                .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            mediaContent
+
+            if !message.text.isEmpty {
+                Text(message.text)
+                    .textSelection(.enabled)
+                    .foregroundStyle(message.isOutgoing ? .white : .primary)
+            }
             HStack(spacing: 4) {
                 Text(messageTime(message.timestamp))
                     .font(.caption2)
@@ -161,6 +317,185 @@ struct MessageBubbleView: View {
                 ? AnyShapeStyle(Color.accentColor)
                 : AnyShapeStyle(.quinary),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var mediaContent: some View {
+        switch message.kind {
+        case .image, .gif, .sticker:
+            if let file = message.file, let image = NSImage(contentsOfFile: file) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 320, maxHeight: 320)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .onTapGesture { openFile() }
+            } else {
+                fileRow(icon: "photo")
+            }
+        case .audio, .voice:
+            AudioMessageView(message: message)
+        case .video:
+            fileRow(icon: "video.fill")
+        case .file, .vcard, .webxdc, .unknown:
+            if message.file != nil {
+                fileRow(icon: message.kind == .webxdc ? "app.gift" : "doc.fill")
+            }
+        case .text:
+            EmptyView()
+        }
+    }
+
+    private func fileRow(icon: String) -> some View {
+        Button(action: openFile) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(message.fileName ?? "Attachment")
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                    if message.fileSize > 0 {
+                        Text(ByteCountFormatter.string(
+                            fromByteCount: Int64(message.fileSize), countStyle: .file))
+                            .font(.caption2)
+                            .opacity(0.7)
+                    }
+                }
+            }
+            .foregroundStyle(message.isOutgoing ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openFile() {
+        if let file = message.file {
+            NSWorkspace.shared.open(URL(fileURLWithPath: file))
+        }
+    }
+
+    @ViewBuilder
+    private var contextMenu: some View {
+        if !message.text.isEmpty {
+            Button("Copy Text") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message.text, forType: .string)
+            }
+        }
+        Button("Reply") { model.replyTo = message }
+        Menu("React") {
+            ForEach(quickReactions, id: \.self) { emoji in
+                Button(emoji) {
+                    Task { await model.toggleReaction(message: message, emoji: emoji) }
+                }
+            }
+            if message.reactions.contains(where: \.isFromSelf) {
+                Divider()
+                Button("Remove Reaction") {
+                    Task { await model.sendReaction(msgId: message.id, emoji: "") }
+                }
+            }
+        }
+        Button("Forward…", action: onForward)
+        if message.file != nil {
+            Button("Open Attachment", action: openFile)
+        }
+        Divider()
+        Button("Delete", role: .destructive) {
+            Task { await model.deleteMessage(msgId: message.id) }
+        }
+    }
+}
+
+// MARK: - Reactions
+
+struct ReactionChipsView: View {
+    let model: AppModel
+    let message: MessageItem
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(message.reactions, id: \.emoji) { reaction in
+                Button {
+                    Task { await model.toggleReaction(message: message, emoji: reaction.emoji) }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(reaction.emoji)
+                        if reaction.count > 1 {
+                            Text("\(reaction.count)")
+                                .font(.caption2.weight(.semibold))
+                        }
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        reaction.isFromSelf
+                            ? AnyShapeStyle(Color.accentColor.opacity(0.25))
+                            : AnyShapeStyle(.quaternary),
+                        in: Capsule())
+                    .overlay(
+                        Capsule().strokeBorder(
+                            reaction.isFromSelf ? Color.accentColor : .clear, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Audio playback
+
+/// One shared player: starting a message stops the previous one.
+@MainActor
+final class AudioPlayerController: ObservableObject {
+    static let shared = AudioPlayerController()
+    @Published var playingPath: String?
+    private var player: AVAudioPlayer?
+
+    func toggle(path: String) {
+        if playingPath == path {
+            player?.stop()
+            playingPath = nil
+            return
+        }
+        player?.stop()
+        player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+        player?.play()
+        playingPath = player != nil ? path : nil
+    }
+}
+
+struct AudioMessageView: View {
+    let message: MessageItem
+    @ObservedObject private var player = AudioPlayerController.shared
+
+    private var isPlaying: Bool { player.playingPath == message.file }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                if let file = message.file { player.toggle(path: file) }
+            } label: {
+                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title)
+            }
+            .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.kind == .voice ? "Voice message" : (message.fileName ?? "Audio"))
+                    .font(.callout.weight(.medium))
+                if message.durationMs > 0 {
+                    Text(durationLabel(ms: message.durationMs))
+                        .font(.caption2)
+                        .opacity(0.7)
+                }
+            }
+        }
+        .foregroundStyle(message.isOutgoing ? .white : .primary)
+    }
+
+    private func durationLabel(ms: UInt32) -> String {
+        let seconds = Int(ms) / 1000
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -194,35 +529,46 @@ struct DeliveryStateView: View {
 
 #Preview("Bubbles") {
     let now = Int64(Date().timeIntervalSince1970)
+    let model = AppModel(service: MockChatService())
     return ScrollView {
         LazyVStack(spacing: 6) {
             DayMarkerView(label: "Today")
             MessageBubbleView(
+                model: model,
                 message: MessageItem(
                     id: 1, chatId: 1, text: "You added member Carol.", timestamp: now - 4000,
                     isOutgoing: false, isInfo: true, senderName: "", senderColor: "#999999",
                     state: .noState),
                 showAuthor: false)
             MessageBubbleView(
+                model: model,
                 message: MessageItem(
                     id: 2, chatId: 1, text: "Hey! Did you see the native prototype?",
                     timestamp: now - 3600, isOutgoing: false, isInfo: false,
-                    senderName: "Alice", senderColor: "#e56555", state: .noState),
+                    senderName: "Alice", senderColor: "#e56555", state: .noState,
+                    reactions: [ReactionItem(emoji: "👍", count: 2, isFromSelf: true)]),
                 showAuthor: true)
             MessageBubbleView(
+                model: model,
                 message: MessageItem(
                     id: 3, chatId: 1, text: "Yes! SwiftUI over a Rust core.",
                     timestamp: now - 3500, isOutgoing: true, isInfo: false,
-                    senderName: "Me", senderColor: "#2f9e44", state: .read),
+                    senderName: "Me", senderColor: "#2f9e44", state: .read,
+                    quote: QuoteInfo(
+                        text: "Hey! Did you see the native prototype?",
+                        senderName: "Alice", senderColor: "#e56555")),
                 showAuthor: false)
             MessageBubbleView(
+                model: model,
                 message: MessageItem(
-                    id: 4, chatId: 1, text: "Still sending this one…",
-                    timestamp: now - 30, isOutgoing: true, isInfo: false,
-                    senderName: "Me", senderColor: "#2f9e44", state: .pending),
+                    id: 4, chatId: 1, text: "", timestamp: now - 60,
+                    isOutgoing: false, isInfo: false,
+                    senderName: "Alice", senderColor: "#e56555", state: .noState,
+                    kind: .file, file: "/tmp/nonexistent.pdf",
+                    fileName: "report.pdf", fileSize: 48_213),
                 showAuthor: false)
         }
         .padding(16)
     }
-    .frame(width: 420, height: 380)
+    .frame(width: 420, height: 480)
 }

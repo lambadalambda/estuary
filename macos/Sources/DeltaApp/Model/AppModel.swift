@@ -19,6 +19,14 @@ final class AppModel {
     /// Bound to the sidebar List selection.
     var selectedChatId: UInt32?
     private(set) var messages: [MessageItem] = []
+    /// Message being replied to (composer banner); sent as quote.
+    var replyTo: MessageItem?
+    /// Sidebar shows the archive instead of the normal list.
+    var showingArchive = false
+    /// Sidebar search field text; non-empty switches the list to search hits.
+    var searchQuery = ""
+    var showSettings = false
+    private(set) var connectivityValue: UInt32 = 0
 
     // Login / onboarding state.
     var profileName = ""
@@ -265,7 +273,14 @@ final class AppModel {
     func reloadChats() async {
         guard let accountId = selectedAccountId else { return }
         do {
-            chats = try await service.chatList(accountId: accountId)
+            let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            if !query.isEmpty {
+                chats = try await service.searchChats(accountId: accountId, query: query)
+            } else if showingArchive {
+                chats = try await service.archivedChats(accountId: accountId)
+            } else {
+                chats = try await service.chatList(accountId: accountId)
+            }
             if let selected = selectedChatId, !chats.contains(where: { $0.id == selected }) {
                 selectedChatId = nil
                 messages = []
@@ -282,13 +297,145 @@ final class AppModel {
         }
         do {
             messages = try await service.messages(accountId: accountId, chatId: chatId)
+            await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
         } catch {
             messages = []
         }
     }
 
+    /// The chat is on screen: mark incoming messages seen. This sends MDN
+    /// read receipts and syncs the read state to other devices.
+    private func markVisibleMessagesSeen(accountId: UInt32, chatId: UInt32) async {
+        guard let chat = selectedChat, !chat.isContactRequest else { return }
+        let incoming = messages.filter { !$0.isOutgoing && !$0.isInfo }.map(\.id)
+        guard !incoming.isEmpty else { return }
+        try? await service.markSeen(accountId: accountId, msgIds: incoming)
+    }
+
+    func searchChanged() async {
+        await reloadChats()
+    }
+
+    func toggleArchive() async {
+        showingArchive.toggle()
+        selectedChatId = nil
+        messages = []
+        await reloadChats()
+    }
+
+    func setArchived(chatId: UInt32, archived: Bool) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.setChatArchived(
+            accountId: accountId, chatId: chatId, archived: archived)
+        await reloadChats()
+    }
+
+    // MARK: Contact requests
+
+    func acceptSelectedChat() async {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        do {
+            try await service.acceptChat(accountId: accountId, chatId: chatId)
+            await reloadChats()
+            await reloadMessages()
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    func blockSelectedChat() async {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        try? await service.blockChat(accountId: accountId, chatId: chatId)
+        selectedChatId = nil
+        messages = []
+        await reloadChats()
+    }
+
+    // MARK: Message actions
+
+    func sendReaction(msgId: UInt32, emoji: String) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.sendReaction(accountId: accountId, msgId: msgId, emoji: emoji)
+        await reloadMessages()
+    }
+
+    /// Toggles the own reaction: clicking your current emoji clears it.
+    func toggleReaction(message: MessageItem, emoji: String) async {
+        let mine = message.reactions.first { $0.isFromSelf }?.emoji
+        await sendReaction(msgId: message.id, emoji: mine == emoji ? "" : emoji)
+    }
+
+    func deleteMessage(msgId: UInt32) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.deleteMessages(accountId: accountId, msgIds: [msgId])
+        await reloadMessages()
+        await reloadChats()
+    }
+
+    func forwardMessage(msgId: UInt32, to chatId: UInt32) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.forwardMessages(
+            accountId: accountId, msgIds: [msgId], chatId: chatId)
+    }
+
+    func sendAttachment(path: String, caption: String) async {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        do {
+            _ = try await service.sendMessage(
+                accountId: accountId, chatId: chatId,
+                text: caption.isEmpty ? nil : caption,
+                filePath: path,
+                quotedMsgId: replyTo?.id)
+            replyTo = nil
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    // MARK: Groups / contacts
+
+    func loadContacts() async -> [ContactItem] {
+        guard let accountId = selectedAccountId else { return [] }
+        return (try? await service.contacts(accountId: accountId)) ?? []
+    }
+
+    /// Returns nil on success, or a user-facing error (e.g. core rejecting
+    /// non-key-contacts in encrypted groups).
+    func createGroup(name: String, memberIds: [UInt32]) async -> String? {
+        guard let accountId = selectedAccountId else { return nil }
+        do {
+            let chatId = try await service.createGroup(
+                accountId: accountId, name: name, memberContactIds: memberIds)
+            await reloadChats()
+            selectedChatId = chatId
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    // MARK: Settings
+
+    func updateDisplayName(_ name: String) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.setDisplayName(accountId: accountId, name: name)
+        accounts = (try? await service.accounts()) ?? accounts
+    }
+
+    func updateAvatar(path: String?) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.setAvatar(accountId: accountId, path: path)
+        accounts = (try? await service.accounts()) ?? accounts
+    }
+
+    func refreshConnectivity() async {
+        guard let accountId = selectedAccountId else { return }
+        connectivityValue = (try? await service.connectivity(accountId: accountId)) ?? 0
+    }
+
     /// Called when the sidebar selection changes.
     func chatSelectionChanged() async {
+        replyTo = nil
         await reloadMessages()
         await markSelectedChatNoticed()
     }
@@ -306,7 +453,10 @@ final class AppModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
-            _ = try await service.sendText(accountId: accountId, chatId: chatId, text: trimmed)
+            _ = try await service.sendMessage(
+                accountId: accountId, chatId: chatId,
+                text: trimmed, filePath: nil, quotedMsgId: replyTo?.id)
+            replyTo = nil
         } catch {
             loginError = error.localizedDescription
         }
@@ -368,6 +518,15 @@ final class AppModel {
                 if chatId == selectedChatId {
                     await reloadMessages()
                     await markSelectedChatNoticed()
+                }
+                // Notify when the app is in the background or another chat
+                // is open (bundle builds only; bare `swift run` has no
+                // notification identity).
+                if chatId != selectedChatId || !NSApplication.shared.isActive {
+                    let chat = chats.first { $0.id == chatId }
+                    NotificationManager.postIncoming(
+                        chatName: chat?.name ?? "New message",
+                        preview: chat?.preview ?? "")
                 }
             }
 

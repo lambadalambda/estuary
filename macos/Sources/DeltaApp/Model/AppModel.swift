@@ -203,14 +203,25 @@ final class AppModel {
             }
 
         case .chatChanged(let chatId):
-            if accountId == selectedAccountId, chatId == selectedChatId {
-                await reloadMessages()
+            // Core often signals sidebar-row updates *only* via events that
+            // map to chatChanged (e.g. marknoticed_chat -> MsgsNoticed +
+            // ChatlistItemChanged, send_msg -> MsgsChanged, without any
+            // ChatlistChanged), so the chat list must refresh here too or
+            // badges/previews go stale.
+            if accountId == selectedAccountId {
+                await reloadChats()
+                if chatId == selectedChatId {
+                    await reloadMessages()
+                }
             }
 
         case .incomingMessage(let chatId, _):
-            if accountId == selectedAccountId, chatId == selectedChatId {
-                await reloadMessages()
-                await markSelectedChatNoticed()
+            if accountId == selectedAccountId {
+                await reloadChats()
+                if chatId == selectedChatId {
+                    await reloadMessages()
+                    await markSelectedChatNoticed()
+                }
             }
 
         case .connectivityChanged:

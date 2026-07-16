@@ -51,9 +51,19 @@ pub fn map_event(typ: EventType) -> Option<VmEvent> {
         | EventType::MsgDelivered { chat_id, .. }
         | EventType::MsgRead { chat_id, .. }
         | EventType::MsgFailed { chat_id, .. }
-        | EventType::MsgsNoticed(chat_id) => Some(VmEvent::ChatChanged {
-            chat_id: chat_id.to_u32(),
-        }),
+        | EventType::MsgsNoticed(chat_id) => {
+            if chat_id.is_unset() {
+                // Core's "no specific chat" sentinel (chat_id 0), e.g. from
+                // emit_msgs_changed_without_ids(). A ChatChanged { chat_id: 0 }
+                // would be a phantom id outside the FFI contract; ask the UI
+                // for a chat list refresh instead.
+                Some(VmEvent::ChatlistChanged)
+            } else {
+                Some(VmEvent::ChatChanged {
+                    chat_id: chat_id.to_u32(),
+                })
+            }
+        }
         EventType::IncomingMsg { chat_id, msg_id } => Some(VmEvent::IncomingMessage {
             chat_id: chat_id.to_u32(),
             msg_id: msg_id.to_u32(),
@@ -152,6 +162,19 @@ mod tests {
         assert_eq!(
             map_event(EventType::MsgsNoticed(chat)),
             Some(VmEvent::ChatChanged { chat_id: 7 })
+        );
+        // chat_id 0 is core's "unset" sentinel (emit_msgs_changed_without_ids):
+        // never forward it as a phantom chat id, ask for a chatlist reload.
+        assert_eq!(
+            map_event(EventType::MsgsChanged {
+                chat_id: ChatId::new(0),
+                msg_id: MsgId::new(0)
+            }),
+            Some(VmEvent::ChatlistChanged)
+        );
+        assert_eq!(
+            map_event(EventType::MsgsNoticed(ChatId::new(0))),
+            Some(VmEvent::ChatlistChanged)
         );
         assert_eq!(
             map_event(EventType::MsgDelivered {

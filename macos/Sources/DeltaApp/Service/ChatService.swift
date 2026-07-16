@@ -62,7 +62,18 @@ enum ServiceEvent: Equatable, Sendable {
     case chatChanged(chatId: UInt32)
     case incomingMessage(chatId: UInt32, msgId: UInt32)
     case configureProgress(permille: UInt32, comment: String?)
+    /// Backup transfer progress ("add second device"): 0 = error, 1000 = done.
+    case imexProgress(permille: UInt32)
     case connectivityChanged
+}
+
+/// Mirrors Rust `QrKind`.
+enum QrKind: Equatable, Sendable {
+    case account(domain: String)
+    case backup
+    case backupTooNew
+    case login(address: String)
+    case unsupported
 }
 
 /// Mirrors Rust `VmError`.
@@ -103,6 +114,17 @@ protocol ChatService: Sendable {
     func markNoticed(accountId: UInt32, chatId: UInt32) async throws
     func createChat(accountId: UInt32, email: String, name: String) async throws -> UInt32
     func addDemoAccount() async throws -> UInt32
+
+    /// Classifies a scanned/pasted QR payload (pure parsing, no network).
+    func checkQr(accountId: UInt32, qr: String) async throws -> QrKind
+    /// Creates + configures an account on a chatmail relay (nil = default
+    /// instance). Progress arrives via `.configureProgress` events.
+    func createInstantAccount(accountId: UInt32, displayName: String, instance: String?) async throws
+    /// Receives a full account from another device's "Add Second Device" QR.
+    /// Progress arrives via `.imexProgress` events; account must be fresh.
+    func joinSecondDevice(accountId: UInt32, qr: String) async throws
+    /// Cancels an ongoing configure/backup transfer.
+    func cancelOngoing(accountId: UInt32) async throws
 }
 
 // MARK: - Factory

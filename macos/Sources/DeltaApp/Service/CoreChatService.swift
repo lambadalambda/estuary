@@ -127,6 +127,30 @@ actor CoreChatService: ChatService {
         do { return try await app().addDemoAccount() }
         catch { throw mapError(error) }
     }
+
+    func checkQr(accountId: UInt32, qr: String) async throws -> QrKind {
+        do { return mapQrKind(try await app().checkQr(accountId: accountId, qr: qr)) }
+        catch { throw mapError(error) }
+    }
+
+    func createInstantAccount(
+        accountId: UInt32, displayName: String, instance: String?
+    ) async throws {
+        do {
+            try await app().createInstantAccount(
+                accountId: accountId, displayName: displayName, instance: instance)
+        } catch { throw mapError(error) }
+    }
+
+    func joinSecondDevice(accountId: UInt32, qr: String) async throws {
+        do { try await app().joinSecondDevice(accountId: accountId, qr: qr) }
+        catch { throw mapError(error) }
+    }
+
+    func cancelOngoing(accountId: UInt32) async throws {
+        do { try await app().cancelOngoing(accountId: accountId) }
+        catch { throw mapError(error) }
+    }
 }
 
 // MARK: - Event listener bridge
@@ -205,8 +229,20 @@ private func mapEvent(_ e: VmEvent) -> ServiceEvent {
         .incomingMessage(chatId: chatId, msgId: msgId)
     case .configureProgress(let permille, let comment):
         .configureProgress(permille: permille, comment: comment)
+    case .imexProgress(let permille):
+        .imexProgress(permille: permille)
     case .connectivityChanged:
         .connectivityChanged
+    }
+}
+
+private func mapQrKind(_ k: DeltaCore.QrKind) -> QrKind {
+    switch k {
+    case .account(let domain): .account(domain: domain)
+    case .backup: .backup
+    case .backupTooNew: .backupTooNew
+    case .login(let address): .login(address: address)
+    case .unsupported: .unsupported
     }
 }
 

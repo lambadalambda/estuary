@@ -184,6 +184,85 @@ actor MockChatService: ChatService {
         return id
     }
 
+    func checkQr(accountId: UInt32, qr: String) -> QrKind {
+        let payload = qr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let upper = payload.uppercased()
+        if upper.hasPrefix("DCACCOUNT:") {
+            let rest = payload.dropFirst("DCACCOUNT:".count)
+            let domain = rest
+                .replacingOccurrences(of: "https://", with: "")
+                .split(separator: "/").first.map(String.init) ?? String(rest)
+            return .account(domain: domain)
+        }
+        if upper.hasPrefix("DCBACKUP9") { return .backupTooNew }
+        if upper.hasPrefix("DCBACKUP") { return .backup }
+        if upper.hasPrefix("DCLOGIN:") {
+            return .login(address: String(payload.dropFirst("DCLOGIN:".count)))
+        }
+        return .unsupported
+    }
+
+    func createInstantAccount(
+        accountId: UInt32, displayName: String, instance: String?
+    ) async throws {
+        guard var account = accountsById[accountId] else {
+            throw ServiceError.core(msg: "no such account: \(accountId)")
+        }
+        let steps: [(UInt32, String)] = [
+            (150, "Creating account on relay…"),
+            (500, "Connecting…"),
+            (900, "Finishing configuration…"),
+        ]
+        for (permille, comment) in steps {
+            emit(accountId, .configureProgress(permille: permille, comment: comment))
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        let domain = (instance ?? "nine.testrun.org")
+            .replacingOccurrences(of: "https://", with: "")
+            .split(separator: "/").first.map(String.init) ?? "nine.testrun.org"
+        account.addr = "mock-\(accountId)@\(domain)"
+        account.displayName = displayName.isEmpty ? nil : displayName
+        account.isConfigured = true
+        accountsById[accountId] = account
+        if chatsByAccount[accountId, default: []].isEmpty {
+            seedDemoContent(accountId: accountId)
+        }
+        emit(accountId, .configureProgress(permille: 1000, comment: nil))
+        emit(0, .accountsChanged)
+        emit(accountId, .chatlistChanged)
+    }
+
+    func joinSecondDevice(accountId: UInt32, qr: String) async throws {
+        guard var account = accountsById[accountId] else {
+            throw ServiceError.core(msg: "no such account: \(accountId)")
+        }
+        guard account.isConfigured == false else {
+            throw ServiceError.core(msg: "account is already configured")
+        }
+        guard case .backup = checkQr(accountId: accountId, qr: qr) else {
+            throw ServiceError.core(msg: "this is not an \"Add Second Device\" QR code")
+        }
+        emit(accountId, .imexProgress(permille: 1))
+        for permille: UInt32 in [250, 500, 750] {
+            try? await Task.sleep(for: .milliseconds(300))
+            emit(accountId, .imexProgress(permille: permille))
+        }
+        account.addr = "transferred@nine.testrun.org"
+        account.displayName = "Transferred"
+        account.isConfigured = true
+        accountsById[accountId] = account
+        if chatsByAccount[accountId, default: []].isEmpty {
+            seedDemoContent(accountId: accountId)
+        }
+        emit(accountId, .imexProgress(permille: 1000))
+        emit(0, .accountsChanged)
+        emit(accountId, .chatlistChanged)
+    }
+
+    func cancelOngoing(accountId: UInt32) {
+        emit(accountId, .imexProgress(permille: 0))
+    }
+
     // MARK: Simulation helpers
 
     private func simulateDelivery(

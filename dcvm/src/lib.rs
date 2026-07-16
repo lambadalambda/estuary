@@ -1,3 +1,8 @@
-//! dcvm: headless DeltaChat viewmodel. Placeholder while dependency graph pre-warms.
+//! dcvm: headless DeltaChat viewmodel exposed over UniFFI.
 
-pub use deltachat;
+uniffi::setup_scaffolding!();
+
+pub mod mapping;
+pub mod types;
+
+pub use types::*;

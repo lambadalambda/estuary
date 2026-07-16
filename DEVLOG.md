@@ -65,3 +65,43 @@ downgraded first). `Cargo.lock` is committed for reproducibility.
 **State:** `cargo test` green (4 unit + 4 integration, all offline, no `start_io`). Bindings in
 `macos/Sources/DeltaCore` + `DeltaCoreFFI` typecheck with `swiftc -swift-version 5`. Root
 Makefile targets: `rust`, `bindings`, `run`, `test` (dev profile everywhere).
+
+## 2026-07-16 — Swift/Rust integration: app runs against the real core
+
+**Wiring:**
+- `macos/Package.swift` grew the two generated targets per the recipe:
+  `.systemLibrary(DeltaCoreFFI)` + `.target(DeltaCore, swiftLanguageMode(.v5))`, with
+  linker settings on the executable: `-L dcvm/target/debug`, `.linkedLibrary("dcvm")`,
+  `.linkedFramework("SystemConfiguration")` (the only framework the linker demanded —
+  needed by netwatch's `system-configuration` crate).
+- `CoreChatService` (actor) adapts the generated `DcApp` to the app's `ChatService`
+  protocol. `DcApp`'s constructor is async but `ServiceFactory.make()` is sync, so the
+  DcApp is created lazily via a stored `Task<DcApp, Error>` (idempotent under concurrent
+  first calls). Generated types collide by name with the app's mirror types — qualified
+  as `DeltaCore.X` inside the adapter only; the rest of the app never imports DeltaCore.
+- Event bridge: the `EventListener` callback (tokio worker thread) just yields into an
+  `AsyncStream` continuation — that *is* the thread hop, since the single consumer
+  (AppModel's event loop) runs on the MainActor. Listener class is `@unchecked Sendable`.
+- `ServiceFactory`: CoreChatService by default (data dir
+  `~/Library/Application Support/DeltaChatNative`, `DCNATIVE_DATA_DIR` override);
+  `DCNATIVE_MOCK=1` keeps the pure-Swift mock.
+
+**Findings:**
+- **Stale `libdcvm.dylib` shadowed the static lib**: the crate-type used to include
+  `cdylib`; the leftover dylib in `target/debug` predated `DcApp`, and `ld -ldcvm`
+  prefers dylibs over `.a`, so the link failed with missing `uniffi_dcvm_fn_*` symbols
+  even though the `.a` had all 136 of them. Deleted the stale dylib (cargo won't
+  regenerate it now that crate-type is `["lib","staticlib"]`).
+- Swift 6 strict concurrency rejected a closure-based `mapping { ... }` error helper on
+  the actor ("sending 'self'-isolated value ... risks data races"); plain
+  `do/catch { throw mapError(error) }` per method is boring but clean.
+- Benign ld warnings: prebuilt sqlite3/OpenSSL objects in libdcvm.a target macOS 26.5
+  vs the package's 14.0 deployment target.
+- UI scripting (System Events) can't attach to the bundle-less `swift run` binary in
+  this environment, so the demo path got a dev hook instead: `DCNATIVE_AUTODEMO=1`
+  auto-triggers `tryDemo()` when bootstrap lands on onboarding.
+
+**Verification:** `cargo test` 8/8 green (unchanged, no exported-API changes so no
+binding regen needed). `swift build` green. Smoke tests with a mktemp data dir: plain
+launch alive after 8 s, core wrote `accounts.toml`; `DCNATIVE_AUTODEMO=1` launch alive
+after 10 s with a demo account on disk — 12 chats / 18 msgs in its `dc.db`, empty stderr.

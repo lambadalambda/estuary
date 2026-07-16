@@ -128,10 +128,12 @@ final class AppModel {
         defer { isConfiguring = false; onboardingAccountId = nil }
         do {
             let accountId = try await beginOnboarding()
+            // DCNATIVE_INSTANCE overrides the default relay, e.g.
+            // "DCACCOUNT:_cm.example" for the local podman relay (dev/chatmail/).
             try await service.createInstantAccount(
                 accountId: accountId,
                 displayName: profileName.trimmingCharacters(in: .whitespaces),
-                instance: nil)
+                instance: ProcessInfo.processInfo.environment["DCNATIVE_INSTANCE"])
             try await finishOnboarding(accountId: accountId)
         } catch {
             loginError = error.localizedDescription

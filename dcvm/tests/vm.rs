@@ -467,3 +467,32 @@ async fn second_device_join_transfers_account_offline() {
     })
     .await;
 }
+
+/// Opt-in network test against a local chatmail relay (dev/chatmail/run.sh).
+/// Run with: DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test -- --ignored
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a running local chatmail relay; set DCVM_TEST_RELAY"]
+async fn instant_account_against_local_relay() {
+    let relay = std::env::var("DCVM_TEST_RELAY")
+        .expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
+    let (app, collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+
+    app.create_instant_account(id, "Relay Test".into(), Some(relay))
+        .await
+        .expect("create_instant_account against local relay");
+
+    wait_for_event(&collector.events, "ConfigureProgress 1000", |aid, ev| {
+        aid == id
+            && matches!(ev, VmEvent::ConfigureProgress { permille: 1000, .. })
+    })
+    .await;
+
+    let infos = app.accounts().await.unwrap();
+    let acc = infos.iter().find(|a| a.id == id).unwrap();
+    assert!(acc.is_configured);
+    assert!(
+        acc.addr.as_deref().unwrap_or("").contains('@'),
+        "no addr: {acc:?}"
+    );
+}

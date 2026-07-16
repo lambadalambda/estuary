@@ -46,11 +46,17 @@ async fn make_app() -> (Arc<DcApp>, Arc<Collector>, tempfile::TempDir) {
 
 /// Pseudo-configure per core-api.md section 9: setting Config::ConfiguredAddr
 /// creates a pseudo transport; the account then behaves configured, offline.
+/// ForceEncryption (default on since v2.53) is relaxed like core's own
+/// test_utils does: keyless offline accounts can neither encrypt nor process
+/// injected plaintext mail otherwise.
 async fn pseudo_configure(app: &DcApp, account_id: u32, addr: &str) {
     let ctx = app.context(account_id).await.expect("context");
     ctx.set_config(dcvm::deltachat::config::Config::ConfiguredAddr, Some(addr))
         .await
         .expect("set ConfiguredAddr");
+    ctx.set_config_bool(dcvm::deltachat::config::Config::ForceEncryption, false)
+        .await
+        .expect("relax ForceEncryption");
 }
 
 #[tokio::test(flavor = "multi_thread")]

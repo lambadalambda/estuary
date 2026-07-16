@@ -13,7 +13,7 @@ use deltachat::config::Config;
 use deltachat::constants::{Chattype, DC_GCL_ADDRESS, DC_GCL_ARCHIVED_ONLY};
 use deltachat::contact::{Contact, ContactId};
 use deltachat::context::Context;
-use deltachat::login_param::{EnteredLoginParam, EnteredServerLoginParam};
+use deltachat::login_param::{EnteredImapLoginParam, EnteredLoginParam};
 use deltachat::message::{self, Message, MsgId, Viewtype};
 use deltachat::reaction;
 use deltachat::receive_imf::receive_imf;
@@ -147,25 +147,25 @@ async fn message_item(ctx: &Context, msg: &Message) -> Result<MessageItem, VmErr
         }
     };
 
+    // v2.53: one reaction (single emoji) per contact.
     let mut reactions: Vec<ReactionItem> = Vec::new();
     let msg_reactions = reaction::get_msg_reactions(ctx, msg.get_id()).await?;
     for contact_id in msg_reactions.contacts() {
         let contact_reaction = msg_reactions.get(contact_id);
-        for emoji in contact_reaction.emojis() {
-            if emoji.is_empty() {
-                continue;
+        let emoji = contact_reaction.as_str();
+        if emoji.is_empty() {
+            continue;
+        }
+        match reactions.iter_mut().find(|r| r.emoji == emoji) {
+            Some(entry) => {
+                entry.count += 1;
+                entry.is_from_self |= contact_id == ContactId::SELF;
             }
-            match reactions.iter_mut().find(|r| r.emoji == emoji) {
-                Some(entry) => {
-                    entry.count += 1;
-                    entry.is_from_self |= contact_id == ContactId::SELF;
-                }
-                None => reactions.push(ReactionItem {
-                    emoji: emoji.to_string(),
-                    count: 1,
-                    is_from_self: contact_id == ContactId::SELF,
-                }),
-            }
+            None => reactions.push(ReactionItem {
+                emoji: emoji.to_string(),
+                count: 1,
+                is_from_self: contact_id == ContactId::SELF,
+            }),
         }
     }
 
@@ -317,7 +317,7 @@ impl DcApp {
             let ctx = get_ctx(&accounts, account_id).await?;
             let mut param = EnteredLoginParam {
                 addr,
-                imap: EnteredServerLoginParam {
+                imap: EnteredImapLoginParam {
                     password,
                     ..Default::default()
                 },
@@ -849,6 +849,10 @@ async fn seed_demo_account(ctx: &Context) -> anyhow::Result<()> {
     // Pseudo-configure (core-api.md section 9): offline, but is_configured().
     ctx.set_config(Config::ConfiguredAddr, Some(DEMO_ADDR)).await?;
     ctx.set_config(Config::Displayname, Some("Demo User")).await?;
+    // Since v2.53 ForceEncryption defaults to on; the demo account has no
+    // keys and injects plaintext mail, so relax it here (demo only — real
+    // accounts keep encryption enforced).
+    ctx.set_config_bool(Config::ForceEncryption, false).await?;
 
     // --- Chat 1: Elena --------------------------------------------------
     let elena = Contact::create(ctx, "Elena", "elena@example.com").await?;

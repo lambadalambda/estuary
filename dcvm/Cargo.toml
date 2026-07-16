@@ -16,7 +16,7 @@ cli = ["uniffi/cli"]
 [dependencies]
 # `internals` (an empty/cfg-only feature) is needed because v2.49.0 gates
 # `receive_imf` behind it; we use receive_imf for offline tests + demo data.
-deltachat = { git = "https://github.com/chatmail/core", tag = "v2.49.0", features = ["internals"] }
+deltachat = { git = "https://github.com/chatmail/core", tag = "v2.53.0", features = ["internals"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
 uniffi = { version = "0.32", features = ["tokio"] }

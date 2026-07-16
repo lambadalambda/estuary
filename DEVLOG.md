@@ -263,3 +263,23 @@ checkout in `~/.cargo/git/checkouts/core-eddc226e816ba9ee/dab7ca1`):
 **Verification:** `cargo test` 9/9 green (4 unit + 5 integration, incl. the new overflow
 test). `make check` green end-to-end (cargo test → bindings regen → `swift build`);
 bindings regen produced zero diff, confirming no exported-API change.
+
+## 2026-07-17 — Core upgrade v2.49.0 → v2.53.0 (second-device vs newer iOS)
+
+A real iOS phone's "Add Second Device" QR was rejected as BackupTooNew: current mobile
+clients emit DCBACKUP **5**, v2.49 supports ≤4. v2.53 supports 5.
+
+API fallout fixed in dcvm:
+- `EnteredServerLoginParam` split into `EnteredImapLoginParam`/`EnteredSmtpLoginParam`.
+- `MessageState::OutPreparing` removed.
+- Reactions: one emoji per contact, `Reaction::as_str()` (no more `emojis()` vec).
+- **`ForceEncryption` now defaults ON**: unencrypted sends fail and unencrypted
+  incoming mail is not processed. Correct for real accounts; the offline demo account
+  and test fixtures relax it (`set_config_bool(ForceEncryption, false)`, same as
+  core's own test_utils), since keyless pseudo-configured accounts can't encrypt and
+  inject plaintext mail by design.
+- Dependency tree grew aws-lc-rs/aws-lc-sys (needs `cmake` at build time — present via
+  homebrew here). socket2/netwatch pins survived re-resolution.
+
+Verified: 22 offline tests + both relay tests green on v2.53; swift build clean;
+demo smoke run alive; bundle rebuilt. Real iOS join pending user retry.

@@ -20,7 +20,7 @@ pub fn map_message_state(state: CoreMessageState) -> MessageState {
     use CoreMessageState::*;
     match state {
         Undefined | InFresh | InNoticed | InSeen => MessageState::NoState,
-        OutPreparing | OutDraft | OutPending => MessageState::Pending,
+        OutDraft | OutPending => MessageState::Pending,
         OutFailed => MessageState::Failed,
         OutDelivered => MessageState::Delivered,
         OutMdnRcvd => MessageState::Read,
@@ -159,7 +159,6 @@ mod tests {
         assert_eq!(map_message_state(InFresh), MessageState::NoState);
         assert_eq!(map_message_state(InNoticed), MessageState::NoState);
         assert_eq!(map_message_state(InSeen), MessageState::NoState);
-        assert_eq!(map_message_state(OutPreparing), MessageState::Pending);
         assert_eq!(map_message_state(OutDraft), MessageState::Pending);
         assert_eq!(map_message_state(OutPending), MessageState::Pending);
         assert_eq!(map_message_state(OutFailed), MessageState::Failed);

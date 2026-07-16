@@ -188,6 +188,78 @@ final class AppModel {
         }
     }
 
+    // MARK: Account management
+
+    /// Configured accounts, for the account menu.
+    var configuredAccounts: [AccountInfo] {
+        accounts.filter(\.isConfigured)
+    }
+
+    var currentAccount: AccountInfo? {
+        accounts.first { $0.id == selectedAccountId }
+    }
+
+    /// Whether onboarding was entered from a working session ("Add Account")
+    /// and can simply be left again.
+    var canReturnToMain: Bool {
+        screen == .onboarding && currentAccount?.isConfigured == true
+    }
+
+    func switchAccount(to id: UInt32) async {
+        guard id != selectedAccountId else { return }
+        do {
+            try await service.selectAccount(id: id)
+            selectedAccountId = id
+            selectedChatId = nil
+            messages = []
+            await reloadChats()
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    /// Opens onboarding to add another profile; the current session stays
+    /// intact and can be returned to.
+    func beginAddAccount() {
+        loginError = nil
+        screen = .onboarding
+    }
+
+    func returnToMain() {
+        guard currentAccount?.isConfigured == true else { return }
+        loginError = nil
+        screen = .main
+    }
+
+    /// Removes the current account and its data, then falls back to the next
+    /// configured account or onboarding.
+    func removeCurrentAccount() async {
+        guard let id = selectedAccountId else { return }
+        do {
+            try await service.removeAccount(id: id)
+            accounts = try await service.accounts()
+            selectedChatId = nil
+            messages = []
+            chats = []
+            if let next = await service.selectedAccount(),
+               accounts.contains(where: { $0.id == next && $0.isConfigured }) {
+                selectedAccountId = next
+                await reloadChats()
+                screen = .main
+            } else if let next = accounts.first(where: \.isConfigured) {
+                try await service.selectAccount(id: next.id)
+                selectedAccountId = next.id
+                await reloadChats()
+                screen = .main
+            } else {
+                selectedAccountId = nil
+                screen = .onboarding
+            }
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
     // MARK: Main-screen actions
 
     func reloadChats() async {

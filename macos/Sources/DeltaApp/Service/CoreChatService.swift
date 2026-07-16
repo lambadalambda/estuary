@@ -67,6 +67,11 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
+    func removeAccount(id: UInt32) async throws {
+        do { try await app().removeAccount(id: id) }
+        catch { throw mapError(error) }
+    }
+
     func selectAccount(id: UInt32) async throws {
         do { try await app().selectAccount(id: id) }
         catch { throw mapError(error) }

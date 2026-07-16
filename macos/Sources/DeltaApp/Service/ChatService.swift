@@ -102,6 +102,8 @@ protocol ChatService: Sendable {
 
     func accounts() async throws -> [AccountInfo]
     func addAccount() async throws -> UInt32
+    /// Removes the account and deletes its local data.
+    func removeAccount(id: UInt32) async throws
     func selectAccount(id: UInt32) async throws
     func selectedAccount() async -> UInt32?
     /// Progress arrives via `.configureProgress` events (permille 0 = error, 1000 = done).

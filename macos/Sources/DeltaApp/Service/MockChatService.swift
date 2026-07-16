@@ -51,6 +51,21 @@ actor MockChatService: ChatService {
         return id
     }
 
+    func removeAccount(id: UInt32) throws {
+        guard let account = accountsById.removeValue(forKey: id) else {
+            throw ServiceError.core(msg: "no such account: \(id)")
+        }
+        _ = account
+        for chat in chatsByAccount.removeValue(forKey: id) ?? [] {
+            messagesByChat.removeValue(forKey: chat.id)
+            echoChats.remove(chat.id)
+        }
+        if selected == id {
+            selected = accountsById.keys.sorted().first
+        }
+        emit(0, .accountsChanged)
+    }
+
     func selectAccount(id: UInt32) throws {
         guard accountsById[id] != nil else {
             throw ServiceError.core(msg: "no such account: \(id)")

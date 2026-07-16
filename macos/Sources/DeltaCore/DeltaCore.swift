@@ -636,6 +636,12 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     
     func messages(accountId: UInt32, chatId: UInt32) async throws  -> [MessageItem]
     
+    /**
+     * Removes an account and deletes its data. Core reassigns the selection
+     * (or clears it) — the cache is refreshed afterwards.
+     */
+    func removeAccount(id: UInt32) async throws 
+    
     func selectAccount(id: UInt32) async throws 
     
     func selectedAccount()  -> UInt32?
@@ -958,6 +964,26 @@ open func messages(accountId: UInt32, chatId: UInt32)async throws  -> [MessageIt
             completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
             freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeMessageItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Removes an account and deletes its data. Core reassigns the selection
+     * (or clears it) — the cache is refreshed afterwards.
+     */
+open func removeAccount(id: UInt32)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_remove_account(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(id)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -2194,6 +2220,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_messages() != 20834) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_remove_account() != 23628) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_select_account() != 20991) {

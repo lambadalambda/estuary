@@ -7,6 +7,17 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 20) {
+            if model.canReturnToMain {
+                HStack {
+                    Button {
+                        model.returnToMain()
+                    } label: {
+                        Label("Back to Chats", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.borderless)
+                    Spacer()
+                }
+            }
             Spacer()
 
             Image(systemName: "paperplane.circle.fill")

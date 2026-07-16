@@ -3,6 +3,7 @@ import SwiftUI
 struct MainView: View {
     @Bindable var model: AppModel
     @State private var showNewChat = false
+    @State private var confirmRemoveAccount = false
 
     var body: some View {
         NavigationSplitView {
@@ -14,6 +15,9 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
             .navigationTitle("Chats")
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    accountMenu
+                }
                 ToolbarItem {
                     Button {
                         showNewChat = true
@@ -21,6 +25,16 @@ struct MainView: View {
                         Label("New Chat", systemImage: "square.and.pencil")
                     }
                 }
+            }
+            .confirmationDialog(
+                "Remove \"\(model.currentAccount?.displayName ?? model.currentAccount?.addr ?? "this profile")\"?",
+                isPresented: $confirmRemoveAccount
+            ) {
+                Button("Remove Profile and Delete Its Data", role: .destructive) {
+                    Task { await model.removeCurrentAccount() }
+                }
+            } message: {
+                Text("All chats and keys of this profile are deleted from this Mac. Other devices with the same profile are not affected.")
             }
         } detail: {
             if let chat = model.selectedChat {
@@ -38,6 +52,36 @@ struct MainView: View {
         .sheet(isPresented: $showNewChat) {
             NewChatSheet(model: model)
         }
+    }
+
+    private var accountMenu: some View {
+        Menu {
+            ForEach(model.configuredAccounts) { account in
+                Button {
+                    Task { await model.switchAccount(to: account.id) }
+                } label: {
+                    if account.id == model.selectedAccountId {
+                        Label(accountLabel(account), systemImage: "checkmark")
+                    } else {
+                        Text(accountLabel(account))
+                    }
+                }
+            }
+            Divider()
+            Button("Add Profile…") { model.beginAddAccount() }
+            Button("Remove This Profile…", role: .destructive) {
+                confirmRemoveAccount = true
+            }
+        } label: {
+            Label("Profiles", systemImage: "person.crop.circle")
+        }
+    }
+
+    private func accountLabel(_ account: AccountInfo) -> String {
+        if let name = account.displayName, !name.isEmpty {
+            return "\(name) (\(account.addr ?? "…"))"
+        }
+        return account.addr ?? "Account \(account.id)"
     }
 }
 

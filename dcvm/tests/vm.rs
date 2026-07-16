@@ -612,3 +612,20 @@ async fn message_roundtrip_on_local_relay() {
     nudger.abort();
     assert!(!received.is_outgoing);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn remove_account_deletes_and_updates_selection() {
+    let (app, _collector, _dir) = make_app().await;
+    let first = app.add_demo_account().await.unwrap();
+    // Core's add_account auto-selects the new account.
+    let second = app.add_account().await.unwrap();
+    assert_eq!(app.selected_account(), Some(second));
+
+    // Removing the SELECTED account reassigns the selection.
+    app.remove_account(second).await.expect("remove_account");
+
+    let infos = app.accounts().await.unwrap();
+    assert_eq!(infos.len(), 1);
+    assert_eq!(infos[0].id, first);
+    assert_eq!(app.selected_account(), Some(first));
+}

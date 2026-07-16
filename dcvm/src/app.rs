@@ -156,6 +156,20 @@ impl DcApp {
         .await
     }
 
+    /// Removes an account and deletes its data. Core reassigns the selection
+    /// (or clears it) — the cache is refreshed afterwards.
+    pub async fn remove_account(&self, id: u32) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        let selected = self.selected.clone();
+        on_rt(async move {
+            let mut guard = accounts.write().await;
+            guard.remove_account(id).await?;
+            *selected.lock().unwrap() = guard.get_selected_account_id();
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn select_account(&self, id: u32) -> Result<(), VmError> {
         let accounts = self.accounts.clone();
         let selected = self.selected.clone();

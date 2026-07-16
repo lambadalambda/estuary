@@ -487,6 +487,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
     typealias FfiType = Int64
     typealias SwiftType = Int64
@@ -575,6 +591,11 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol DcAppProtocol: AnyObject, Sendable {
     
+    /**
+     * Accepts a contact request chat.
+     */
+    func acceptChat(accountId: UInt32, chatId: UInt32) async throws 
+    
     func accounts() async throws  -> [AccountInfo]
     
     func addAccount() async throws  -> UInt32
@@ -584,6 +605,16 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      * selects it and returns its id.
      */
     func addDemoAccount() async throws  -> UInt32
+    
+    /**
+     * Archived chats only (the main list never contains them).
+     */
+    func archivedChats(accountId: UInt32) async throws  -> [ChatItem]
+    
+    /**
+     * Blocks a chat (contact request or existing chat).
+     */
+    func blockChat(accountId: UInt32, chatId: UInt32) async throws 
     
     /**
      * Cancels an ongoing configure or backup transfer for this account.
@@ -598,9 +629,24 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func checkQr(accountId: UInt32, qr: String) async throws  -> QrKind
     
     /**
+     * DC connectivity scale: 1000 not connected … 4000 fully connected.
+     */
+    func connectivity(accountId: UInt32) async throws  -> UInt32
+    
+    /**
+     * Address-book contacts (for group creation / new chats).
+     */
+    func contacts(accountId: UInt32) async throws  -> [ContactItem]
+    
+    /**
      * Creates (or finds) the contact and its 1:1 chat; returns the chat id.
      */
     func createChat(accountId: UInt32, email: String, name: String) async throws  -> UInt32
+    
+    /**
+     * Creates a group chat with the given members; returns the chat id.
+     */
+    func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32]) async throws  -> UInt32
     
     /**
      * Creates an account on a chatmail relay (default instance if none given)
@@ -609,6 +655,10 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      * is already running.
      */
     func createInstantAccount(accountId: UInt32, displayName: String, instance: String?) async throws 
+    
+    func deleteMessages(accountId: UInt32, msgIds: [UInt32]) async throws 
+    
+    func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) async throws 
     
     /**
      * Receives the full account (credentials, keys, chats) from another
@@ -628,6 +678,12 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func markNoticed(accountId: UInt32, chatId: UInt32) async throws 
     
     /**
+     * Marks messages seen: sends MDN read receipts and syncs the read state
+     * to other devices (stronger than `mark_noticed`).
+     */
+    func markSeen(accountId: UInt32, msgIds: [UInt32]) async throws 
+    
+    /**
      * Hints that the network may be available again (wake from sleep,
      * connectivity regained): all accounts retry/fetch immediately instead
      * of waiting for the next poll interval.
@@ -642,11 +698,40 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      */
     func removeAccount(id: UInt32) async throws 
     
+    /**
+     * Chat list filtered by a search query (name/address substring).
+     */
+    func searchChats(accountId: UInt32, query: String) async throws  -> [ChatItem]
+    
+    /**
+     * Global full-text message search, newest last, capped at 100 hits.
+     */
+    func searchMessages(accountId: UInt32, query: String) async throws  -> [MessageItem]
+    
     func selectAccount(id: UInt32) async throws 
     
     func selectedAccount()  -> UInt32?
     
+    /**
+     * Sends text and/or a file attachment; `quoted_msg_id` makes it a reply.
+     */
+    func sendMessage(accountId: UInt32, chatId: UInt32, text: String?, filePath: String?, quotedMsgId: UInt32?) async throws  -> UInt32
+    
+    /**
+     * Sets the own reaction on a message; an empty string clears it.
+     */
+    func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) async throws 
+    
     func sendText(accountId: UInt32, chatId: UInt32, text: String) async throws  -> UInt32
+    
+    /**
+     * Sets or clears the self-avatar (synced to other devices and contacts).
+     */
+    func setAvatar(accountId: UInt32, path: String?) async throws 
+    
+    func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws 
+    
+    func setDisplayName(accountId: UInt32, name: String) async throws 
     
     func startIo() async throws 
     
@@ -725,6 +810,25 @@ public convenience init(dataDir: String, listener: EventListener)async throws  {
     
 
     
+    /**
+     * Accepts a contact request chat.
+     */
+open func acceptChat(accountId: UInt32, chatId: UInt32)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_accept_chat(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 open func accounts()async throws  -> [AccountInfo]  {
     return
         try  await uniffiRustCallAsync(
@@ -773,6 +877,44 @@ open func addDemoAccount()async throws  -> UInt32  {
             completeFunc: ffi_dcvm_rust_future_complete_u32,
             freeFunc: ffi_dcvm_rust_future_free_u32,
             liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Archived chats only (the main list never contains them).
+     */
+open func archivedChats(accountId: UInt32)async throws  -> [ChatItem]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_archived_chats(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeChatItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Blocks a chat (contact request or existing chat).
+     */
+open func blockChat(accountId: UInt32, chatId: UInt32)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_block_chat(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -832,6 +974,44 @@ open func checkQr(accountId: UInt32, qr: String)async throws  -> QrKind  {
 }
     
     /**
+     * DC connectivity scale: 1000 not connected … 4000 fully connected.
+     */
+open func connectivity(accountId: UInt32)async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_connectivity(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_u32,
+            completeFunc: ffi_dcvm_rust_future_complete_u32,
+            freeFunc: ffi_dcvm_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Address-book contacts (for group creation / new chats).
+     */
+open func contacts(accountId: UInt32)async throws  -> [ContactItem]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_contacts(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeContactItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
      * Creates (or finds) the contact and its 1:1 chat; returns the chat id.
      */
 open func createChat(accountId: UInt32, email: String, name: String)async throws  -> UInt32  {
@@ -840,6 +1020,25 @@ open func createChat(accountId: UInt32, email: String, name: String)async throws
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_create_chat(
                         self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(email),FfiConverterString.lower(name)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_u32,
+            completeFunc: ffi_dcvm_rust_future_complete_u32,
+            freeFunc: ffi_dcvm_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Creates a group chat with the given members; returns the chat id.
+     */
+open func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32])async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_create_group(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(name),FfiConverterSequenceUInt32.lower(memberContactIds)
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_u32,
@@ -862,6 +1061,38 @@ open func createInstantAccount(accountId: UInt32, displayName: String, instance:
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_create_instant_account(
                         self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(displayName),FfiConverterOptionString.lower(instance)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+open func deleteMessages(accountId: UInt32, msgIds: [UInt32])async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_delete_messages(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterSequenceUInt32.lower(msgIds)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+open func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_forward_messages(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterSequenceUInt32.lower(msgIds),FfiConverterUInt32.lower(chatId)
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_void,
@@ -932,6 +1163,26 @@ open func markNoticed(accountId: UInt32, chatId: UInt32)async throws   {
 }
     
     /**
+     * Marks messages seen: sends MDN read receipts and syncs the read state
+     * to other devices (stronger than `mark_noticed`).
+     */
+open func markSeen(accountId: UInt32, msgIds: [UInt32])async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_mark_seen(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterSequenceUInt32.lower(msgIds)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
      * Hints that the network may be available again (wake from sleep,
      * connectivity regained): all accounts retry/fetch immediately instead
      * of waiting for the next poll interval.
@@ -988,6 +1239,44 @@ open func removeAccount(id: UInt32)async throws   {
         )
 }
     
+    /**
+     * Chat list filtered by a search query (name/address substring).
+     */
+open func searchChats(accountId: UInt32, query: String)async throws  -> [ChatItem]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_search_chats(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(query)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeChatItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Global full-text message search, newest last, capped at 100 hits.
+     */
+open func searchMessages(accountId: UInt32, query: String)async throws  -> [MessageItem]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_search_messages(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(query)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeMessageItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 open func selectAccount(id: UInt32)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -1013,6 +1302,44 @@ open func selectedAccount() -> UInt32?  {
 })
 }
     
+    /**
+     * Sends text and/or a file attachment; `quoted_msg_id` makes it a reply.
+     */
+open func sendMessage(accountId: UInt32, chatId: UInt32, text: String?, filePath: String?, quotedMsgId: UInt32?)async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_send_message(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterOptionString.lower(text),FfiConverterOptionString.lower(filePath),FfiConverterOptionUInt32.lower(quotedMsgId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_u32,
+            completeFunc: ffi_dcvm_rust_future_complete_u32,
+            freeFunc: ffi_dcvm_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Sets the own reaction on a message; an empty string clears it.
+     */
+open func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_send_reaction(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(msgId),FfiConverterString.lower(emoji)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 open func sendText(accountId: UInt32, chatId: UInt32, text: String)async throws  -> UInt32  {
     return
         try  await uniffiRustCallAsync(
@@ -1025,6 +1352,57 @@ open func sendText(accountId: UInt32, chatId: UInt32, text: String)async throws 
             completeFunc: ffi_dcvm_rust_future_complete_u32,
             freeFunc: ffi_dcvm_rust_future_free_u32,
             liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Sets or clears the self-avatar (synced to other devices and contacts).
+     */
+open func setAvatar(accountId: UInt32, path: String?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_set_avatar(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterOptionString.lower(path)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+open func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_set_chat_archived(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterBool.lower(archived)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+open func setDisplayName(accountId: UInt32, name: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_set_display_name(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(name)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -1325,14 +1703,22 @@ public struct AccountInfo: Equatable, Hashable {
     public let addr: String?
     public let displayName: String?
     public let isConfigured: Bool
+    /**
+     * Self-avatar image path, if set.
+     */
+    public let avatar: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: UInt32, addr: String?, displayName: String?, isConfigured: Bool) {
+    public init(id: UInt32, addr: String?, displayName: String?, isConfigured: Bool, 
+        /**
+         * Self-avatar image path, if set.
+         */avatar: String?) {
         self.id = id
         self.addr = addr
         self.displayName = displayName
         self.isConfigured = isConfigured
+        self.avatar = avatar
     }
 
     
@@ -1354,7 +1740,8 @@ public struct FfiConverterTypeAccountInfo: FfiConverterRustBuffer {
                 id: FfiConverterUInt32.read(from: &buf), 
                 addr: FfiConverterOptionString.read(from: &buf), 
                 displayName: FfiConverterOptionString.read(from: &buf), 
-                isConfigured: FfiConverterBool.read(from: &buf)
+                isConfigured: FfiConverterBool.read(from: &buf), 
+                avatar: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1363,6 +1750,7 @@ public struct FfiConverterTypeAccountInfo: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.addr, into: &buf)
         FfiConverterOptionString.write(value.displayName, into: &buf)
         FfiConverterBool.write(value.isConfigured, into: &buf)
+        FfiConverterOptionString.write(value.avatar, into: &buf)
     }
 }
 
@@ -1402,6 +1790,13 @@ public struct ChatItem: Equatable, Hashable {
      * `#rrggbb`
      */
     public let color: String
+    public let isGroup: Bool
+    public let isArchived: Bool
+    public let isDeviceTalk: Bool
+    /**
+     * Chat profile image path, if any.
+     */
+    public let avatar: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1411,7 +1806,10 @@ public struct ChatItem: Equatable, Hashable {
          */timestamp: Int64, freshCount: UInt32, isSelfTalk: Bool, isPinned: Bool, isMuted: Bool, isContactRequest: Bool, 
         /**
          * `#rrggbb`
-         */color: String) {
+         */color: String, isGroup: Bool, isArchived: Bool, isDeviceTalk: Bool, 
+        /**
+         * Chat profile image path, if any.
+         */avatar: String?) {
         self.id = id
         self.name = name
         self.preview = preview
@@ -1422,6 +1820,10 @@ public struct ChatItem: Equatable, Hashable {
         self.isMuted = isMuted
         self.isContactRequest = isContactRequest
         self.color = color
+        self.isGroup = isGroup
+        self.isArchived = isArchived
+        self.isDeviceTalk = isDeviceTalk
+        self.avatar = avatar
     }
 
     
@@ -1449,7 +1851,11 @@ public struct FfiConverterTypeChatItem: FfiConverterRustBuffer {
                 isPinned: FfiConverterBool.read(from: &buf), 
                 isMuted: FfiConverterBool.read(from: &buf), 
                 isContactRequest: FfiConverterBool.read(from: &buf), 
-                color: FfiConverterString.read(from: &buf)
+                color: FfiConverterString.read(from: &buf), 
+                isGroup: FfiConverterBool.read(from: &buf), 
+                isArchived: FfiConverterBool.read(from: &buf), 
+                isDeviceTalk: FfiConverterBool.read(from: &buf), 
+                avatar: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1464,6 +1870,10 @@ public struct FfiConverterTypeChatItem: FfiConverterRustBuffer {
         FfiConverterBool.write(value.isMuted, into: &buf)
         FfiConverterBool.write(value.isContactRequest, into: &buf)
         FfiConverterString.write(value.color, into: &buf)
+        FfiConverterBool.write(value.isGroup, into: &buf)
+        FfiConverterBool.write(value.isArchived, into: &buf)
+        FfiConverterBool.write(value.isDeviceTalk, into: &buf)
+        FfiConverterOptionString.write(value.avatar, into: &buf)
     }
 }
 
@@ -1484,6 +1894,85 @@ public func FfiConverterTypeChatItem_lower(_ value: ChatItem) -> RustBuffer {
 
 
 /**
+ * One address-book contact.
+ */
+public struct ContactItem: Equatable, Hashable {
+    public let id: UInt32
+    public let displayName: String
+    public let addr: String
+    /**
+     * `#rrggbb`
+     */
+    public let color: String
+    public let avatar: String?
+    public let isVerified: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: UInt32, displayName: String, addr: String, 
+        /**
+         * `#rrggbb`
+         */color: String, avatar: String?, isVerified: Bool) {
+        self.id = id
+        self.displayName = displayName
+        self.addr = addr
+        self.color = color
+        self.avatar = avatar
+        self.isVerified = isVerified
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ContactItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeContactItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ContactItem {
+        return
+            try ContactItem(
+                id: FfiConverterUInt32.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf), 
+                addr: FfiConverterString.read(from: &buf), 
+                color: FfiConverterString.read(from: &buf), 
+                avatar: FfiConverterOptionString.read(from: &buf), 
+                isVerified: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ContactItem, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.id, into: &buf)
+        FfiConverterString.write(value.displayName, into: &buf)
+        FfiConverterString.write(value.addr, into: &buf)
+        FfiConverterString.write(value.color, into: &buf)
+        FfiConverterOptionString.write(value.avatar, into: &buf)
+        FfiConverterBool.write(value.isVerified, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeContactItem_lift(_ buf: RustBuffer) throws -> ContactItem {
+    return try FfiConverterTypeContactItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeContactItem_lower(_ value: ContactItem) -> RustBuffer {
+    return FfiConverterTypeContactItem.lower(value)
+}
+
+
+/**
  * One message bubble.
  */
 public struct MessageItem: Equatable, Hashable {
@@ -1499,13 +1988,46 @@ public struct MessageItem: Equatable, Hashable {
      */
     public let senderColor: String
     public let state: MessageState
+    public let kind: MessageKind
+    /**
+     * Absolute path into the account's blobdir.
+     */
+    public let file: String?
+    public let fileName: String?
+    /**
+     * Bytes; 0 if no file.
+     */
+    public let fileSize: UInt64
+    /**
+     * Pixels; 0 if not applicable.
+     */
+    public let width: UInt32
+    public let height: UInt32
+    /**
+     * Milliseconds; 0 if not applicable.
+     */
+    public let durationMs: UInt32
+    public let quote: QuoteInfo?
+    public let reactions: [ReactionItem]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(id: UInt32, chatId: UInt32, text: String, timestamp: Int64, isOutgoing: Bool, isInfo: Bool, senderName: String, 
         /**
          * `#rrggbb`
-         */senderColor: String, state: MessageState) {
+         */senderColor: String, state: MessageState, kind: MessageKind, 
+        /**
+         * Absolute path into the account's blobdir.
+         */file: String?, fileName: String?, 
+        /**
+         * Bytes; 0 if no file.
+         */fileSize: UInt64, 
+        /**
+         * Pixels; 0 if not applicable.
+         */width: UInt32, height: UInt32, 
+        /**
+         * Milliseconds; 0 if not applicable.
+         */durationMs: UInt32, quote: QuoteInfo?, reactions: [ReactionItem]) {
         self.id = id
         self.chatId = chatId
         self.text = text
@@ -1515,6 +2037,15 @@ public struct MessageItem: Equatable, Hashable {
         self.senderName = senderName
         self.senderColor = senderColor
         self.state = state
+        self.kind = kind
+        self.file = file
+        self.fileName = fileName
+        self.fileSize = fileSize
+        self.width = width
+        self.height = height
+        self.durationMs = durationMs
+        self.quote = quote
+        self.reactions = reactions
     }
 
     
@@ -1541,7 +2072,16 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
                 isInfo: FfiConverterBool.read(from: &buf), 
                 senderName: FfiConverterString.read(from: &buf), 
                 senderColor: FfiConverterString.read(from: &buf), 
-                state: FfiConverterTypeMessageState.read(from: &buf)
+                state: FfiConverterTypeMessageState.read(from: &buf), 
+                kind: FfiConverterTypeMessageKind.read(from: &buf), 
+                file: FfiConverterOptionString.read(from: &buf), 
+                fileName: FfiConverterOptionString.read(from: &buf), 
+                fileSize: FfiConverterUInt64.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                durationMs: FfiConverterUInt32.read(from: &buf), 
+                quote: FfiConverterOptionTypeQuoteInfo.read(from: &buf), 
+                reactions: FfiConverterSequenceTypeReactionItem.read(from: &buf)
         )
     }
 
@@ -1555,6 +2095,15 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
         FfiConverterString.write(value.senderName, into: &buf)
         FfiConverterString.write(value.senderColor, into: &buf)
         FfiConverterTypeMessageState.write(value.state, into: &buf)
+        FfiConverterTypeMessageKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.file, into: &buf)
+        FfiConverterOptionString.write(value.fileName, into: &buf)
+        FfiConverterUInt64.write(value.fileSize, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterUInt32.write(value.durationMs, into: &buf)
+        FfiConverterOptionTypeQuoteInfo.write(value.quote, into: &buf)
+        FfiConverterSequenceTypeReactionItem.write(value.reactions, into: &buf)
     }
 }
 
@@ -1572,6 +2121,266 @@ public func FfiConverterTypeMessageItem_lift(_ buf: RustBuffer) throws -> Messag
 public func FfiConverterTypeMessageItem_lower(_ value: MessageItem) -> RustBuffer {
     return FfiConverterTypeMessageItem.lower(value)
 }
+
+
+/**
+ * The quoted message shown above a reply bubble.
+ */
+public struct QuoteInfo: Equatable, Hashable {
+    public let text: String
+    public let senderName: String
+    /**
+     * `#rrggbb`
+     */
+    public let senderColor: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, senderName: String, 
+        /**
+         * `#rrggbb`
+         */senderColor: String) {
+        self.text = text
+        self.senderName = senderName
+        self.senderColor = senderColor
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuoteInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuoteInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuoteInfo {
+        return
+            try QuoteInfo(
+                text: FfiConverterString.read(from: &buf), 
+                senderName: FfiConverterString.read(from: &buf), 
+                senderColor: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuoteInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterString.write(value.senderName, into: &buf)
+        FfiConverterString.write(value.senderColor, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuoteInfo_lift(_ buf: RustBuffer) throws -> QuoteInfo {
+    return try FfiConverterTypeQuoteInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuoteInfo_lower(_ value: QuoteInfo) -> RustBuffer {
+    return FfiConverterTypeQuoteInfo.lower(value)
+}
+
+
+/**
+ * One aggregated reaction on a message.
+ */
+public struct ReactionItem: Equatable, Hashable {
+    public let emoji: String
+    public let count: UInt32
+    public let isFromSelf: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(emoji: String, count: UInt32, isFromSelf: Bool) {
+        self.emoji = emoji
+        self.count = count
+        self.isFromSelf = isFromSelf
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ReactionItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReactionItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReactionItem {
+        return
+            try ReactionItem(
+                emoji: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf), 
+                isFromSelf: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReactionItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.emoji, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+        FfiConverterBool.write(value.isFromSelf, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReactionItem_lift(_ buf: RustBuffer) throws -> ReactionItem {
+    return try FfiConverterTypeReactionItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReactionItem_lower(_ value: ReactionItem) -> RustBuffer {
+    return FfiConverterTypeReactionItem.lower(value)
+}
+
+
+/**
+ * Message content kind (core `Viewtype`).
+ */
+
+public enum MessageKind: Equatable, Hashable {
+    
+    case text
+    case image
+    case gif
+    case sticker
+    case audio
+    case voice
+    case video
+    case webxdc
+    case file
+    case vcard
+    case unknown
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MessageKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMessageKind: FfiConverterRustBuffer {
+    typealias SwiftType = MessageKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MessageKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .text
+        
+        case 2: return .image
+        
+        case 3: return .gif
+        
+        case 4: return .sticker
+        
+        case 5: return .audio
+        
+        case 6: return .voice
+        
+        case 7: return .video
+        
+        case 8: return .webxdc
+        
+        case 9: return .file
+        
+        case 10: return .vcard
+        
+        case 11: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MessageKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .text:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .image:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .gif:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .sticker:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .audio:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .voice:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .video:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .webxdc:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .file:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .vcard:
+            writeInt(&buf, Int32(10))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(11))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMessageKind_lift(_ buf: RustBuffer) throws -> MessageKind {
+    return try FfiConverterTypeMessageKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMessageKind_lower(_ value: MessageKind) -> RustBuffer {
+    return FfiConverterTypeMessageKind.lower(value)
+}
+
 
 
 /**
@@ -2035,6 +2844,55 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeQuoteInfo: FfiConverterRustBuffer {
+    typealias SwiftType = QuoteInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeQuoteInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeQuoteInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt32]
+
+    public static func write(_ value: [UInt32], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterUInt32.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UInt32] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UInt32]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt32.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeAccountInfo: FfiConverterRustBuffer {
     typealias SwiftType = [AccountInfo]
 
@@ -2085,6 +2943,31 @@ fileprivate struct FfiConverterSequenceTypeChatItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeContactItem: FfiConverterRustBuffer {
+    typealias SwiftType = [ContactItem]
+
+    public static func write(_ value: [ContactItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeContactItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ContactItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ContactItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeContactItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMessageItem: FfiConverterRustBuffer {
     typealias SwiftType = [MessageItem]
 
@@ -2102,6 +2985,31 @@ fileprivate struct FfiConverterSequenceTypeMessageItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMessageItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeReactionItem: FfiConverterRustBuffer {
+    typealias SwiftType = [ReactionItem]
+
+    public static func write(_ value: [ReactionItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeReactionItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ReactionItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ReactionItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeReactionItem.read(from: &buf))
         }
         return seq
     }
@@ -2183,6 +3091,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_func_default_instance_url() != 15908) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_accept_chat() != 53370) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_accounts() != 61932) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2190,6 +3101,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_add_demo_account() != 25647) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_archived_chats() != 48506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_block_chat() != 8862) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_cancel_ongoing() != 30716) {
@@ -2201,10 +3118,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_check_qr() != 22244) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_connectivity() != 55851) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_contacts() != 21778) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_create_chat() != 39980) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_create_group() != 31699) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_create_instant_account() != 22624) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_delete_messages() != 21941) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_forward_messages() != 51015) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_join_second_device() != 39313) {
@@ -2216,6 +3148,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_mark_noticed() != 19346) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_mark_seen() != 52541) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_maybe_network() != 54996) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2225,13 +3160,34 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_remove_account() != 23628) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_search_chats() != 24554) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_search_messages() != 12636) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_select_account() != 20991) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_selected_account() != 28207) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_send_message() != 22592) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_send_reaction() != 58055) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_send_text() != 41005) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_set_avatar() != 8302) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_set_chat_archived() != 62327) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_set_display_name() != 55875) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_start_io() != 46072) {

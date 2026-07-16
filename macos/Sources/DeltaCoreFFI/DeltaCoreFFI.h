@@ -274,6 +274,11 @@ void uniffi_dcvm_fn_free_dcapp(uint64_t handle, RustCallStatus *_Nonnull out_sta
 uint64_t uniffi_dcvm_fn_constructor_dcapp_new(RustBuffer data_dir, uint64_t listener
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ACCEPT_CHAT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ACCEPT_CHAT
+uint64_t uniffi_dcvm_fn_method_dcapp_accept_chat(uint64_t ptr, uint32_t account_id, uint32_t chat_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ACCOUNTS
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ACCOUNTS
 uint64_t uniffi_dcvm_fn_method_dcapp_accounts(uint64_t ptr
@@ -287,6 +292,16 @@ uint64_t uniffi_dcvm_fn_method_dcapp_add_account(uint64_t ptr
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ADD_DEMO_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ADD_DEMO_ACCOUNT
 uint64_t uniffi_dcvm_fn_method_dcapp_add_demo_account(uint64_t ptr
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ARCHIVED_CHATS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_ARCHIVED_CHATS
+uint64_t uniffi_dcvm_fn_method_dcapp_archived_chats(uint64_t ptr, uint32_t account_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_BLOCK_CHAT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_BLOCK_CHAT
+uint64_t uniffi_dcvm_fn_method_dcapp_block_chat(uint64_t ptr, uint32_t account_id, uint32_t chat_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CANCEL_ONGOING
@@ -304,14 +319,39 @@ uint64_t uniffi_dcvm_fn_method_dcapp_chat_list(uint64_t ptr, uint32_t account_id
 uint64_t uniffi_dcvm_fn_method_dcapp_check_qr(uint64_t ptr, uint32_t account_id, RustBuffer qr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CONNECTIVITY
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CONNECTIVITY
+uint64_t uniffi_dcvm_fn_method_dcapp_connectivity(uint64_t ptr, uint32_t account_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CONTACTS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CONTACTS
+uint64_t uniffi_dcvm_fn_method_dcapp_contacts(uint64_t ptr, uint32_t account_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_CHAT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_CHAT
 uint64_t uniffi_dcvm_fn_method_dcapp_create_chat(uint64_t ptr, uint32_t account_id, RustBuffer email, RustBuffer name
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_GROUP
+uint64_t uniffi_dcvm_fn_method_dcapp_create_group(uint64_t ptr, uint32_t account_id, RustBuffer name, RustBuffer member_contact_ids
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
 uint64_t uniffi_dcvm_fn_method_dcapp_create_instant_account(uint64_t ptr, uint32_t account_id, RustBuffer display_name, RustBuffer instance
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_DELETE_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_DELETE_MESSAGES
+uint64_t uniffi_dcvm_fn_method_dcapp_delete_messages(uint64_t ptr, uint32_t account_id, RustBuffer msg_ids
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_FORWARD_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_FORWARD_MESSAGES
+uint64_t uniffi_dcvm_fn_method_dcapp_forward_messages(uint64_t ptr, uint32_t account_id, RustBuffer msg_ids, uint32_t chat_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_JOIN_SECOND_DEVICE
@@ -329,6 +369,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_login(uint64_t ptr, uint32_t account_id, Ru
 uint64_t uniffi_dcvm_fn_method_dcapp_mark_noticed(uint64_t ptr, uint32_t account_id, uint32_t chat_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MARK_SEEN
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MARK_SEEN
+uint64_t uniffi_dcvm_fn_method_dcapp_mark_seen(uint64_t ptr, uint32_t account_id, RustBuffer msg_ids
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MAYBE_NETWORK
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MAYBE_NETWORK
 uint64_t uniffi_dcvm_fn_method_dcapp_maybe_network(uint64_t ptr
@@ -344,6 +389,16 @@ uint64_t uniffi_dcvm_fn_method_dcapp_messages(uint64_t ptr, uint32_t account_id,
 uint64_t uniffi_dcvm_fn_method_dcapp_remove_account(uint64_t ptr, uint32_t id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_CHATS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_CHATS
+uint64_t uniffi_dcvm_fn_method_dcapp_search_chats(uint64_t ptr, uint32_t account_id, RustBuffer query
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_MESSAGES
+uint64_t uniffi_dcvm_fn_method_dcapp_search_messages(uint64_t ptr, uint32_t account_id, RustBuffer query
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SELECT_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SELECT_ACCOUNT
 uint64_t uniffi_dcvm_fn_method_dcapp_select_account(uint64_t ptr, uint32_t id
@@ -354,9 +409,34 @@ uint64_t uniffi_dcvm_fn_method_dcapp_select_account(uint64_t ptr, uint32_t id
 RustBuffer uniffi_dcvm_fn_method_dcapp_selected_account(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_MESSAGE
+uint64_t uniffi_dcvm_fn_method_dcapp_send_message(uint64_t ptr, uint32_t account_id, uint32_t chat_id, RustBuffer text, RustBuffer file_path, RustBuffer quoted_msg_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_REACTION
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_REACTION
+uint64_t uniffi_dcvm_fn_method_dcapp_send_reaction(uint64_t ptr, uint32_t account_id, uint32_t msg_id, RustBuffer emoji
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_TEXT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEND_TEXT
 uint64_t uniffi_dcvm_fn_method_dcapp_send_text(uint64_t ptr, uint32_t account_id, uint32_t chat_id, RustBuffer text
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_AVATAR
+uint64_t uniffi_dcvm_fn_method_dcapp_set_avatar(uint64_t ptr, uint32_t account_id, RustBuffer path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_ARCHIVED
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_ARCHIVED
+uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_archived(uint64_t ptr, uint32_t account_id, uint32_t chat_id, int8_t archived
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_DISPLAY_NAME
+uint64_t uniffi_dcvm_fn_method_dcapp_set_display_name(uint64_t ptr, uint32_t account_id, RustBuffer name
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_START_IO
@@ -661,6 +741,12 @@ uint16_t uniffi_dcvm_checksum_func_default_instance_url(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCEPT_CHAT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCEPT_CHAT
+uint16_t uniffi_dcvm_checksum_method_dcapp_accept_chat(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCOUNTS
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ACCOUNTS
 uint16_t uniffi_dcvm_checksum_method_dcapp_accounts(void
@@ -676,6 +762,18 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_add_account(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ADD_DEMO_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ADD_DEMO_ACCOUNT
 uint16_t uniffi_dcvm_checksum_method_dcapp_add_demo_account(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ARCHIVED_CHATS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_ARCHIVED_CHATS
+uint16_t uniffi_dcvm_checksum_method_dcapp_archived_chats(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_BLOCK_CHAT
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_BLOCK_CHAT
+uint16_t uniffi_dcvm_checksum_method_dcapp_block_chat(void
     
 );
 #endif
@@ -697,15 +795,45 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_check_qr(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CONNECTIVITY
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CONNECTIVITY
+uint16_t uniffi_dcvm_checksum_method_dcapp_connectivity(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CONTACTS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CONTACTS
+uint16_t uniffi_dcvm_checksum_method_dcapp_contacts(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_CHAT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_CHAT
 uint16_t uniffi_dcvm_checksum_method_dcapp_create_chat(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_GROUP
+uint16_t uniffi_dcvm_checksum_method_dcapp_create_group(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CREATE_INSTANT_ACCOUNT
 uint16_t uniffi_dcvm_checksum_method_dcapp_create_instant_account(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_DELETE_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_DELETE_MESSAGES
+uint16_t uniffi_dcvm_checksum_method_dcapp_delete_messages(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_FORWARD_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_FORWARD_MESSAGES
+uint16_t uniffi_dcvm_checksum_method_dcapp_forward_messages(void
     
 );
 #endif
@@ -727,6 +855,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_mark_noticed(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MARK_SEEN
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MARK_SEEN
+uint16_t uniffi_dcvm_checksum_method_dcapp_mark_seen(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MAYBE_NETWORK
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_MAYBE_NETWORK
 uint16_t uniffi_dcvm_checksum_method_dcapp_maybe_network(void
@@ -745,6 +879,18 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_remove_account(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_CHATS
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_CHATS
+uint16_t uniffi_dcvm_checksum_method_dcapp_search_chats(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_MESSAGES
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_MESSAGES
+uint16_t uniffi_dcvm_checksum_method_dcapp_search_messages(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SELECT_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SELECT_ACCOUNT
 uint16_t uniffi_dcvm_checksum_method_dcapp_select_account(void
@@ -757,9 +903,39 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_selected_account(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_MESSAGE
+uint16_t uniffi_dcvm_checksum_method_dcapp_send_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_REACTION
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_REACTION
+uint16_t uniffi_dcvm_checksum_method_dcapp_send_reaction(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_TEXT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEND_TEXT
 uint16_t uniffi_dcvm_checksum_method_dcapp_send_text(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_AVATAR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_AVATAR
+uint16_t uniffi_dcvm_checksum_method_dcapp_set_avatar(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_ARCHIVED
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_ARCHIVED
+uint16_t uniffi_dcvm_checksum_method_dcapp_set_chat_archived(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_DISPLAY_NAME
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_DISPLAY_NAME
+uint16_t uniffi_dcvm_checksum_method_dcapp_set_display_name(void
     
 );
 #endif

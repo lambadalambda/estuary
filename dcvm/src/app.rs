@@ -10,16 +10,24 @@ use deltachat::chat::{
 };
 use deltachat::chatlist::Chatlist;
 use deltachat::config::Config;
+use deltachat::constants::{Chattype, DC_GCL_ADDRESS, DC_GCL_ARCHIVED_ONLY};
 use deltachat::contact::{Contact, ContactId};
 use deltachat::context::Context;
 use deltachat::login_param::{EnteredLoginParam, EnteredServerLoginParam};
-use deltachat::message::Message;
+use deltachat::message::{self, Message, MsgId, Viewtype};
+use deltachat::reaction;
 use deltachat::receive_imf::receive_imf;
 use deltachat::EventType;
 use tokio::sync::RwLock;
 
-use crate::mapping::{color_to_hex, map_event, map_message_state, map_qr, summary_preview};
-use crate::types::{AccountInfo, ChatItem, MessageItem, QrKind, VmError, VmEvent};
+use crate::mapping::{
+    color_to_hex, map_event, map_message_state, map_qr, map_viewtype, summary_preview,
+    viewtype_for_path,
+};
+use crate::types::{
+    AccountInfo, ChatItem, ContactItem, MessageItem, QrKind, QuoteInfo, ReactionItem, VmError,
+    VmEvent,
+};
 
 /// Default chatmail relay used for instant account creation. A client-side
 /// choice (core has no default); same instance the official clients use.
@@ -72,6 +80,115 @@ async fn get_ctx(accounts: &RwLock<Accounts>, account_id: u32) -> Result<Context
         .ok_or_else(|| VmError::Core {
             msg: format!("no such account: {account_id}"),
         })
+}
+
+fn path_string(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// Loads chat rows for the given chatlist flags / search query.
+async fn chat_items(
+    ctx: &Context,
+    listflags: usize,
+    query: Option<&str>,
+) -> Result<Vec<ChatItem>, VmError> {
+    let chatlist = Chatlist::try_load(ctx, listflags, query, None).await?;
+    let mut out = Vec::with_capacity(chatlist.len());
+    for index in 0..chatlist.len() {
+        let chat_id = chatlist.get_chat_id(index)?;
+        if chat_id.is_special() {
+            continue; // e.g. the "archived chats" pseudo-row
+        }
+        let chat = Chat::load_from_db(ctx, chat_id).await?;
+        let summary = chatlist.get_summary(ctx, index, Some(&chat)).await?;
+        out.push(ChatItem {
+            id: chat_id.to_u32(),
+            name: chat.get_name().to_string(),
+            preview: summary_preview(summary.prefix.as_ref(), &summary.text),
+            timestamp: summary.timestamp,
+            fresh_count: chat_id.get_fresh_msg_cnt(ctx).await? as u32,
+            is_self_talk: chat.is_self_talk(),
+            is_pinned: chat.visibility == ChatVisibility::Pinned,
+            is_muted: chat.is_muted(),
+            is_contact_request: chat.is_contact_request(),
+            color: color_to_hex(chat.get_color(ctx).await?),
+            is_group: chat.typ != Chattype::Single,
+            is_archived: chat.visibility == ChatVisibility::Archived,
+            is_device_talk: chat.is_device_talk(),
+            avatar: chat.get_profile_image(ctx).await?.map(path_string),
+        });
+    }
+    Ok(out)
+}
+
+/// Full message row incl. media metadata, quote, and aggregated reactions.
+async fn message_item(ctx: &Context, msg: &Message) -> Result<MessageItem, VmError> {
+    let from_id = msg.get_from_id();
+    let sender = Contact::get_by_id(ctx, from_id).await?;
+
+    let quote = match msg.quoted_text() {
+        None => None,
+        Some(text) => {
+            let (sender_name, sender_color) = match msg.quoted_message(ctx).await? {
+                Some(quoted) => {
+                    let contact = Contact::get_by_id(ctx, quoted.get_from_id()).await?;
+                    (
+                        contact.get_display_name().to_string(),
+                        color_to_hex(contact.get_color()),
+                    )
+                }
+                None => (String::new(), "#999999".to_string()),
+            };
+            Some(QuoteInfo {
+                text,
+                sender_name,
+                sender_color,
+            })
+        }
+    };
+
+    let mut reactions: Vec<ReactionItem> = Vec::new();
+    let msg_reactions = reaction::get_msg_reactions(ctx, msg.get_id()).await?;
+    for contact_id in msg_reactions.contacts() {
+        let contact_reaction = msg_reactions.get(contact_id);
+        for emoji in contact_reaction.emojis() {
+            if emoji.is_empty() {
+                continue;
+            }
+            match reactions.iter_mut().find(|r| r.emoji == emoji) {
+                Some(entry) => {
+                    entry.count += 1;
+                    entry.is_from_self |= contact_id == ContactId::SELF;
+                }
+                None => reactions.push(ReactionItem {
+                    emoji: emoji.to_string(),
+                    count: 1,
+                    is_from_self: contact_id == ContactId::SELF,
+                }),
+            }
+        }
+    }
+
+    Ok(MessageItem {
+        id: msg.get_id().to_u32(),
+        chat_id: msg.get_chat_id().to_u32(),
+        text: msg.get_text(),
+        timestamp: msg.get_timestamp(),
+        is_outgoing: from_id == ContactId::SELF,
+        is_info: msg.is_info(),
+        sender_name: sender.get_display_name().to_string(),
+        sender_color: color_to_hex(sender.get_color()),
+        state: map_message_state(msg.get_state()),
+        kind: map_viewtype(msg.get_viewtype()),
+        file: msg.get_file(ctx).map(path_string),
+        file_name: msg.get_filename(),
+        file_size: msg.get_filebytes(ctx).await?.unwrap_or(0),
+        width: msg.get_width().max(0) as u32,
+        height: msg.get_height().max(0) as u32,
+        duration_ms: msg.get_duration().max(0) as u32,
+        quote,
+        reactions,
+    })
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -137,6 +254,7 @@ impl DcApp {
                     addr,
                     display_name: ctx.get_config(Config::Displayname).await?,
                     is_configured: ctx.is_configured().await?,
+                    avatar: ctx.get_config(Config::Selfavatar).await?,
                 });
             }
             Ok(out)
@@ -233,27 +351,50 @@ impl DcApp {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
-            let chatlist = Chatlist::try_load(&ctx, 0, None, None).await?;
-            let mut out = Vec::with_capacity(chatlist.len());
-            for index in 0..chatlist.len() {
-                let chat_id = chatlist.get_chat_id(index)?;
-                if chat_id.is_special() {
-                    continue; // e.g. the "archived chats" pseudo-row
+            chat_items(&ctx, 0, None).await
+        })
+        .await
+    }
+
+    /// Archived chats only (the main list never contains them).
+    pub async fn archived_chats(&self, account_id: u32) -> Result<Vec<ChatItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            chat_items(&ctx, DC_GCL_ARCHIVED_ONLY, None).await
+        })
+        .await
+    }
+
+    /// Chat list filtered by a search query (name/address substring).
+    pub async fn search_chats(
+        &self,
+        account_id: u32,
+        query: String,
+    ) -> Result<Vec<ChatItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            chat_items(&ctx, 0, Some(&query)).await
+        })
+        .await
+    }
+
+    /// Global full-text message search, newest last, capped at 100 hits.
+    pub async fn search_messages(
+        &self,
+        account_id: u32,
+        query: String,
+    ) -> Result<Vec<MessageItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let ids = ctx.search_msgs(None, &query).await?;
+            let mut out = Vec::new();
+            for msg_id in ids.into_iter().rev().take(100).rev() {
+                if let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? {
+                    out.push(message_item(&ctx, &msg).await?);
                 }
-                let chat = Chat::load_from_db(&ctx, chat_id).await?;
-                let summary = chatlist.get_summary(&ctx, index, Some(&chat)).await?;
-                out.push(ChatItem {
-                    id: chat_id.to_u32(),
-                    name: chat.get_name().to_string(),
-                    preview: summary_preview(summary.prefix.as_ref(), &summary.text),
-                    timestamp: summary.timestamp,
-                    fresh_count: chat_id.get_fresh_msg_cnt(&ctx).await? as u32,
-                    is_self_talk: chat.is_self_talk(),
-                    is_pinned: chat.visibility == ChatVisibility::Pinned,
-                    is_muted: chat.is_muted(),
-                    is_contact_request: chat.is_contact_request(),
-                    color: color_to_hex(chat.get_color(&ctx).await?),
-                });
             }
             Ok(out)
         })
@@ -277,19 +418,7 @@ impl DcApp {
                 let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? else {
                     continue;
                 };
-                let from_id = msg.get_from_id();
-                let sender = Contact::get_by_id(&ctx, from_id).await?;
-                out.push(MessageItem {
-                    id: msg_id.to_u32(),
-                    chat_id: msg.get_chat_id().to_u32(),
-                    text: msg.get_text(),
-                    timestamp: msg.get_timestamp(),
-                    is_outgoing: from_id == ContactId::SELF,
-                    is_info: msg.is_info(),
-                    sender_name: sender.get_display_name().to_string(),
-                    sender_color: color_to_hex(sender.get_color()),
-                    state: map_message_state(msg.get_state()),
-                });
+                out.push(message_item(&ctx, &msg).await?);
             }
             Ok(out)
         })
@@ -334,6 +463,222 @@ impl DcApp {
             let contact_id = Contact::create(&ctx, &name, &email).await?;
             let chat_id = ChatId::create_for_contact(&ctx, contact_id).await?;
             Ok(chat_id.to_u32())
+        })
+        .await
+    }
+
+    /// Sends text and/or a file attachment; `quoted_msg_id` makes it a reply.
+    pub async fn send_message(
+        &self,
+        account_id: u32,
+        chat_id: u32,
+        text: Option<String>,
+        file_path: Option<String>,
+        quoted_msg_id: Option<u32>,
+    ) -> Result<u32, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let viewtype = match &file_path {
+                Some(path) => viewtype_for_path(path),
+                None => Viewtype::Text,
+            };
+            let mut msg = Message::new(viewtype);
+            if let Some(text) = text.filter(|t| !t.trim().is_empty()) {
+                msg.set_text(text);
+            }
+            if let Some(path) = &file_path {
+                msg.set_file_and_deduplicate(&ctx, std::path::Path::new(path), None, None)?;
+            }
+            if let Some(quoted_id) = quoted_msg_id {
+                let quoted = Message::load_from_db(&ctx, MsgId::new(quoted_id)).await?;
+                msg.set_quote(&ctx, Some(&quoted)).await?;
+            }
+            let msg_id = chat::send_msg(&ctx, ChatId::new(chat_id), &mut msg).await?;
+            Ok(msg_id.to_u32())
+        })
+        .await
+    }
+
+    /// Sets the own reaction on a message; an empty string clears it.
+    pub async fn send_reaction(
+        &self,
+        account_id: u32,
+        msg_id: u32,
+        emoji: String,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            reaction::send_reaction(&ctx, MsgId::new(msg_id), &emoji).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn delete_messages(
+        &self,
+        account_id: u32,
+        msg_ids: Vec<u32>,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let ids: Vec<MsgId> = msg_ids.into_iter().map(MsgId::new).collect();
+            message::delete_msgs(&ctx, &ids).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn forward_messages(
+        &self,
+        account_id: u32,
+        msg_ids: Vec<u32>,
+        chat_id: u32,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let ids: Vec<MsgId> = msg_ids.into_iter().map(MsgId::new).collect();
+            chat::forward_msgs(&ctx, &ids, ChatId::new(chat_id)).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Marks messages seen: sends MDN read receipts and syncs the read state
+    /// to other devices (stronger than `mark_noticed`).
+    pub async fn mark_seen(&self, account_id: u32, msg_ids: Vec<u32>) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let ids: Vec<MsgId> = msg_ids.into_iter().map(MsgId::new).collect();
+            message::markseen_msgs(&ctx, ids).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Accepts a contact request chat.
+    pub async fn accept_chat(&self, account_id: u32, chat_id: u32) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            ChatId::new(chat_id).accept(&ctx).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Blocks a chat (contact request or existing chat).
+    pub async fn block_chat(&self, account_id: u32, chat_id: u32) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            ChatId::new(chat_id).block(&ctx).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn set_chat_archived(
+        &self,
+        account_id: u32,
+        chat_id: u32,
+        archived: bool,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let visibility = if archived {
+                ChatVisibility::Archived
+            } else {
+                ChatVisibility::Normal
+            };
+            ChatId::new(chat_id).set_visibility(&ctx, visibility).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Address-book contacts (for group creation / new chats).
+    pub async fn contacts(&self, account_id: u32) -> Result<Vec<ContactItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            // DC_GCL_ADDRESS: include e-mail (address) contacts, not just
+            // key-contacts — otherwise contacts created by address are hidden.
+            let ids = Contact::get_all(&ctx, DC_GCL_ADDRESS, None).await?;
+            let mut out = Vec::with_capacity(ids.len());
+            for contact_id in ids {
+                let contact = Contact::get_by_id(&ctx, contact_id).await?;
+                out.push(ContactItem {
+                    id: contact_id.to_u32(),
+                    display_name: contact.get_display_name().to_string(),
+                    addr: contact.get_addr().to_string(),
+                    color: color_to_hex(contact.get_color()),
+                    avatar: contact.get_profile_image(&ctx).await?.map(path_string),
+                    is_verified: contact.is_verified(&ctx).await?,
+                });
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Creates a group chat with the given members; returns the chat id.
+    pub async fn create_group(
+        &self,
+        account_id: u32,
+        name: String,
+        member_contact_ids: Vec<u32>,
+    ) -> Result<u32, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let chat_id = chat::create_group(&ctx, &name).await?;
+            for contact_id in member_contact_ids {
+                chat::add_contact_to_chat(&ctx, chat_id, ContactId::new(contact_id)).await?;
+            }
+            Ok(chat_id.to_u32())
+        })
+        .await
+    }
+
+    pub async fn set_display_name(&self, account_id: u32, name: String) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let name = name.trim().to_string();
+            let value = (!name.is_empty()).then_some(name);
+            ctx.set_config(Config::Displayname, value.as_deref()).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Sets or clears the self-avatar (synced to other devices and contacts).
+    pub async fn set_avatar(
+        &self,
+        account_id: u32,
+        path: Option<String>,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            ctx.set_config(Config::Selfavatar, path.as_deref()).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// DC connectivity scale: 1000 not connected … 4000 fully connected.
+    pub async fn connectivity(&self, account_id: u32) -> Result<u32, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            Ok(ctx.get_connectivity() as u32)
         })
         .await
     }

@@ -629,3 +629,223 @@ async fn remove_account_deletes_and_updates_selection() {
     assert_eq!(infos[0].id, first);
     assert_eq!(app.selected_account(), Some(first));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn attachments_quotes_and_reactions() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat_id = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+
+    // Attachment: a real PNG fixture — core demotes undecodable images to File
+    // (chat.rs prepare_msg_blob / check_or_recode_image).
+    let png = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/1x1.png");
+    let blob = tempfile::NamedTempFile::with_suffix(".png").unwrap();
+    std::fs::copy(png, blob.path()).unwrap();
+    let sent_id = app
+        .send_message(
+            id,
+            chat_id,
+            Some("look at this".into()),
+            Some(blob.path().to_string_lossy().into_owned()),
+            None,
+        )
+        .await
+        .expect("send attachment");
+    let msgs = app.messages(id, chat_id).await.unwrap();
+    let sent = msgs.iter().find(|m| m.id == sent_id).unwrap();
+    assert_eq!(sent.kind, dcvm::MessageKind::Image);
+    assert!(sent.file.is_some(), "blob path missing: {sent:?}");
+    assert!(sent.file_size > 0);
+    assert_eq!(sent.text, "look at this");
+
+    // Reply: quote the attachment message.
+    let reply_id = app
+        .send_message(id, chat_id, Some("a reply".into()), None, Some(sent_id))
+        .await
+        .expect("send reply");
+    let msgs = app.messages(id, chat_id).await.unwrap();
+    let reply = msgs.iter().find(|m| m.id == reply_id).unwrap();
+    let quote = reply.quote.as_ref().expect("quote present");
+    assert!(quote.text.contains("look at this"), "quote: {quote:?}");
+
+    // Reaction on an incoming message; then clear it.
+    let ctx = app.context(id).await.unwrap();
+    dcvm::deltachat::receive_imf::receive_imf(
+        &ctx,
+        b"From: Bob <bob@example.net>\r\nTo: alice@example.org\r\n\
+Subject: hi\r\nMessage-ID: <r.1@example.net>\r\nChat-Version: 1.0\r\n\
+Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
+        true,
+    )
+    .await
+    .unwrap();
+    let msgs = app.messages(id, chat_id).await.unwrap();
+    let incoming = msgs.iter().find(|m| !m.is_outgoing && !m.is_info).unwrap();
+    app.send_reaction(id, incoming.id, "👍".into()).await.unwrap();
+    let msgs = app.messages(id, chat_id).await.unwrap();
+    let reacted = msgs.iter().find(|m| m.id == incoming.id).unwrap();
+    assert_eq!(
+        reacted.reactions,
+        vec![dcvm::ReactionItem {
+            emoji: "👍".into(),
+            count: 1,
+            is_from_self: true
+        }]
+    );
+    app.send_reaction(id, incoming.id, "".into()).await.unwrap();
+    let msgs = app.messages(id, chat_id).await.unwrap();
+    assert!(msgs.iter().find(|m| m.id == incoming.id).unwrap().reactions.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_forward_and_mark_seen() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat_a = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    let chat_b = app
+        .create_chat(id, "carol@example.net".into(), "Carol".into())
+        .await
+        .unwrap();
+
+    let msg_id = app.send_text(id, chat_a, "forward me".into()).await.unwrap();
+    app.forward_messages(id, vec![msg_id], chat_b).await.unwrap();
+    let forwarded = app.messages(id, chat_b).await.unwrap();
+    assert!(
+        forwarded.iter().any(|m| m.text == "forward me" && m.is_outgoing),
+        "not forwarded: {forwarded:?}"
+    );
+
+    app.delete_messages(id, vec![msg_id]).await.unwrap();
+    assert!(!app
+        .messages(id, chat_a)
+        .await
+        .unwrap()
+        .iter()
+        .any(|m| m.id == msg_id));
+
+    // mark_seen clears the unread badge (like the official clients).
+    let ctx = app.context(id).await.unwrap();
+    dcvm::deltachat::receive_imf::receive_imf(
+        &ctx,
+        b"From: Bob <bob@example.net>\r\nTo: alice@example.org\r\n\
+Subject: hi\r\nMessage-ID: <s.1@example.net>\r\nChat-Version: 1.0\r\n\
+Date: Wed, 15 Jul 2026 11:00:00 +0000\r\n\r\nunread\r\n",
+        false,
+    )
+    .await
+    .unwrap();
+    let row = |chats: Vec<dcvm::ChatItem>| chats.into_iter().find(|c| c.id == chat_a).unwrap();
+    assert_eq!(row(app.chat_list(id).await.unwrap()).fresh_count, 1);
+    let unseen: Vec<u32> = app
+        .messages(id, chat_a)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|m| !m.is_outgoing)
+        .map(|m| m.id)
+        .collect();
+    app.mark_seen(id, unseen).await.unwrap();
+    assert_eq!(row(app.chat_list(id).await.unwrap()).fresh_count, 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn accept_block_archive_search_groups() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+
+    // Contact request from a stranger -> accept.
+    let ctx = app.context(id).await.unwrap();
+    dcvm::deltachat::receive_imf::receive_imf(
+        &ctx,
+        b"From: Mallory <mallory@example.net>\r\nTo: alice@example.org\r\n\
+Subject: hi\r\nMessage-ID: <m.1@example.net>\r\nChat-Version: 1.0\r\n\
+Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
+        false,
+    )
+    .await
+    .unwrap();
+    let request = app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.is_contact_request)
+        .expect("request chat");
+    app.accept_chat(id, request.id).await.unwrap();
+    assert!(!app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .iter()
+        .find(|c| c.id == request.id)
+        .unwrap()
+        .is_contact_request);
+
+    // Block it -> gone from the list.
+    app.block_chat(id, request.id).await.unwrap();
+    assert!(!app.chat_list(id).await.unwrap().iter().any(|c| c.id == request.id));
+
+    // Archive / unarchive.
+    let bob_chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    app.send_text(id, bob_chat, "hello".into()).await.unwrap();
+    app.set_chat_archived(id, bob_chat, true).await.unwrap();
+    assert!(!app.chat_list(id).await.unwrap().iter().any(|c| c.id == bob_chat));
+    let archived = app.archived_chats(id).await.unwrap();
+    assert!(archived.iter().any(|c| c.id == bob_chat && c.is_archived));
+    app.set_chat_archived(id, bob_chat, false).await.unwrap();
+    assert!(app.chat_list(id).await.unwrap().iter().any(|c| c.id == bob_chat));
+
+    // Search.
+    let hits = app.search_chats(id, "Bob".into()).await.unwrap();
+    assert!(hits.iter().any(|c| c.id == bob_chat), "chat search: {hits:?}");
+    let msg_hits = app.search_messages(id, "hello".into()).await.unwrap();
+    assert!(msg_hits.iter().any(|m| m.chat_id == bob_chat));
+
+    // Contacts + group creation. v2.49 groups are encrypted: only
+    // key-contacts (established via Autocrypt/securejoin) can be members —
+    // address contacts are rejected with a clear error.
+    let contacts = app.contacts(id).await.unwrap();
+    let bob = contacts.iter().find(|c| c.addr == "bob@example.net").unwrap();
+    let err = app
+        .create_group(id, "Test Group".into(), vec![bob.id])
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("key-contacts"),
+        "unexpected error: {err}"
+    );
+    let group = app
+        .create_group(id, "Test Group".into(), vec![])
+        .await
+        .unwrap();
+    let row = app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id == group)
+        .expect("group in list");
+    assert!(row.is_group);
+    assert_eq!(row.name, "Test Group");
+
+    // Profile settings reflected in accounts().
+    app.set_display_name(id, "Alice A.".into()).await.unwrap();
+    let info = app.accounts().await.unwrap().into_iter().find(|a| a.id == id).unwrap();
+    assert_eq!(info.display_name.as_deref(), Some("Alice A."));
+
+    // Connectivity: offline account is on the DC scale (no IO -> not connected).
+    let conn = app.connectivity(id).await.unwrap();
+    assert!((1000..=4000).contains(&conn), "connectivity: {conn}");
+}

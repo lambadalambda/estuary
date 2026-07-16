@@ -3,12 +3,12 @@
 //! Everything here is side-effect free and unit-tested; the async glue in
 //! `app` only composes these.
 
-use deltachat::message::MessageState as CoreMessageState;
+use deltachat::message::{MessageState as CoreMessageState, Viewtype};
 use deltachat::qr::Qr;
 use deltachat::summary::SummaryPrefix;
 use deltachat::EventType;
 
-use crate::types::{MessageState, QrKind, VmEvent};
+use crate::types::{MessageKind, MessageState, QrKind, VmEvent};
 
 /// Core colors are `0x00rrggbb` u32s; the UI wants CSS `#rrggbb`.
 pub fn color_to_hex(color: u32) -> String {
@@ -32,6 +32,36 @@ pub fn summary_preview(prefix: Option<&SummaryPrefix>, text: &str) -> String {
     match prefix {
         Some(prefix) => format!("{prefix}: {text}"),
         None => text.to_string(),
+    }
+}
+
+/// Core message viewtype -> FFI message kind.
+pub fn map_viewtype(viewtype: Viewtype) -> MessageKind {
+    match viewtype {
+        Viewtype::Text => MessageKind::Text,
+        Viewtype::Image => MessageKind::Image,
+        Viewtype::Gif => MessageKind::Gif,
+        Viewtype::Sticker => MessageKind::Sticker,
+        Viewtype::Audio => MessageKind::Audio,
+        Viewtype::Voice => MessageKind::Voice,
+        Viewtype::Video => MessageKind::Video,
+        Viewtype::Webxdc => MessageKind::Webxdc,
+        Viewtype::File => MessageKind::File,
+        Viewtype::Vcard => MessageKind::Vcard,
+        _ => MessageKind::Unknown,
+    }
+}
+
+/// Pick the outgoing viewtype for an attachment by file extension, the same
+/// heuristic official clients use before core sniffs the real mime.
+pub fn viewtype_for_path(path: &str) -> Viewtype {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "webp" | "heic" | "bmp" => Viewtype::Image,
+        "gif" => Viewtype::Gif,
+        "mp4" | "mov" | "webm" | "mkv" => Viewtype::Video,
+        "mp3" | "m4a" | "ogg" | "opus" | "wav" | "aac" | "flac" => Viewtype::Audio,
+        _ => Viewtype::File,
     }
 }
 
@@ -88,6 +118,16 @@ pub fn map_event(typ: EventType) -> Option<VmEvent> {
             permille: u32::from(progress),
             comment,
         }),
+        // Reaction changes only need the affected chat refreshed.
+        EventType::ReactionsChanged { chat_id, .. } => {
+            if chat_id.is_unset() {
+                Some(VmEvent::ChatlistChanged)
+            } else {
+                Some(VmEvent::ChatChanged {
+                    chat_id: chat_id.to_u32(),
+                })
+            }
+        }
         EventType::ImexProgress(permille) => Some(VmEvent::ImexProgress {
             permille: u32::from(permille),
         }),
@@ -258,6 +298,39 @@ mod tests {
         assert_eq!(
             map_event(EventType::ImexProgress(0)),
             Some(VmEvent::ImexProgress { permille: 0 })
+        );
+    }
+
+    #[test]
+    fn viewtypes_map_to_kinds() {
+        assert_eq!(map_viewtype(Viewtype::Text), MessageKind::Text);
+        assert_eq!(map_viewtype(Viewtype::Image), MessageKind::Image);
+        assert_eq!(map_viewtype(Viewtype::Voice), MessageKind::Voice);
+        assert_eq!(map_viewtype(Viewtype::Webxdc), MessageKind::Webxdc);
+        assert_eq!(map_viewtype(Viewtype::Vcard), MessageKind::Vcard);
+    }
+
+    #[test]
+    fn attachment_viewtype_from_extension() {
+        assert_eq!(viewtype_for_path("/tmp/photo.JPG"), Viewtype::Image);
+        assert_eq!(viewtype_for_path("/tmp/anim.gif"), Viewtype::Gif);
+        assert_eq!(viewtype_for_path("/tmp/song.mp3"), Viewtype::Audio);
+        assert_eq!(viewtype_for_path("/tmp/clip.mov"), Viewtype::Video);
+        assert_eq!(viewtype_for_path("/tmp/doc.pdf"), Viewtype::File);
+        assert_eq!(viewtype_for_path("noextension"), Viewtype::File);
+    }
+
+    #[test]
+    fn reactions_changed_maps_to_chat_changed() {
+        use deltachat::contact::ContactId;
+        use deltachat::message::MsgId;
+        assert_eq!(
+            map_event(EventType::ReactionsChanged {
+                chat_id: ChatId::new(7),
+                msg_id: MsgId::new(1),
+                contact_id: ContactId::SELF,
+            }),
+            Some(VmEvent::ChatChanged { chat_id: 7 })
         );
     }
 

@@ -1,19 +1,37 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-// NOTE for the core-integration stage: this package intentionally contains ONLY
-// the executable target. The generated UniFFI targets are added later as:
-//   .systemLibrary(name: "DeltaCoreFFI", path: "Sources/DeltaCoreFFI"),
-//   .target(name: "DeltaCore", dependencies: ["DeltaCoreFFI"],
-//           path: "Sources/DeltaCore", swiftSettings: [.swiftLanguageMode(.v5)]),
-// plus linkerSettings on DeltaApp (see docs/specs/uniffi-recipe.md section 5).
+// Dev profile: libdcvm.a comes out of `cargo build` (see root Makefile).
+// A release build of deltachat core takes 10+ minutes, so we link debug.
+let rustLibDir = "\(Context.packageDirectory)/../dcvm/target/debug"
+
 let package = Package(
     name: "DeltaApp",
     platforms: [.macOS(.v14)],
     targets: [
+        // C FFI module: generated module.modulemap + DeltaCoreFFI.h.
+        .systemLibrary(name: "DeltaCoreFFI", path: "Sources/DeltaCoreFFI"),
+
+        // Generated UniFFI bindings. Swift 5 language mode: UniFFI's Swift 6
+        // support is partial (async code not Sendable-clean, uniffi-rs#2448).
+        .target(
+            name: "DeltaCore",
+            dependencies: ["DeltaCoreFFI"],
+            path: "Sources/DeltaCore",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+
         .executableTarget(
             name: "DeltaApp",
-            path: "Sources/DeltaApp"
+            dependencies: ["DeltaCore"],
+            path: "Sources/DeltaApp",
+            linkerSettings: [
+                .linkedLibrary("dcvm"),
+                .unsafeFlags(["-L\(rustLibDir)"]),
+                // Required by the Rust dependency tree (added as linker
+                // errors dictated): netwatch/system-configuration.
+                .linkedFramework("SystemConfiguration")
+            ]
         )
     ]
 )

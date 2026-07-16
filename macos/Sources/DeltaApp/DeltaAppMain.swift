@@ -1,0 +1,40 @@
+import SwiftUI
+import AppKit
+
+@main
+struct DeltaAppMain: App {
+    @State private var model = AppModel(service: ServiceFactory.make())
+
+    init() {
+        // Running via `swift run` (no .app bundle): become a regular,
+        // focusable app with a Dock icon.
+        NSApplication.shared.setActivationPolicy(.regular)
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView(model: model)
+                .task {
+                    NSApp.activate(ignoringOtherApps: true)
+                    await model.bootstrap()
+                }
+        }
+    }
+}
+
+struct RootView: View {
+    let model: AppModel
+
+    var body: some View {
+        switch model.screen {
+        case .loading:
+            ProgressView()
+                .frame(minWidth: 460, minHeight: 480)
+        case .onboarding:
+            OnboardingView(model: model)
+        case .main:
+            MainView(model: model)
+                .frame(minWidth: 720, minHeight: 480)
+        }
+    }
+}

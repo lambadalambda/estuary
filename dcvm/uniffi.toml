@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "DeltaCore"
+generate_immutable_records = true
+experimental_sendable_value_types = true

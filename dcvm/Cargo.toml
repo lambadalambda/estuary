@@ -6,15 +6,27 @@ description = "DeltaChat viewmodel: headless client logic over deltachat core, e
 license = "MPL-2.0"
 
 [lib]
-crate-type = ["lib", "staticlib", "cdylib"]
+crate-type = ["lib", "staticlib"]
+
+[features]
+# Enables the bindgen CLI bin; kept out of default so plain `cargo build/test`
+# does not need clap/camino.
+cli = ["uniffi/cli"]
 
 [dependencies]
 deltachat = { git = "https://github.com/chatmail/core", tag = "v2.49.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
+uniffi = { version = "0.32", features = ["tokio"] }
+thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "uniffi-bindgen-swift.rs"
+required-features = ["cli"]
 
 [profile.dev]
 # core is far too slow at opt-level 0

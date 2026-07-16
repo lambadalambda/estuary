@@ -1,5 +1,37 @@
 # DEVLOG
 
+## 2026-07-16 — Gap closing: media, reactions, chat management (issue: close-ui-gaps)
+
+Built in-session after repeated 529 API overloads killed both delegated build agents
+four times each (no work lost — they died during read phases; strict TDD was compressed
+to tests-with-implementation under the circumstances).
+
+**dcvm:** MessageKind/QuoteInfo/ReactionItem/ContactItem; MessageItem carries file
+metadata + quote + aggregated reactions; ChatItem group/archive/device flags + avatar;
+send_message (attachments by extension-guessed viewtype, quoted replies), send_reaction,
+delete/forward/mark_seen, accept/block, archive + archived_chats, search (chats +
+messages), contacts, create_group, display name/self-avatar, connectivity. 22 offline
+tests green (9 unit + 13 integration).
+
+**v2.49 semantics discovered:**
+- `Contact::get_all` hides address-contacts unless `DC_GCL_ADDRESS` is passed.
+- Encrypted groups reject address-contacts ("Only key-contacts can be added") — the
+  group UI warns; proper fix arrives with the QR-invite contact flow issue.
+- `prepare_msg_blob` demotes undecodable images to File — tests need a real PNG
+  (tests/fixtures/1x1.png).
+
+**macOS UI:** media bubbles (inline images/gif/sticker, audio/voice playback via a
+shared AVAudioPlayer, file/video rows opening in Finder apps), quote blocks + reply
+composing, reaction chips with own-reaction toggling, context menu (copy/reply/react/
+forward-with-chat-picker/delete), paperclip + drag&drop attachments, Accept/Block
+replacing the composer for contact requests, mark-seen on visible chats (read receipts
++ cross-device read sync), real avatars, sidebar search, archived-chats view +
+archive/unarchive, group creation with member picker, profile settings sheet (name,
+avatar, connectivity), incoming-message notifications (bundle builds only).
+
+Webxdc rendering intentionally still out (own issue). Visual pass on the new UI is
+pending the user; builds + smoke runs green.
+
 ## 2026-07-16 — Camera QR scanning + .app bundle
 
 "Add Second Device" can now scan the QR live off the other device's screen:

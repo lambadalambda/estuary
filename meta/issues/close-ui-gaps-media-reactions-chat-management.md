@@ -28,5 +28,10 @@ Close the gap to a usable daily-driver client (webxdc excluded, see its own issu
 
 ## Notes
 
-- In progress: parallel build (Rust FFI agent + SwiftUI agent), fixed contract, then integration.
 - Voice message *recording* is out of scope here (playback only).
+- Status 2026-07-16: implemented end-to-end (see DEVLOG "Gap closing" entry).
+  All machine-verifiable criteria pass: 22 dcvm offline tests green, swift build
+  green, mock and real-core smoke runs alive. Remaining before archiving: a human
+  visual pass over the new UI (media rendering, menus, sheets).
+- Group membership currently limited to key-contacts by core (encrypted groups);
+  full first-contact flow tracked in qr-invite-contact-flow.

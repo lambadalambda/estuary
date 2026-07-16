@@ -109,16 +109,23 @@ protocol ChatService: Sendable {
 
 enum ServiceFactory {
     /// Returns the service implementation for this launch.
-    /// DCNATIVE_MOCK=1 forces the mock; once CoreChatService (UniFFI-backed)
-    /// lands, the default branch returns it instead.
+    /// Default: the real core (CoreChatService over the UniFFI bindings).
+    /// DCNATIVE_MOCK=1 forces the mock; DCNATIVE_DATA_DIR overrides the
+    /// default data dir (~/Library/Application Support/DeltaChatNative).
     static func make() -> any ChatService {
         let env = ProcessInfo.processInfo.environment
         if env["DCNATIVE_MOCK"] == "1" {
             return MockChatService()
         }
-        // TODO(core-swap): return CoreChatService(dataDir: ...) here.
-        FileHandle.standardError.write(Data(
-            "DeltaApp: CoreChatService not wired yet; falling back to MockChatService. Set DCNATIVE_MOCK=1 to silence this notice.\n".utf8))
-        return MockChatService()
+        return CoreChatService(dataDir: dataDir(env: env))
+    }
+
+    private static func dataDir(env: [String: String]) -> String {
+        if let override = env["DCNATIVE_DATA_DIR"], !override.isEmpty {
+            return override
+        }
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return appSupport.appendingPathComponent("DeltaChatNative", isDirectory: true).path
     }
 }

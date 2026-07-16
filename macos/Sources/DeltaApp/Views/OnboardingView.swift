@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct OnboardingView: View {
     @Bindable var model: AppModel
+    @State private var showEmailLogin = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -12,71 +14,236 @@ struct OnboardingView: View {
                 .foregroundStyle(.tint)
             Text("Delta Native")
                 .font(.largeTitle.bold())
-            Text("Decentralized chat over e-mail.\nLog in with any e-mail account.")
+            Text("Instant, decentralized messaging.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
+            // Primary: instant chatmail profile — no visible e-mail.
             GroupBox {
                 VStack(spacing: 12) {
-                    TextField("E-mail address", text: $model.loginEmail)
+                    TextField("Your name", text: $model.profileName)
                         .textFieldStyle(.roundedBorder)
-                        .textContentType(.username)
-                        .autocorrectionDisabled()
-                    SecureField("Password", text: $model.loginPassword)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(submit)
+                        .textContentType(.name)
+                        .onSubmit(createProfile)
 
-                    if model.isConfiguring {
-                        VStack(spacing: 4) {
-                            ProgressView(value: model.configureProgress)
-                            if let comment = model.configureComment {
-                                Text(comment)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                    if model.isConfiguring, !model.showSecondDeviceSheet, !showEmailLogin {
+                        progressSection
+                    }
+                    if let error = model.loginError, !model.showSecondDeviceSheet, !showEmailLogin {
+                        errorText(error)
                     }
 
-                    if let error = model.loginError {
-                        Text(error)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    Button(action: submit) {
-                        Text("Log in")
+                    Button(action: createProfile) {
+                        Text("Create New Profile")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.isConfiguring || model.loginEmail.isEmpty)
+                    .disabled(model.isConfiguring)
+
+                    Text("A chat profile is created for you on a privacy-preserving relay. No sign-up, no phone number.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(8)
             }
-            .frame(maxWidth: 340)
+            .frame(maxWidth: 360)
+
+            // Secondary: bring an existing account over from another device.
+            Button {
+                model.loginError = nil
+                model.showSecondDeviceSheet = true
+            } label: {
+                Label("Already using Delta Chat? Add this Mac as a second device", systemImage: "qrcode")
+            }
+            .disabled(model.isConfiguring)
+
+            // Tertiary: classic e-mail login and the offline demo.
+            DisclosureGroup("Other options", isExpanded: $showEmailLogin) {
+                emailLoginForm
+                    .padding(.top, 8)
+            }
+            .frame(maxWidth: 360)
+
+            Spacer()
+        }
+        .padding(40)
+        .frame(minWidth: 480, minHeight: 560)
+        .sheet(isPresented: $model.showSecondDeviceSheet) {
+            SecondDeviceSheet(model: model)
+        }
+    }
+
+    private var progressSection: some View {
+        VStack(spacing: 4) {
+            ProgressView(value: model.configureProgress)
+            if let comment = model.configureComment {
+                Text(comment)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func errorText(_ error: String) -> some View {
+        Text(error)
+            .font(.callout)
+            .foregroundStyle(.red)
+            .multilineTextAlignment(.center)
+    }
+
+    private var emailLoginForm: some View {
+        VStack(spacing: 12) {
+            TextField("E-mail address", text: $model.loginEmail)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.username)
+                .autocorrectionDisabled()
+            SecureField("Password", text: $model.loginPassword)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(submitEmail)
+
+            if model.isConfiguring, showEmailLogin {
+                progressSection
+            }
+            if let error = model.loginError, showEmailLogin {
+                errorText(error)
+            }
+
+            Button(action: submitEmail) {
+                Text("Log in with e-mail")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(model.isConfiguring || model.loginEmail.isEmpty)
 
             HStack(spacing: 4) {
-                Text("No account yet?")
+                Text("Just looking around?")
                     .foregroundStyle(.secondary)
                 Button("Try the demo") {
                     Task { await model.tryDemo() }
                 }
                 .disabled(model.isConfiguring)
             }
-
-            Spacer()
+            .font(.callout)
         }
-        .padding(40)
-        .frame(minWidth: 460, minHeight: 480)
     }
 
-    private func submit() {
+    private func createProfile() {
+        guard !model.isConfiguring else { return }
+        Task { await model.createProfile() }
+    }
+
+    private func submitEmail() {
         guard !model.isConfiguring, !model.loginEmail.isEmpty else { return }
         Task { await model.logIn() }
     }
 }
 
+/// "Add Second Device": on the other device open Settings → Add Second Device,
+/// then bring the QR here via clipboard (image or text) or an image file.
+struct SecondDeviceSheet: View {
+    @Bindable var model: AppModel
+    @State private var showFilePicker = false
+    @State private var pasteFailed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Add as Second Device", systemImage: "qrcode.viewfinder")
+                .font(.title2.bold())
+
+            Text("""
+            1. On your other device, open **Settings → Add Second Device**.
+            2. Bring the QR code here: screenshot or photograph it, copy it, \
+            then use **Paste** — or load the image from a file.
+            3. Both devices must be online (ideally the same network).
+            """)
+            .foregroundStyle(.secondary)
+
+            HStack {
+                Button {
+                    if let payload = QrDecode.payloadFromPasteboard() {
+                        model.joinQrPayload = payload
+                        pasteFailed = false
+                    } else {
+                        pasteFailed = true
+                    }
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                }
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Label("Load QR image…", systemImage: "photo")
+                }
+            }
+            .disabled(model.isConfiguring)
+
+            TextField("DCBACKUP… code", text: $model.joinQrPayload, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2 ... 4)
+                .font(.caption.monospaced())
+                .disabled(model.isConfiguring)
+
+            if pasteFailed {
+                Text("No QR code found in the clipboard.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            if model.isConfiguring {
+                VStack(spacing: 4) {
+                    ProgressView(value: model.configureProgress)
+                    Text(model.configureComment ?? "Connecting to the other device…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let error = model.loginError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Button("Cancel") {
+                    if model.isConfiguring {
+                        Task { await model.cancelOnboarding() }
+                    } else {
+                        model.showSecondDeviceSheet = false
+                    }
+                }
+                Spacer()
+                Button("Add Second Device") {
+                    Task { await model.joinSecondDevice() }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(model.isConfiguring || model.joinQrPayload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 440)
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.image]
+        ) { result in
+            if case .success(let url) = result {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                if let payload = QrDecode.payload(inFileAt: url) {
+                    model.joinQrPayload = payload
+                    pasteFailed = false
+                } else {
+                    pasteFailed = true
+                }
+            }
+        }
+    }
+}
+
 #Preview("Onboarding") {
     OnboardingView(model: AppModel(service: MockChatService()))
+}
+
+#Preview("Second device sheet") {
+    SecondDeviceSheet(model: AppModel(service: MockChatService()))
 }

@@ -21,13 +21,18 @@ final class AppModel {
     private(set) var messages: [MessageItem] = []
 
     // Login / onboarding state.
+    var profileName = ""
     var loginEmail = ""
     var loginPassword = ""
+    var joinQrPayload = ""
+    var showSecondDeviceSheet = false
     private(set) var isConfiguring = false
-    /// 0...1, driven by ConfigureProgress events.
+    /// 0...1, driven by ConfigureProgress/ImexProgress events.
     private(set) var configureProgress: Double = 0
     private(set) var configureComment: String?
     var loginError: String?
+    /// Account being onboarded right now (target for cancelOngoing).
+    private var onboardingAccountId: UInt32?
 
     let service: any ChatService
     @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -63,10 +68,19 @@ final class AppModel {
             loginError = error.localizedDescription
             screen = .onboarding
         }
-        // Dev/smoke-test hook: jump straight into the demo account.
-        if screen == .onboarding,
-           ProcessInfo.processInfo.environment["DCNATIVE_AUTODEMO"] == "1" {
+        // Dev/smoke-test hooks: jump straight into the demo account, or
+        // exercise the real instant-account flow (network!) and report.
+        let env = ProcessInfo.processInfo.environment
+        if screen == .onboarding, env["DCNATIVE_AUTODEMO"] == "1" {
             await tryDemo()
+        }
+        if screen == .onboarding, env["DCNATIVE_AUTOCREATE"] == "1" {
+            profileName = "Autocreate Test"
+            await createProfile()
+            let verdict = screen == .main
+                ? "OK addr=\(accounts.first { $0.id == selectedAccountId }?.addr ?? "?")"
+                : "FAILED: \(loginError ?? "unknown error")"
+            FileHandle.standardError.write(Data("DCNATIVE_AUTOCREATE \(verdict)\n".utf8))
         }
     }
 
@@ -81,28 +95,79 @@ final class AppModel {
 
     // MARK: Onboarding actions
 
-    func logIn() async {
+    /// Reuses a leftover unconfigured account (e.g. from a failed attempt)
+    /// or creates a fresh one, and remembers it as the onboarding target.
+    private func beginOnboarding() async throws -> UInt32 {
         loginError = nil
         configureProgress = 0
         configureComment = nil
         isConfiguring = true
-        defer { isConfiguring = false }
+        let accountId: UInt32
+        if let unconfigured = accounts.first(where: { !$0.isConfigured }) {
+            accountId = unconfigured.id
+        } else {
+            accountId = try await service.addAccount()
+        }
+        onboardingAccountId = accountId
+        return accountId
+    }
+
+    private func finishOnboarding(accountId: UInt32) async throws {
+        try await service.selectAccount(id: accountId)
+        selectedAccountId = accountId
+        try await service.startIo()
+        accounts = try await service.accounts()
+        await reloadChats()
+        showSecondDeviceSheet = false
+        screen = .main
+    }
+
+    /// Instant chatmail onboarding: auto-creates an account on the default
+    /// relay; no e-mail address or password ever shown.
+    func createProfile() async {
+        defer { isConfiguring = false; onboardingAccountId = nil }
+        do {
+            let accountId = try await beginOnboarding()
+            try await service.createInstantAccount(
+                accountId: accountId,
+                displayName: profileName.trimmingCharacters(in: .whitespaces),
+                instance: nil)
+            try await finishOnboarding(accountId: accountId)
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    /// "Add Second Device": receives the full existing account (credentials,
+    /// keys, chats) from the QR shown on the other device.
+    func joinSecondDevice() async {
+        defer { isConfiguring = false; onboardingAccountId = nil }
+        let payload = joinQrPayload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payload.isEmpty else { return }
+        do {
+            let accountId = try await beginOnboarding()
+            try await service.joinSecondDevice(accountId: accountId, qr: payload)
+            joinQrPayload = ""
+            try await finishOnboarding(accountId: accountId)
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    /// Cancels an in-flight configure/backup transfer, if any.
+    func cancelOnboarding() async {
+        guard let accountId = onboardingAccountId else { return }
+        try? await service.cancelOngoing(accountId: accountId)
+    }
+
+    func logIn() async {
+        defer { isConfiguring = false; onboardingAccountId = nil }
         do {
             let addr = loginEmail.trimmingCharacters(in: .whitespaces)
-            let accountId: UInt32
-            if let unconfigured = accounts.first(where: { !$0.isConfigured }) {
-                accountId = unconfigured.id
-            } else {
-                accountId = try await service.addAccount()
-            }
+            let accountId = try await beginOnboarding()
             try await service.login(accountId: accountId, addr: addr, password: loginPassword)
-            try await service.selectAccount(id: accountId)
-            selectedAccountId = accountId
-            try await service.startIo()
-            accounts = try await service.accounts()
             loginPassword = ""
-            await reloadChats()
-            screen = .main
+            try await finishOnboarding(accountId: accountId)
         } catch {
             loginError = error.localizedDescription
         }
@@ -193,6 +258,14 @@ final class AppModel {
                 configureProgress = Double(permille) / 1000
             }
             if let comment { configureComment = comment }
+
+        case .imexProgress(let permille):
+            // Same progress bar as configure; 0 (error/cancel) is surfaced
+            // through the thrown error of joinSecondDevice instead.
+            if permille > 0 {
+                configureProgress = Double(permille) / 1000
+                configureComment = permille >= 1000 ? nil : "Transferring account…"
+            }
 
         case .accountsChanged:
             accounts = (try? await service.accounts()) ?? accounts

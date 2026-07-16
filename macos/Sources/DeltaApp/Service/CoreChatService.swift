@@ -17,6 +17,9 @@ actor CoreChatService: ChatService {
     private let dataDir: String
     private let listener: CoreEventListener
     private var appTask: Task<DcApp, any Error>?
+    /// Generation counter so a failed creation only clears *its own* cached
+    /// task (never a newer retry started by another caller).
+    private var appTaskGeneration = 0
 
     init(dataDir: String) {
         self.dataDir = dataDir
@@ -27,9 +30,13 @@ actor CoreChatService: ChatService {
 
     private func app() async throws -> DcApp {
         let task: Task<DcApp, any Error>
+        let generation: Int
         if let appTask {
             task = appTask
+            generation = appTaskGeneration
         } else {
+            appTaskGeneration += 1
+            generation = appTaskGeneration
             task = Task { [dataDir, listener] in
                 try await DcApp(dataDir: dataDir, listener: listener)
             }
@@ -38,6 +45,12 @@ actor CoreChatService: ChatService {
         do {
             return try await task.value
         } catch {
+            // A transient constructor failure (locked accounts dir, missing
+            // data dir, ...) must not poison every future call: drop the
+            // failed task so the next call retries.
+            if generation == appTaskGeneration {
+                appTask = nil
+            }
             throw mapError(error)
         }
     }
@@ -60,7 +73,14 @@ actor CoreChatService: ChatService {
     }
 
     func selectedAccount() async -> UInt32? {
-        (try? await app())?.selectedAccount()
+        // The contract keeps this non-throwing (mirrors the sync Option-
+        // returning Rust method), so at least log instead of hiding the error.
+        do {
+            return try await app().selectedAccount()
+        } catch {
+            NSLog("CoreChatService.selectedAccount: DcApp unavailable: %@", "\(error)")
+            return nil
+        }
     }
 
     func login(accountId: UInt32, addr: String, password: String) async throws {

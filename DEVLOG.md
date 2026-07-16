@@ -133,7 +133,7 @@ DcApp. Offline tests cover QR classification and join_second_device rejection pa
 CoreImage's built-in `CIDetector` QR support, no new dependency; no camera flow yet.
 Second-device UI is a sheet with paste/file pickers and imex progress.
 
-**Verification:** cargo test 17/17 green; swift build green; mock smoke run alive.
+**Verification:** cargo test 14/14 green (6 unit + 8 integration); swift build green; mock smoke run alive.
 **Live test (network):** `DCNATIVE_AUTOCREATE=1` dev hook exercised the real flow —
 created and configured `a7ghrcg2d@nine.testrun.org` on the default relay from the app,
 landing on the main screen. Second-device join needs a second real device, so only its

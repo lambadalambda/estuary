@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -156,6 +157,8 @@ struct SecondDeviceSheet: View {
     @Bindable var model: AppModel
     @State private var showFilePicker = false
     @State private var pasteFailed = false
+    @State private var scanner: QrCameraScanner?
+    @State private var cameraError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -164,13 +167,20 @@ struct SecondDeviceSheet: View {
 
             Text("""
             1. On your other device, open **Settings → Add Second Device**.
-            2. Bring the QR code here: screenshot or photograph it, copy it, \
-            then use **Paste** — or load the image from a file.
+            2. Scan the QR code with this Mac's camera — or copy a screenshot \
+            of it and use **Paste** / **Load QR image…**.
             3. Both devices must be online (ideally the same network).
             """)
             .foregroundStyle(.secondary)
 
             HStack {
+                Button {
+                    scanner == nil ? startScan() : stopScan()
+                } label: {
+                    Label(
+                        scanner == nil ? "Scan with Camera" : "Stop Scanning",
+                        systemImage: scanner == nil ? "camera" : "camera.fill")
+                }
                 Button {
                     if let payload = QrDecode.payloadFromPasteboard() {
                         model.joinQrPayload = payload
@@ -188,6 +198,25 @@ struct SecondDeviceSheet: View {
                 }
             }
             .disabled(model.isConfiguring)
+
+            if let scanner {
+                CameraPreview(session: scanner.session)
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .bottom) {
+                        Text("Point the camera at the QR code")
+                            .font(.caption)
+                            .padding(6)
+                            .background(.black.opacity(0.55), in: Capsule())
+                            .foregroundStyle(.white)
+                            .padding(.bottom, 8)
+                    }
+            }
+            if let cameraError {
+                Text(cameraError)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
 
             TextField("DCBACKUP… code", text: $model.joinQrPayload, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
@@ -233,6 +262,7 @@ struct SecondDeviceSheet: View {
         }
         .padding(24)
         .frame(width: 440)
+        .onDisappear { stopScan() }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [.image]
@@ -248,6 +278,50 @@ struct SecondDeviceSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: Camera scanning
+
+    private func startScan() {
+        cameraError = nil
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            beginSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    if granted {
+                        beginSession()
+                    } else {
+                        cameraError = "Camera access was denied."
+                    }
+                }
+            }
+        default:
+            cameraError = "Camera access is denied — allow it in System Settings → Privacy & Security → Camera."
+        }
+    }
+
+    private func beginSession() {
+        let model = self.model
+        guard let scanner = QrCameraScanner(onFound: { payload in
+            Task { @MainActor in
+                model.joinQrPayload = payload
+                stopScan()
+                // Scanned straight off the other device: join immediately.
+                await model.joinSecondDevice()
+            }
+        }) else {
+            cameraError = "No usable camera found."
+            return
+        }
+        self.scanner = scanner
+        scanner.start()
+    }
+
+    private func stopScan() {
+        scanner?.stop()
+        scanner = nil
     }
 }
 

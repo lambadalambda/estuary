@@ -6,3 +6,4 @@ target/
 generated/
 *.dylib
 *.a
+macos/DeltaApp.app/

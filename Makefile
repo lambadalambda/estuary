@@ -11,7 +11,7 @@ BINDGEN = cargo run --features cli --bin uniffi-bindgen-swift -- \
 # `make SWIFT_FLAGS=` to keep SPM's own sandboxing on a normal machine.
 SWIFT_FLAGS ?= --disable-sandbox
 
-.PHONY: rust bindings swift-build run test check
+.PHONY: rust bindings swift-build run app run-app test check
 
 rust:
 	cd dcvm && cargo build
@@ -28,6 +28,19 @@ swift-build: bindings
 
 run: bindings
 	cd macos && swift run $(SWIFT_FLAGS) DeltaApp
+
+# Minimal .app bundle: camera permission (TCC) wants a bundle identifier and
+# NSCameraUsageDescription; a bare `swift run` binary gets the prompt
+# attributed to the terminal instead. Ad-hoc signed so TCC grants persist.
+app: swift-build
+	rm -rf macos/DeltaApp.app
+	mkdir -p macos/DeltaApp.app/Contents/MacOS
+	cp macos/Info.plist macos/DeltaApp.app/Contents/
+	cp macos/.build/debug/DeltaApp macos/DeltaApp.app/Contents/MacOS/
+	codesign --force --sign - macos/DeltaApp.app
+
+run-app: app
+	open macos/DeltaApp.app
 
 test:
 	cd dcvm && cargo test

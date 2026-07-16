@@ -1,5 +1,29 @@
 # DEVLOG
 
+## 2026-07-16 — Local relay verified end-to-end; two hard-won findings
+
+The podman chatmail relay works (amd64 image forced via `--platform`, runs under
+Rosetta): `/new` POST, IMAP/SMTP with self-signed `_cm.example` certs, and both opt-in
+tests green — instant account creation (~2 s) and a full encrypted message round trip
+between two accounts (~1.5 s). The app onboards against it via
+`DCNATIVE_INSTANCE=DCACCOUNT:_cm.example`.
+
+Debugging the round trip surfaced two product-relevant core behaviors (details in
+dev/chatmail/README.md):
+1. **filtermail rejects unencrypted outbound** — first contact by bare address cannot
+   deliver on chatmail; securejoin QR invites are the real flow (the test now does the
+   handshake; the UI will need an invite/QR contact flow eventually).
+2. **The first-scan race**: mail arriving during an account's initial post-configure
+   inbox scan is classified as pre-existing and silently skipped. This produced a
+   perfectly alternating test flake (fast runs beat the scan) — fixed by waiting for
+   connectivity Connected (4000) before messaging a fresh account. Conceivably a real
+   edge case for instant-onboarding flows, not just tests.
+   Red herrings on the way: inotify limits (fine), maybe_network nudging (didn't help —
+   the mail was fetched and *deliberately* skipped, not unseen).
+
+Also: exported `maybe_network()` through the FFI; the app calls it when the scene
+becomes active (wake from sleep → immediate fetch instead of next poll).
+
 ## 2026-07-16 — Local test infrastructure: offline second-device test + podman chatmail relay
 
 **Second-device transfers need no server.** The DCBACKUP transfer is a direct iroh/QUIC

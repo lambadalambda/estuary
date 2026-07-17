@@ -21,9 +21,16 @@ final class AppModel {
     private(set) var messages: [MessageItem] = []
     /// Whether older history exists beyond the currently loaded window.
     private(set) var hasMoreMessages = false
+    /// Set once a load-older returned empty: stops the page-boundary flicker
+    /// where count == loadedLimit keeps re-asserting "more history".
+    private var historyExhausted = false
     /// Size of the loaded window; grows as the user scrolls into history.
     private var loadedLimit: UInt32 = AppModel.messagePageSize
     static let messagePageSize: UInt32 = 100
+    private var reloadChatsScheduled = false
+    private var reloadMessagesScheduled = false
+    /// Main-screen action failures (send/accept/block/…), shown as an alert.
+    var actionError: String?
     /// Message being replied to (composer banner); sent as quote.
     var replyTo: MessageItem?
     /// Sidebar shows the archive instead of the normal list.
@@ -113,18 +120,32 @@ final class AppModel {
     /// Reuses a leftover unconfigured account (e.g. from a failed attempt)
     /// or creates a fresh one, and remembers it as the onboarding target.
     private func beginOnboarding() async throws -> UInt32 {
+        // One setup at a time: a second flow would steal onboardingAccountId
+        // (killing the first flow's Cancel) and could reuse the same
+        // unconfigured account a backup transfer is writing into.
+        guard !isConfiguring else {
+            throw ServiceError.core(msg: "Another profile setup is already running.")
+        }
         loginError = nil
         configureProgress = 0
         configureComment = nil
         isConfiguring = true
-        let accountId: UInt32
-        if let unconfigured = accounts.first(where: { !$0.isConfigured }) {
-            accountId = unconfigured.id
-        } else {
-            accountId = try await service.addAccount()
+        // If acquisition itself fails, release the flag HERE: callers only
+        // install their cleanup defer after we return successfully, so a
+        // throw below would otherwise brick onboarding until relaunch.
+        do {
+            let accountId: UInt32
+            if let unconfigured = accounts.first(where: { !$0.isConfigured }) {
+                accountId = unconfigured.id
+            } else {
+                accountId = try await service.addAccount()
+            }
+            onboardingAccountId = accountId
+            return accountId
+        } catch {
+            isConfiguring = false
+            throw error
         }
-        onboardingAccountId = accountId
-        return accountId
     }
 
     private func finishOnboarding(accountId: UInt32) async throws {
@@ -140,9 +161,15 @@ final class AppModel {
     /// Instant chatmail onboarding: auto-creates an account on the default
     /// relay; no e-mail address or password ever shown.
     func createProfile() async {
+        // Acquire first: if another flow is running, we must NOT run the
+        // defer below — it would clear the running flow's state.
+        let accountId: UInt32
+        do { accountId = try await beginOnboarding() } catch {
+            loginError = error.localizedDescription
+            return
+        }
         defer { isConfiguring = false; onboardingAccountId = nil }
         do {
-            let accountId = try await beginOnboarding()
             // DCNATIVE_INSTANCE overrides the default relay, e.g.
             // "DCACCOUNT:_cm.example" for the local podman relay (dev/chatmail/).
             try await service.createInstantAccount(
@@ -158,11 +185,15 @@ final class AppModel {
     /// "Add Second Device": receives the full existing account (credentials,
     /// keys, chats) from the QR shown on the other device.
     func joinSecondDevice() async {
-        defer { isConfiguring = false; onboardingAccountId = nil }
         let payload = joinQrPayload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !payload.isEmpty else { return }
+        let accountId: UInt32
+        do { accountId = try await beginOnboarding() } catch {
+            loginError = error.localizedDescription
+            return
+        }
+        defer { isConfiguring = false; onboardingAccountId = nil }
         do {
-            let accountId = try await beginOnboarding()
             try await service.joinSecondDevice(accountId: accountId, qr: payload)
             joinQrPayload = ""
             try await finishOnboarding(accountId: accountId)
@@ -178,10 +209,14 @@ final class AppModel {
     }
 
     func logIn() async {
+        let accountId: UInt32
+        do { accountId = try await beginOnboarding() } catch {
+            loginError = error.localizedDescription
+            return
+        }
         defer { isConfiguring = false; onboardingAccountId = nil }
         do {
             let addr = loginEmail.trimmingCharacters(in: .whitespaces)
-            let accountId = try await beginOnboarding()
             try await service.login(accountId: accountId, addr: addr, password: loginPassword)
             loginPassword = ""
             try await finishOnboarding(accountId: accountId)
@@ -227,9 +262,11 @@ final class AppModel {
             selectedAccountId = id
             selectedChatId = nil
             messages = []
+            searchQuery = ""
+            showingArchive = false
             await reloadChats()
         } catch {
-            loginError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
@@ -268,10 +305,13 @@ final class AppModel {
                 screen = .main
             } else {
                 selectedAccountId = nil
+                searchQuery = ""
+                showingArchive = false
+                NSApp.dockTile.badgeLabel = nil
                 screen = .onboarding
             }
         } catch {
-            loginError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
@@ -281,14 +321,27 @@ final class AppModel {
         guard let accountId = selectedAccountId else { return }
         do {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            let list: [ChatItem]
             if !query.isEmpty {
-                chats = try await service.searchChats(accountId: accountId, query: query)
+                list = try await service.searchChats(accountId: accountId, query: query)
             } else if showingArchive {
-                chats = try await service.archivedChats(accountId: accountId)
+                list = try await service.archivedChats(accountId: accountId)
             } else {
-                chats = try await service.chatList(accountId: accountId)
+                list = try await service.chatList(accountId: accountId)
             }
-            if let selected = selectedChatId, !chats.contains(where: { $0.id == selected }) {
+            // A slow fetch may resume after the user switched accounts or
+            // changed the filter — never let stale results clobber the view.
+            let archiveSnapshot = showingArchive
+            guard accountId == selectedAccountId,
+                  query == searchQuery.trimmingCharacters(in: .whitespaces),
+                  archiveSnapshot == showingArchive
+            else { return }
+            chats = list
+            // Only drop the selection outside search: a filtered list not
+            // containing the open chat is expected and must not destroy the
+            // open conversation (and its draft) on every keystroke.
+            if query.isEmpty, let selected = selectedChatId,
+               !chats.contains(where: { $0.id == selected }) {
                 selectedChatId = nil
                 messages = []
             }
@@ -310,17 +363,43 @@ final class AppModel {
             messages = []
             return
         }
+        let previousOldest = messages.first?.id
         do {
             // Refresh the whole loaded window so state/reaction changes on
-            // already-visible history are picked up, but never more.
-            let page = try await service.messages(
+            // already-visible history are picked up.
+            var page = try await service.messages(
                 accountId: accountId, chatId: chatId,
                 limit: loadedLimit, beforeMsgId: nil)
+            // New messages slide the newest-N window; grow it so history the
+            // user has scrolled to doesn't fall off the top mid-read. The
+            // shared loadedLimit is only written after the selection guard.
+            var grownLimit = loadedLimit
+            if let previousOldest, !page.isEmpty,
+               !page.contains(where: { $0.id == previousOldest }) {
+                grownLimit += Self.messagePageSize
+                page = try await service.messages(
+                    accountId: accountId, chatId: chatId,
+                    limit: grownLimit, beforeMsgId: nil)
+            }
+            // Selection may have moved while we awaited — a slow fetch for
+            // chat A must never render inside chat B.
+            guard accountId == selectedAccountId, chatId == selectedChatId else { return }
+            if grownLimit != loadedLimit {
+                loadedLimit = grownLimit
+                // The window moved under us (new msgs or a deletion) — any
+                // earlier "history exhausted" verdict is stale now.
+                historyExhausted = false
+            }
             messages = page
-            hasMoreMessages = page.count >= Int(loadedLimit)
-            await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
+            hasMoreMessages = !historyExhausted && page.count >= Int(loadedLimit)
+            // Read receipts only for something the user can actually see.
+            if NSApplication.shared.isActive {
+                await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
+            }
         } catch {
-            messages = []
+            if accountId == selectedAccountId, chatId == selectedChatId {
+                messages = []
+            }
         }
     }
 
@@ -334,7 +413,13 @@ final class AppModel {
             let older = try await service.messages(
                 accountId: accountId, chatId: chatId,
                 limit: Self.messagePageSize, beforeMsgId: oldest.id)
+            // Stale-await guard: the user may have switched chats while the
+            // page was in flight; never splice A's history into B.
+            guard accountId == selectedAccountId, chatId == selectedChatId,
+                  messages.first?.id == oldest.id
+            else { return nil }
             guard !older.isEmpty else {
+                historyExhausted = true
                 hasMoreMessages = false
                 return nil
             }
@@ -345,6 +430,36 @@ final class AppModel {
         } catch {
             return nil
         }
+    }
+
+    /// Coalesced reloads: core bursts events during sync; one pending reload
+    /// absorbs the whole burst instead of a full RPC round-trip per event.
+    private func scheduleReloadChats() {
+        guard !reloadChatsScheduled else { return }
+        reloadChatsScheduled = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            reloadChatsScheduled = false
+            await reloadChats()
+        }
+    }
+
+    private func scheduleReloadMessages() {
+        guard !reloadMessagesScheduled else { return }
+        reloadMessagesScheduled = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            reloadMessagesScheduled = false
+            await reloadMessages()
+        }
+    }
+
+    /// App became active: catch up and mark the visible chat read now that
+    /// the user can actually see it.
+    func appDidBecomeActive() async {
+        guard screen == .main else { return }
+        await reloadChats()
+        await reloadMessages()
     }
 
     /// The chat is on screen: mark incoming messages seen. This sends MDN
@@ -361,6 +476,9 @@ final class AppModel {
     }
 
     func toggleArchive() async {
+        // Search takes priority in reloadChats; leaving it active would flip
+        // the title while the list keeps showing search hits.
+        searchQuery = ""
         showingArchive.toggle()
         selectedChatId = nil
         messages = []
@@ -391,16 +509,20 @@ final class AppModel {
             await reloadChats()
             await reloadMessages()
         } catch {
-            loginError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
     func blockSelectedChat() async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
-        try? await service.blockChat(accountId: accountId, chatId: chatId)
-        selectedChatId = nil
-        messages = []
-        await reloadChats()
+        do {
+            try await service.blockChat(accountId: accountId, chatId: chatId)
+            selectedChatId = nil
+            messages = []
+            await reloadChats()
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 
     // MARK: Message actions
@@ -419,9 +541,20 @@ final class AppModel {
 
     func deleteMessage(msgId: UInt32) async {
         guard let accountId = selectedAccountId else { return }
+        if replyTo?.id == msgId {
+            replyTo = nil
+        }
         try? await service.deleteMessages(accountId: accountId, msgIds: [msgId])
         await reloadMessages()
         await reloadChats()
+    }
+
+    /// Forward targets are always the full, unfiltered chat list — the
+    /// sidebar may be showing search/archive results.
+    func forwardTargets() async -> [ChatItem] {
+        guard let accountId = selectedAccountId else { return [] }
+        return ((try? await service.chatList(accountId: accountId)) ?? [])
+            .filter { !$0.isContactRequest }
     }
 
     func forwardMessage(msgId: UInt32, to chatId: UInt32) async {
@@ -440,7 +573,7 @@ final class AppModel {
                 quotedMsgId: replyTo?.id)
             replyTo = nil
         } catch {
-            loginError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
@@ -490,6 +623,10 @@ final class AppModel {
         replyTo = nil
         loadedLimit = Self.messagePageSize
         hasMoreMessages = false
+        historyExhausted = false
+        // Clear immediately so the stale-window growth check in
+        // reloadMessages never compares against the previous chat.
+        messages = []
         await reloadMessages()
         await markSelectedChatNoticed()
     }
@@ -512,7 +649,7 @@ final class AppModel {
                 text: trimmed, filePath: nil, quotedMsgId: replyTo?.id)
             replyTo = nil
         } catch {
-            loginError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
@@ -550,7 +687,10 @@ final class AppModel {
 
         case .chatlistChanged:
             if screen == .main, accountId == selectedAccountId {
-                await reloadChats()
+                scheduleReloadChats()
+                // Overflow recovery maps to ChatlistChanged; per-chat events
+                // may have been dropped, so refresh the open chat too.
+                scheduleReloadMessages()
             }
 
         case .chatChanged(let chatId):
@@ -560,39 +700,53 @@ final class AppModel {
             // ChatlistChanged), so the chat list must refresh here too or
             // badges/previews go stale.
             if accountId == selectedAccountId {
-                await reloadChats()
+                scheduleReloadChats()
                 if chatId == selectedChatId {
-                    await reloadMessages()
+                    scheduleReloadMessages()
                 }
             }
 
         case .incomingMessage(let chatId, _):
             if accountId == selectedAccountId {
-                await reloadChats()
+                scheduleReloadChats()
                 if chatId == selectedChatId {
-                    await reloadMessages()
-                    await markSelectedChatNoticed()
-                }
-                // Notify when the app is in the background or another chat
-                // is open (bundle builds only; bare `swift run` has no
-                // notification identity).
-                let chat = chats.first { $0.id == chatId }
-                if chat?.isMuted != true,
-                   chatId != selectedChatId || !NSApplication.shared.isActive {
-                    NotificationManager.postIncoming(
-                        chatName: chat?.name ?? "New message",
-                        preview: chat?.preview ?? "")
-                }
-                // Subtle in-app ping for messages landing in other chats
-                // (notifications already sound when the app is inactive).
-                if NSApplication.shared.isActive, chatId != selectedChatId,
-                   chat?.isMuted != true {
-                    NSSound(named: "Pop")?.play()
+                    scheduleReloadMessages()
+                    if NSApplication.shared.isActive {
+                        await markSelectedChatNoticed()
+                    }
                 }
             }
+            // Notifications work for EVERY account, not just the selected one.
+            await notifyIncoming(accountId: accountId, chatId: chatId)
 
         case .connectivityChanged:
-            break
+            if showSettings {
+                await refreshConnectivity()
+            }
+        }
+    }
+
+    /// Notification/sound decision for an incoming message. Never trusts the
+    /// filtered sidebar list: a muted chat missing from search/archive
+    /// results must still be recognized as muted (bundle builds only; bare
+    /// `swift run` has no notification identity).
+    private func notifyIncoming(accountId: UInt32, chatId: UInt32) async {
+        // Always a fresh point lookup: the sidebar list may be filtered
+        // (hiding muted chats) or one event stale (showing the previous
+        // message as the preview).
+        guard let chat = try? await service.chatById(accountId: accountId, chatId: chatId),
+              !chat.isMuted, !chat.isDeviceTalk
+        else { return }
+
+        let isCurrentChat = accountId == selectedAccountId && chatId == selectedChatId
+        if !isCurrentChat || !NSApplication.shared.isActive {
+            NotificationManager.postIncoming(chatName: chat.name, preview: chat.preview)
+        }
+        // Subtle in-app ping for messages landing outside the open chat
+        // (notifications already sound when the app is inactive).
+        if NSApplication.shared.isActive, !isCurrentChat,
+           accountId == selectedAccountId {
+            NSSound(named: "Pop")?.play()
         }
     }
 }

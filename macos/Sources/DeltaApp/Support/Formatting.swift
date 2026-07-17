@@ -9,7 +9,10 @@ extension Color {
         var cleaned = hex.trimmingCharacters(in: .whitespaces)
         if cleaned.hasPrefix("#") { cleaned.removeFirst() }
         var value: UInt64 = 0
-        guard cleaned.count == 6, Scanner(string: cleaned).scanHexInt64(&value) else {
+        // allSatisfy: Scanner reports success after ANY leading hex digits,
+        // so "ff00zz" would otherwise become a wrong color, not gray.
+        guard cleaned.count == 6, cleaned.allSatisfy(\.isHexDigit),
+              Scanner(string: cleaned).scanHexInt64(&value) else {
             self = .gray
             return
         }
@@ -124,17 +127,20 @@ enum MessageListEntry: Identifiable, Equatable {
     }
 }
 
-/// Interleaves day markers and decides whether to show the author line
-/// (incoming messages in chats with more than one distinct sender, mirroring
-/// `showAuthor = hasMultipleParticipants` in the desktop UI).
-func buildMessageListEntries(_ messages: [MessageItem], now: Date = Date()) -> [MessageListEntry] {
-    let incomingSenders = Set(
-        messages.filter { !$0.isOutgoing && !$0.isInfo }.map(\.senderName))
-    let showAuthors = incomingSenders.count > 1
+/// Interleaves day markers and decides whether to show the author line:
+/// in group chats, on the first incoming message of each sender's run.
+/// Group membership comes from the chat (not from counting senders in the
+/// loaded window, which breaks under pagination).
+func buildMessageListEntries(
+    _ messages: [MessageItem], inGroup: Bool, now: Date = Date()
+) -> [MessageListEntry] {
     let calendar = Calendar.current
 
     var entries: [MessageListEntry] = []
     var lastDayKey: String?
+    // Sender identity: name + color (color is contact-derived, so two
+    // contacts sharing a display name still count as distinct).
+    var lastSenderKey: String?
     for message in messages {
         let date = Date(timeIntervalSince1970: TimeInterval(message.timestamp))
         let components = calendar.dateComponents([.year, .month, .day], from: date)
@@ -142,10 +148,20 @@ func buildMessageListEntries(_ messages: [MessageItem], now: Date = Date()) -> [
         if dayKey != lastDayKey {
             entries.append(.dayMarker(key: dayKey, label: dayMarkerLabel(message.timestamp, now: now)))
             lastDayKey = dayKey
+            lastSenderKey = nil // a visual break restarts the run
         }
-        entries.append(.message(
-            message,
-            showAuthor: showAuthors && !message.isOutgoing && !message.isInfo))
+        let senderKey: String?
+        if message.isInfo {
+            senderKey = nil
+        } else if message.isOutgoing {
+            senderKey = "\u{0}self"
+        } else {
+            senderKey = "\(message.senderName)|\(message.senderColor)"
+        }
+        let showAuthor = inGroup && !message.isOutgoing && !message.isInfo
+            && senderKey != lastSenderKey
+        lastSenderKey = senderKey
+        entries.append(.message(message, showAuthor: showAuthor))
     }
     return entries
 }

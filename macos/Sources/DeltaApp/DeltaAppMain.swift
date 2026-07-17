@@ -23,7 +23,12 @@ struct DeltaAppMain: App {
                     // Wake from sleep / regained focus: fetch immediately
                     // instead of waiting for the next poll interval.
                     if phase == .active {
-                        Task { try? await model.service.maybeNetwork() }
+                        Task {
+                            try? await model.service.maybeNetwork()
+                            // Mark the visible chat read now that the user
+                            // can actually see it (never while inactive).
+                            await model.appDidBecomeActive()
+                        }
                     }
                 }
         }

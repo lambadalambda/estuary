@@ -100,6 +100,16 @@ struct MainView: View {
         .sheet(isPresented: $model.showSettings) {
             SettingsSheet(model: model)
         }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.actionError != nil },
+                set: { if !$0 { model.actionError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.actionError ?? "")
+        }
     }
 
     private var accountMenu: some View {

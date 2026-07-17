@@ -13,12 +13,15 @@ final class QrCameraScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDeleg
 
     private let queue = DispatchQueue(label: "qr-camera-scan")
     private let onFound: @Sendable (String) -> Void
-    // Queue-confined state (delegate + detector only touched on `queue`).
+    // Detector + lastScan are queue-confined; `finished` is lock-guarded so
+    // stop() takes effect IMMEDIATELY — an async flag set via the queue would
+    // let frames already enqueued ahead of it fire onFound after stop().
     private let detector = CIDetector(
         ofType: CIDetectorTypeQRCode,
         context: nil,
         options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
     private var lastScan = Date.distantPast
+    private let stateLock = NSLock()
     private var finished = false
 
     init?(onFound: @escaping @Sendable (String) -> Void) {
@@ -47,10 +50,25 @@ final class QrCameraScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDeleg
     }
 
     func stop() {
-        queue.async {
-            self.finished = true
-            self.session.stopRunning()
-        }
+        stateLock.lock()
+        finished = true
+        stateLock.unlock()
+        queue.async { self.session.stopRunning() }
+    }
+
+    /// Atomically checks-and-sets `finished`; returns whether we won.
+    private func tryFinish() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        if finished { return false }
+        finished = true
+        return true
+    }
+
+    private var isFinished: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return finished
     }
 
     func captureOutput(
@@ -58,7 +76,7 @@ final class QrCameraScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDeleg
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard !finished,
+        guard !isFinished,
               Date().timeIntervalSince(lastScan) > 0.15,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
         else { return }
@@ -69,8 +87,7 @@ final class QrCameraScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDeleg
             .features(in: image)
             .compactMap { ($0 as? CIQRCodeFeature)?.messageString }
             .first
-        if let payload {
-            finished = true
+        if let payload, tryFinish() {
             session.stopRunning()
             onFound(payload)
         }

@@ -26,8 +26,15 @@ struct ChatDetailView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
                                 .onAppear { loadOlder(proxy: proxy) }
+                                // onAppear won't re-fire while the sentinel
+                                // stays inside the lazy container's realized
+                                // region (the anchor restore parks it just
+                                // off-screen); visibility changes do.
+                                .onScrollVisibilityChange { visible in
+                                    if visible { loadOlder(proxy: proxy) }
+                                }
                         }
-                        ForEach(buildMessageListEntries(model.messages)) { entry in
+                        ForEach(buildMessageListEntries(model.messages, inGroup: chat.isGroup)) { entry in
                             switch entry {
                             case .dayMarker(_, let label):
                                 DayMarkerView(label: label)
@@ -228,12 +235,14 @@ struct ForwardSheet: View {
     let model: AppModel
     let msgId: UInt32
     @Environment(\.dismiss) private var dismiss
+    /// Full unfiltered chat list — the sidebar may be showing search results.
+    @State private var targets: [ChatItem] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Forward to…")
                 .font(.title3.bold())
-            List(model.chats.filter { !$0.isContactRequest }) { chat in
+            List(targets) { chat in
                 Button {
                     dismiss()
                     Task { await model.forwardMessage(msgId: msgId, to: chat.id) }
@@ -254,6 +263,7 @@ struct ForwardSheet: View {
         }
         .padding(16)
         .frame(width: 320)
+        .task { targets = await model.forwardTargets() }
     }
 }
 
@@ -580,7 +590,7 @@ struct ReactionChipsView: View {
 
 /// One shared player: starting a message stops the previous one.
 @MainActor
-final class AudioPlayerController: ObservableObject {
+final class AudioPlayerController: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = AudioPlayerController()
     @Published var playingPath: String?
     private var player: AVAudioPlayer?
@@ -593,8 +603,23 @@ final class AudioPlayerController: ObservableObject {
         }
         player?.stop()
         player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+        player?.delegate = self
         player?.play()
         playingPath = player != nil ? path : nil
+    }
+
+    /// Natural end of playback: reset the button state (otherwise the pause
+    /// icon sticks forever and the next click "stops" a stopped player).
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // Only clear state for the player that actually finished — the user
+        // may have started another track before the hop lands. Identity via
+        // ObjectIdentifier: the player itself is not Sendable.
+        let finished = ObjectIdentifier(player)
+        Task { @MainActor in
+            guard let current = self.player, ObjectIdentifier(current) == finished else { return }
+            self.playingPath = nil
+            self.player = nil
+        }
     }
 }
 

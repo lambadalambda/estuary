@@ -113,6 +113,10 @@ actor MockChatService: ChatService {
     func startIo() { ioRunning = true }
     func stopIo() { ioRunning = false }
 
+    func chatById(accountId: UInt32, chatId: UInt32) -> ChatItem? {
+        chatsByAccount[accountId]?.first { $0.id == chatId }
+    }
+
     func chatList(accountId: UInt32) throws -> [ChatItem] {
         guard let chats = chatsByAccount[accountId] else {
             throw ServiceError.core(msg: "no such account: \(accountId)")
@@ -130,7 +134,10 @@ actor MockChatService: ChatService {
             throw ServiceError.core(msg: "no such chat: \(chatId)")
         }
         var all = messagesByChat[chatId] ?? []
-        if let beforeMsgId, let pos = all.firstIndex(where: { $0.id == beforeMsgId }) {
+        if let beforeMsgId {
+            guard let pos = all.firstIndex(where: { $0.id == beforeMsgId }) else {
+                return [] // anchor gone: match dcvm, never the newest page
+            }
             all = Array(all[..<pos])
         }
         if limit > 0 && all.count > Int(limit) {
@@ -478,6 +485,11 @@ actor MockChatService: ChatService {
 
         guard echo else { return }
         try? await Task.sleep(for: .milliseconds(700))
+        // The chat may have been blocked/removed while we slept; the
+        // dictionary default would silently resurrect it.
+        guard chatsByAccount[accountId]?.contains(where: { $0.id == chatId }) == true else {
+            return
+        }
         let replyId = nextMsgId
         nextMsgId += 1
         let now = Int64(Date().timeIntervalSince1970)

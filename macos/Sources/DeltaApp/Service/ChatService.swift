@@ -162,6 +162,9 @@ protocol ChatService: Sendable {
     func startIo() async throws
     func stopIo() async throws
     func chatList(accountId: UInt32) async throws -> [ChatItem]
+    /// Fresh single row (nil for unknown/deleted chats) — point lookups for
+    /// notifications etc.; never rely on the filtered sidebar list.
+    func chatById(accountId: UInt32, chatId: UInt32) async throws -> ChatItem?
     /// Newest last. `limit == 0` means all; `beforeMsgId` pages into history.
     func messages(
         accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?

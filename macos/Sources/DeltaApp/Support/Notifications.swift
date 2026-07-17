@@ -6,21 +6,49 @@ import UserNotifications
 /// so under bare `swift run` this is a silent no-op.
 @MainActor
 enum NotificationManager {
+    private enum AuthState { case unknown, requesting, granted, denied }
+
     private static let available = Bundle.main.bundleIdentifier != nil
-    private static var requested = false
+    private static var auth = AuthState.unknown
+    /// Messages arriving while the permission prompt is up; flushed on grant.
+    private static var pending: [(chatName: String, preview: String)] = []
 
     static func postIncoming(chatName: String, preview: String) {
         guard available else { return }
-        let center = UNUserNotificationCenter.current()
-        if !requested {
-            requested = true
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        switch auth {
+        case .granted:
+            deliver(chatName: chatName, preview: preview)
+        case .denied:
+            break
+        case .requesting:
+            // The prompt is user-paced; queue instead of silently dropping
+            // everything that arrives before it is answered.
+            pending.append((chatName, preview))
+        case .unknown:
+            auth = .requesting
+            pending.append((chatName, preview))
+            UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                    Task { @MainActor in
+                        auth = granted ? .granted : .denied
+                        let queued = pending
+                        pending = []
+                        if granted {
+                            for item in queued {
+                                deliver(chatName: item.chatName, preview: item.preview)
+                            }
+                        }
+                    }
+                }
         }
+    }
+
+    private nonisolated static func deliver(chatName: String, preview: String) {
         let content = UNMutableNotificationContent()
         content.title = chatName
         content.body = preview
         content.sound = .default
-        center.add(UNNotificationRequest(
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil))
     }
 }

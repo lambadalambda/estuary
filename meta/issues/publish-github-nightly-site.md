@@ -33,3 +33,10 @@ landing page on GitHub Pages describing the app and offering the download.
   app-bundle-polish).
 - CI YAML/HTML/README are not unit-testable — verification is the live
   workflow run and the served page.
+
+## Outcome (2026-07-17)
+
+Live: repo github.com/lambadalambda/estuary (public, Unlicense), site
+https://lambadalambda.github.io/estuary/, nightly workflow green (first DMG
+built from run 29578819592), user confirmed downloading the DMG from the
+stable URL. Cold-cache CI runs take ~45 min; warm-cache runs much less.

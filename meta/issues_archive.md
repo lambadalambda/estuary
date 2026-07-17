@@ -15,3 +15,4 @@
 - [x] [Website screenshots with demo data](issues/website-screenshots.md)
 - [x] [Chat chrome polish: sidebar scrollbar, composer alignment + shape](issues/chat-chrome-polish.md)
 - [x] [Scroll regressions: jump-to-top on select/post, sidebar scroller flash](issues/scroll-regressions.md)
+- [x] [Empty state: tiled backdrop only covers the placeholder box](issues/empty-state-backdrop-fill.md)

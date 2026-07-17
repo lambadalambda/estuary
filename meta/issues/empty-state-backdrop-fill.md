@@ -13,3 +13,8 @@ pane — the Group carrying `.background(ChatBackdrop())` hugs its content.
 ## Acceptance Criteria
 
 - User confirms the first screen is fully tiled (visual; untestable).
+
+## Outcome (2026-07-17)
+
+Fixed (greedy frame before the backdrop) and user-confirmed ("there we
+go"); shipped in 9f3da05.

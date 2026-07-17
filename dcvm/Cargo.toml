@@ -3,7 +3,7 @@ name = "dcvm"
 version = "0.1.0"
 edition = "2021"
 description = "DeltaChat viewmodel: headless client logic over deltachat core, exposed via UniFFI"
-license = "MPL-2.0"
+license = "Unlicense"
 
 [lib]
 crate-type = ["lib", "staticlib"]

@@ -6,3 +6,4 @@
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
 - [ ] [Links, in-chat avatars, human timestamps, full muting](issues/links-avatars-timestamps-muting.md)
+- [ ] [Whole-app bug audit](issues/whole-app-bug-audit.md)

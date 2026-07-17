@@ -90,6 +90,8 @@ pub struct MessageItem {
     pub sender_name: String,
     /// `#rrggbb`
     pub sender_color: String,
+    /// Sender profile image path, if any (for in-chat avatars in groups).
+    pub sender_avatar: Option<String>,
     pub state: MessageState,
     pub kind: MessageKind,
     /// Absolute path into the account's blobdir.

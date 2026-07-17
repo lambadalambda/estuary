@@ -10,6 +10,11 @@ struct MainView: View {
                 ChatRowView(chat: chat)
                     .tag(chat.id)
                     .contextMenu {
+                        Button(chat.isMuted ? "Unmute" : "Mute") {
+                            Task {
+                                await model.setMuted(chatId: chat.id, muted: !chat.isMuted)
+                            }
+                        }
                         Button(chat.isArchived ? "Unarchive" : "Archive") {
                             Task {
                                 await model.setArchived(
@@ -142,9 +147,12 @@ struct ChatRowView: View {
                     }
                     Spacer(minLength: 4)
                     if chat.timestamp > 0 {
-                        Text(chatListTimestamp(chat.timestamp))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        // Refreshes each minute so "now"/"5 min" stay honest.
+                        TimelineView(.everyMinute) { timeline in
+                            Text(chatListTimestamp(chat.timestamp, now: timeline.date))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -161,12 +169,15 @@ struct ChatRowView: View {
                             .padding(.vertical, 2)
                             .background(.quaternary, in: Capsule())
                     } else if chat.freshCount > 0 {
+                        // Muted chats keep their count but lose the loud color.
                         Text("\(chat.freshCount)")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.accentColor, in: Capsule())
+                            .background(
+                                chat.isMuted ? Color.gray.opacity(0.55) : Color.accentColor,
+                                in: Capsule())
                     }
                 }
             }

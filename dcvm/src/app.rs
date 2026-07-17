@@ -178,6 +178,7 @@ async fn message_item(ctx: &Context, msg: &Message) -> Result<MessageItem, VmErr
         is_info: msg.is_info(),
         sender_name: sender.get_display_name().to_string(),
         sender_color: color_to_hex(sender.get_color()),
+        sender_avatar: sender.get_profile_image(ctx).await?.map(path_string),
         state: map_message_state(msg.get_state()),
         kind: map_viewtype(msg.get_viewtype()),
         file: msg.get_file(ctx).map(path_string),
@@ -596,6 +597,27 @@ impl DcApp {
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
             ChatId::new(chat_id).block(&ctx).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+    pub async fn set_chat_muted(
+        &self,
+        account_id: u32,
+        chat_id: u32,
+        muted: bool,
+    ) -> Result<(), VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let duration = if muted {
+                chat::MuteDuration::Forever
+            } else {
+                chat::MuteDuration::NotMuted
+            };
+            chat::set_muted(&ctx, ChatId::new(chat_id), duration).await?;
             Ok(())
         })
         .await

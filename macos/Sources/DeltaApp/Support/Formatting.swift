@@ -62,6 +62,29 @@ func dayMarkerLabel(_ epochSeconds: Int64, now: Date = Date()) -> String {
     return date.formatted(date: .long, time: .omitted)
 }
 
+/// Detects URLs and returns text with tappable links (underlined, colored).
+/// `linkColor` must contrast with the bubble background — white on outgoing
+/// accent bubbles, accent on incoming ones.
+func linkified(_ text: String, linkColor: Color) -> AttributedString {
+    var attributed = AttributedString(text)
+    guard let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+    else { return attributed }
+    let matches = detector.matches(
+        in: text, range: NSRange(text.startIndex..., in: text))
+    for match in matches {
+        guard let url = match.url,
+              let range = Range(match.range, in: text),
+              let lower = AttributedString.Index(range.lowerBound, within: attributed),
+              let upper = AttributedString.Index(range.upperBound, within: attributed)
+        else { continue }
+        attributed[lower..<upper].link = url
+        attributed[lower..<upper].underlineStyle = .single
+        attributed[lower..<upper].foregroundColor = linkColor
+    }
+    return attributed
+}
+
 /// Message footer time, "14:03".
 func messageTime(_ epochSeconds: Int64) -> String {
     Date(timeIntervalSince1970: TimeInterval(epochSeconds))

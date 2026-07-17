@@ -736,6 +736,11 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     
     func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws 
     
+    /**
+     * Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+     */
+    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws 
+    
     func setDisplayName(accountId: UInt32, name: String) async throws 
     
     func startIo() async throws 
@@ -1401,6 +1406,25 @@ open func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool)asyn
         )
 }
     
+    /**
+     * Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+     */
+open func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_set_chat_muted(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterBool.lower(muted)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 open func setDisplayName(accountId: UInt32, name: String)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -1997,6 +2021,10 @@ public struct MessageItem: Equatable, Hashable {
      * `#rrggbb`
      */
     public let senderColor: String
+    /**
+     * Sender profile image path, if any (for in-chat avatars in groups).
+     */
+    public let senderAvatar: String?
     public let state: MessageState
     public let kind: MessageKind
     /**
@@ -2025,7 +2053,10 @@ public struct MessageItem: Equatable, Hashable {
     public init(id: UInt32, chatId: UInt32, text: String, timestamp: Int64, isOutgoing: Bool, isInfo: Bool, senderName: String, 
         /**
          * `#rrggbb`
-         */senderColor: String, state: MessageState, kind: MessageKind, 
+         */senderColor: String, 
+        /**
+         * Sender profile image path, if any (for in-chat avatars in groups).
+         */senderAvatar: String?, state: MessageState, kind: MessageKind, 
         /**
          * Absolute path into the account's blobdir.
          */file: String?, fileName: String?, 
@@ -2046,6 +2077,7 @@ public struct MessageItem: Equatable, Hashable {
         self.isInfo = isInfo
         self.senderName = senderName
         self.senderColor = senderColor
+        self.senderAvatar = senderAvatar
         self.state = state
         self.kind = kind
         self.file = file
@@ -2082,6 +2114,7 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
                 isInfo: FfiConverterBool.read(from: &buf), 
                 senderName: FfiConverterString.read(from: &buf), 
                 senderColor: FfiConverterString.read(from: &buf), 
+                senderAvatar: FfiConverterOptionString.read(from: &buf), 
                 state: FfiConverterTypeMessageState.read(from: &buf), 
                 kind: FfiConverterTypeMessageKind.read(from: &buf), 
                 file: FfiConverterOptionString.read(from: &buf), 
@@ -2104,6 +2137,7 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
         FfiConverterBool.write(value.isInfo, into: &buf)
         FfiConverterString.write(value.senderName, into: &buf)
         FfiConverterString.write(value.senderColor, into: &buf)
+        FfiConverterOptionString.write(value.senderAvatar, into: &buf)
         FfiConverterTypeMessageState.write(value.state, into: &buf)
         FfiConverterTypeMessageKind.write(value.kind, into: &buf)
         FfiConverterOptionString.write(value.file, into: &buf)
@@ -3195,6 +3229,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_set_chat_archived() != 62327) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_set_chat_muted() != 53737) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_set_display_name() != 55875) {

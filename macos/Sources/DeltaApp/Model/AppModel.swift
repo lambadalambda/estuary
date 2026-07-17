@@ -374,6 +374,12 @@ final class AppModel {
         await reloadChats()
     }
 
+    func setMuted(chatId: UInt32, muted: Bool) async {
+        guard let accountId = selectedAccountId else { return }
+        try? await service.setChatMuted(accountId: accountId, chatId: chatId, muted: muted)
+        await reloadChats()
+    }
+
     // MARK: Contact requests
 
     func acceptSelectedChat() async {
@@ -569,7 +575,8 @@ final class AppModel {
                 // is open (bundle builds only; bare `swift run` has no
                 // notification identity).
                 let chat = chats.first { $0.id == chatId }
-                if chatId != selectedChatId || !NSApplication.shared.isActive {
+                if chat?.isMuted != true,
+                   chatId != selectedChatId || !NSApplication.shared.isActive {
                     NotificationManager.postIncoming(
                         chatName: chat?.name ?? "New message",
                         preview: chat?.preview ?? "")

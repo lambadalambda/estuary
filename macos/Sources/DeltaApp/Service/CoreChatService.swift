@@ -220,6 +220,11 @@ actor CoreChatService: ChatService {
         } catch { throw mapError(error) }
     }
 
+    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws {
+        do { try await app().setChatMuted(accountId: accountId, chatId: chatId, muted: muted) }
+        catch { throw mapError(error) }
+    }
+
     func archivedChats(accountId: UInt32) async throws -> [ChatItem] {
         do { return try await app().archivedChats(accountId: accountId).map(mapChat) }
         catch { throw mapError(error) }
@@ -325,6 +330,7 @@ private func mapMessage(_ m: DeltaCore.MessageItem) -> MessageItem {
         isInfo: m.isInfo,
         senderName: m.senderName,
         senderColor: m.senderColor,
+        senderAvatar: m.senderAvatar,
         state: mapState(m.state),
         kind: mapKind(m.kind),
         file: m.file,

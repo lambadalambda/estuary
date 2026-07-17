@@ -34,6 +34,7 @@ struct ChatDetailView: View {
                             case .message(let message, let showAuthor):
                                 MessageBubbleView(
                                     model: model, message: message, showAuthor: showAuthor,
+                                    inGroup: chat.isGroup,
                                     onForward: { forwardingMsgId = message.id },
                                     onPreview: { quickLookURL = $0 })
                             }
@@ -281,6 +282,7 @@ struct MessageBubbleView: View {
     let model: AppModel
     let message: MessageItem
     let showAuthor: Bool
+    var inGroup = false
     var onForward: () -> Void = {}
     /// Quick Look request (space-bar-style preview owned by the chat view).
     var onPreview: (URL) -> Void = { _ in }
@@ -301,7 +303,20 @@ struct MessageBubbleView: View {
                 bubbleWithReactions
             }
         } else {
-            HStack(alignment: .bottom) {
+            HStack(alignment: .top, spacing: 8) {
+                if inGroup {
+                    // Avatar on the first bubble of a sender's run; the rest
+                    // keep the indent so bubbles stay aligned.
+                    if showAuthor {
+                        ChatAvatarView(
+                            name: message.senderName,
+                            colorHex: message.senderColor,
+                            avatarPath: message.senderAvatar,
+                            size: 28)
+                    } else {
+                        Color.clear.frame(width: 28, height: 1)
+                    }
+                }
                 bubbleWithReactions
                 Spacer(minLength: 80)
             }
@@ -349,7 +364,9 @@ struct MessageBubbleView: View {
             mediaContent
 
             if !message.text.isEmpty {
-                Text(message.text)
+                Text(linkified(
+                    message.text,
+                    linkColor: message.isOutgoing ? .white : .accentColor))
                     .textSelection(.enabled)
                     .foregroundStyle(message.isOutgoing ? .white : .primary)
             }

@@ -325,3 +325,15 @@ layout. Plus an NSCache for decoded images (LazyVStack re-renders hit disk other
 - Subtle "Pop" for messages landing in other chats while active (notifications cover
   the inactive case).
 - Liquid Glass composer bar on macOS 26 via #available (min platform stays 15).
+
+## 2026-07-17 — Links, in-chat avatars, live timestamps, full muting
+
+- URLs in bubbles are tappable (NSDataDetector -> AttributedString links; white
+  underline on outgoing accent bubbles, accent on incoming).
+- Group chats show the sender avatar beside the first bubble of each run
+  (MessageItem.sender_avatar over the FFI); later bubbles keep the indent.
+- Chat-list timestamps were already relative but never refreshed — now wrapped in
+  TimelineView(.everyMinute) so "now"/"5 min" stay honest.
+- Muting: set_chat_muted over the FFI (MuteDuration::Forever/NotMuted, synced),
+  mute/unmute in the row context menu, gray unread badge, no sound, no notification
+  for muted chats. Offline mute round-trip test (24 dcvm tests total).

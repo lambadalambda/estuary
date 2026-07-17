@@ -900,3 +900,24 @@ async fn message_pagination() {
     // limit 0 = everything.
     assert_eq!(app.messages(id, chat, 0, None).await.unwrap().len(), 25);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mute_round_trip() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    app.send_text(id, chat, "hi".into()).await.unwrap();
+
+    let row = |chats: Vec<dcvm::ChatItem>| chats.into_iter().find(|c| c.id == chat).unwrap();
+    assert!(!row(app.chat_list(id).await.unwrap()).is_muted);
+
+    app.set_chat_muted(id, chat, true).await.unwrap();
+    assert!(row(app.chat_list(id).await.unwrap()).is_muted);
+
+    app.set_chat_muted(id, chat, false).await.unwrap();
+    assert!(!row(app.chat_list(id).await.unwrap()).is_muted);
+}

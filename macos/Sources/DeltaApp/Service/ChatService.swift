@@ -79,6 +79,8 @@ struct MessageItem: Identifiable, Equatable, Sendable {
     var senderName: String
     /// "#rrggbb"
     var senderColor: String
+    /// Sender profile image path (in-chat avatars in groups).
+    var senderAvatar: String?
     var state: MessageState
     var kind: MessageKind = .text
     /// Absolute path into the account's blobdir.
@@ -202,6 +204,8 @@ protocol ChatService: Sendable {
     func acceptChat(accountId: UInt32, chatId: UInt32) async throws
     func blockChat(accountId: UInt32, chatId: UInt32) async throws
     func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws
+    /// Mute is indefinite and synced to other devices.
+    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws
     func archivedChats(accountId: UInt32) async throws -> [ChatItem]
     func searchChats(accountId: UInt32, query: String) async throws -> [ChatItem]
     func searchMessages(accountId: UInt32, query: String) async throws -> [MessageItem]

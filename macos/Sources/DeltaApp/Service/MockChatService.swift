@@ -385,6 +385,10 @@ actor MockChatService: ChatService {
         mutateChat(accountId: accountId, chatId: chatId) { $0.isArchived = archived }
     }
 
+    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) {
+        mutateChat(accountId: accountId, chatId: chatId) { $0.isMuted = muted }
+    }
+
     func archivedChats(accountId: UInt32) throws -> [ChatItem] {
         try chatListAll(accountId: accountId).filter(\.isArchived)
     }

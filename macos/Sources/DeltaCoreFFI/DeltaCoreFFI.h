@@ -434,6 +434,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_set_avatar(uint64_t ptr, uint32_t account_i
 uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_archived(uint64_t ptr, uint32_t account_id, uint32_t chat_id, int8_t archived
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_MUTED
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_MUTED
+uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_muted(uint64_t ptr, uint32_t account_id, uint32_t chat_id, int8_t muted
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_DISPLAY_NAME
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_DISPLAY_NAME
 uint64_t uniffi_dcvm_fn_method_dcapp_set_display_name(uint64_t ptr, uint32_t account_id, RustBuffer name
@@ -930,6 +935,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_set_avatar(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_ARCHIVED
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_ARCHIVED
 uint16_t uniffi_dcvm_checksum_method_dcapp_set_chat_archived(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_MUTED
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SET_CHAT_MUTED
+uint16_t uniffi_dcvm_checksum_method_dcapp_set_chat_muted(void
     
 );
 #endif

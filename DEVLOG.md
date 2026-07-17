@@ -477,3 +477,23 @@ flagged the near-invisible card edges (mockup-accurate but risky) → shadow;
 and a theme test overclaiming "contrast" when it only guards same-color
 pairs → renamed honestly. Dynamic-color creation extracted into one
 `adaptive(_:)` helper now that three colors use it.
+
+## 2026-07-17 — Quote contrast fix, tiling chat background, showcase mock
+
+- User-found bug: quote blocks in OUTGOING bubbles used `.primary`/contact
+  colors → black-on-deep-teal. Everything inside an outgoing bubble must be
+  white; quote bar/name/text now switch on `isOutgoing`.
+- Tiling chat background from the user's CC0 pattern (make tiles →
+  dev/icon/gen-tiles.swift): light = pattern MULTIPLIED onto warm ivory;
+  dark = DIFFERENCE-inverted, then SCREENED onto midnight at 0.5 alpha so
+  only the strokes lift the background. 512px bitmaps declared at 256pt for
+  @2x retina density. `ChatBackdrop` (surface + tile, per-appearance via
+  colorScheme) replaces the flat surface. Tile visuals are eyeball-verified
+  (both variants inspected); resource presence is theme-tested.
+- Mock seed reworked into the website showcase (Elena/Marco/Priya/Sam,
+  Weekend Hikers group with isGroup flag, real bundled CC0 sunset photo,
+  previews/timestamps synced for manual appends) — pinned Saved Messages
+  would have hijacked chats.first for the AUTOSELECT hook, so it's unpinned.
+  Showcase shape is pinned by MockShowcaseTests. Screenshot env recipe:
+  DCNATIVE_MOCK=1 DCNATIVE_AUTODEMO=1 DCNATIVE_AUTOSELECT=1
+  DCNATIVE_APPEARANCE=light|dark.

@@ -603,3 +603,22 @@ eyeball-verified.
   onScrollGeometryChange diagnostics (offset/content/container) to
   pin down the stranded geometry for a principled geometry-triggered fix.
   All view-timing behavior — untestable per project rules, user-verified.
+- Geometry logs from the failing open (user): contentSize estimates
+  oscillate wildly during settling (672→4346→7830→6957, sometimes
+  collapsing to ~120), the broken state's geometry LOOKS sane (offset
+  nominally inside content) while nothing renders, and the proxy re-pin
+  produces zero geometry delta — ScrollViewProxy.scrollTo silently no-ops
+  against derealized targets. An AppKit clip-view rescue was built, then
+  REPLACED after an approach review: a resize heals via container-size
+  invalidation (full lazy re-solve + bottom re-anchor), while a clip move
+  is only an origin change over the same corrupted bookkeeping, with a
+  silent no-op hole at zero delta. Shipped stopgap: shot 1 proxy re-pin
+  (~120ms), shot 2 a 1pt ScrollView-padding toggle (~450ms) that rides
+  exactly the proven resize path. Untestable view timing per rules.
+- Root cause per approach review, queued as the real fix: LazyVStack
+  realization bookkeeping under bottom anchoring has now caused three
+  consecutive regressions; the open window is 100 fixed-size items, so
+  laziness earns ~nothing. Plan: swap to plain VStack, profile 100-item
+  open + ~500-item grown window (hoist per-bubble TimelineView if needed),
+  then delete the rescue machinery. Also: deployment target is macOS 15 —
+  dropped a dead #available(15) guard.

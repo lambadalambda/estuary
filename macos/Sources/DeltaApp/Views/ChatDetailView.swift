@@ -14,6 +14,7 @@ struct ChatDetailView: View {
     @State private var loadingOlder = false
     @State private var quickLookURL: URL?
     @FocusState private var composerFocused: Bool
+    @State private var rescueNudge = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +73,10 @@ struct ChatDetailView: View {
                 // left alone.
                 .defaultScrollAnchor(.bottom)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                // 1pt container-size nudge — the rescue lever for the
+                // blank-open bug: shrinking the scroll view's frame forces
+                // the same full lazy re-solve as a window resize.
+                .padding(.bottom, rescueNudge ? 1 : 0)
                 .scrollGeometryDebug(model: model)
                 // Fresh scroll state per chat; with the initial anchor this
                 // is the no-animation snap to the newest message.
@@ -79,28 +84,38 @@ struct ChatDetailView: View {
                 .onChange(of: chat.id) {
                     draft = ""
                     composerFocused = true
+                    rescueNudge = false
                 }
                 // Rescue for the window-size-dependent blank open: for some
                 // viewport heights the initial bottom-anchored layout of the
-                // lazy stack strands the viewport outside the realized
-                // content (any resize heals it — a full relayout). Explicit
-                // re-pins after layout settles do the same. Two shots
-                // (~120ms and ~450ms after open) because the settling
-                // oscillation can outlast the first on cold image-heavy
-                // opens. Deliberately NOT guarded on viewIsAtBottom: the
+                // lazy stack strands the viewport in unrealized space while
+                // the geometry still LOOKS sane, and ScrollViewProxy.scrollTo
+                // silently no-ops there (geo logs). A window resize always
+                // heals it — a container-size invalidation re-solves the
+                // whole lazy layout and re-applies the bottom anchor. Shot 1
+                // (~120ms): cheap proxy re-pin for when the anchor still
+                // resolves. Shot 2 (~450ms): the nudge below toggles 1pt of
+                // ScrollView padding, riding exactly that proven resize
+                // path. Deliberately NOT guarded on viewIsAtBottom: the
                 // stranded state reports not-at-bottom, which would defeat
                 // the rescue — and this close to open, snapping to the
-                // newest message is the right outcome anyway.
+                // newest message is the right outcome.
                 .task(id: chat.id) {
-                    for delay in [120, 330] {
-                        try? await Task.sleep(for: .milliseconds(delay))
-                        // Task.sleep in a cancelled task returns instead of
-                        // throwing into try? — without this check a rapid
-                        // chat switch fires a stale re-pin at the new chat.
-                        guard !Task.isCancelled else { return }
-                        model.scrollDebug("view: post-open re-pin bottom")
-                        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                    }
+                    try? await Task.sleep(for: .milliseconds(120))
+                    // Task.sleep in a cancelled task returns instead of
+                    // throwing into try? — without this check a rapid chat
+                    // switch fires a stale re-pin at the new chat.
+                    guard !Task.isCancelled else { return }
+                    model.scrollDebug("view: post-open re-pin bottom")
+                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+
+                    try? await Task.sleep(for: .milliseconds(330))
+                    guard !Task.isCancelled else { return }
+                    model.scrollDebug("view: container-nudge rescue")
+                    rescueNudge = true
+                    try? await Task.sleep(for: .milliseconds(50))
+                    guard !Task.isCancelled else { return }
+                    rescueNudge = false
                 }
             }
 
@@ -266,11 +281,10 @@ extension View {
     /// vs container height is exactly what distinguishes "viewport parked
     /// outside the content" from "content never realized" in the
     /// blank-open bug. Kept off the scroll hot path entirely unless the
-    /// env is set (the flag is process-constant, so the branch is stable)
-    /// or below macOS 15.
+    /// env is set (the flag is process-constant, so the branch is stable).
     @ViewBuilder
     func scrollGeometryDebug(model: AppModel) -> some View {
-        if #available(macOS 15.0, *), AppModel.scrollDebugEnabled {
+        if AppModel.scrollDebugEnabled {
             onScrollGeometryChange(for: ScrollGeoSample.self) { geo in
                 ScrollGeoSample(
                     offset: Int(geo.contentOffset.y),

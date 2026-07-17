@@ -50,3 +50,10 @@ DCNATIVE_DEBUG_SCROLL logs show NO loadOlder activity — the prepend theory
 is falsified for this repro; the initial bottom-anchored layout itself
 strands the viewport (bottom-anchor visibility flaps ~12x per open while
 layout oscillates). Next: scroll-geometry diagnostics + post-open re-pin.
+
+## Plan after approach review (2026-07-17)
+
+Stopgap shipped: 120ms proxy re-pin + 450ms 1pt container nudge (the
+resize-heal path). Real fix queued: replace LazyVStack with plain VStack
+(100 fixed-size items in the open window; three lazy-realization
+regressions to date), profile, then delete the rescue machinery.

@@ -28,7 +28,11 @@ jobs:
       # SDK; on older SDKs the code compile-guards down to bar material.
       - name: Select newest Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          # Prefer stable: sort -V ranks "_beta" ABOVE the same stable
+          # version, and a beta may lag the stable next to it.
+          XCODE=$(ls -d /Applications/Xcode*.app \
+            | grep -viE 'beta|release.candidate' | sort -V | tail -1)
+          [ -n "$XCODE" ] || XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           echo "using $XCODE"
           sudo xcode-select -s "$XCODE"
           swift --version

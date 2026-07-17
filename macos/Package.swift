@@ -7,7 +7,7 @@ let rustLibDir = "\(Context.packageDirectory)/../dcvm/target/debug"
 
 let package = Package(
     name: "DeltaApp",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     targets: [
         // C FFI module: generated module.modulemap + DeltaCoreFFI.h.
         .systemLibrary(name: "DeltaCoreFFI", path: "Sources/DeltaCoreFFI"),

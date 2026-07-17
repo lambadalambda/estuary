@@ -10,11 +10,6 @@ struct ChatDetailView: View {
     @State private var draft = ""
     @State private var showAttachPicker = false
     @State private var forwardingMsgId: UInt32?
-    /// Tracked via the bottom sentinel: follow new messages only while the
-    /// user is already at the bottom.
-    @State private var isAtBottom = true
-    @State private var lastChatId: UInt32?
-    @State private var lastNewestMsgId: UInt32?
     @State private var loadingOlder = false
 
     var body: some View {
@@ -42,35 +37,21 @@ struct ChatDetailView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(bottomAnchorID)
-                            .onAppear { isAtBottom = true }
-                            .onDisappear { isAtBottom = false }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                 }
-                .onAppear {
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                }
-                .onChange(of: model.messages) {
-                    let newest = model.messages.last?.id
-                    if lastChatId != chat.id {
-                        // Chat switch: snap straight to the newest message.
-                        lastChatId = chat.id
-                        lastNewestMsgId = newest
-                        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                    } else if newest != lastNewestMsgId {
-                        // Something new at the bottom: follow it only if the
-                        // user was already there; never yank them up-thread.
-                        lastNewestMsgId = newest
-                        if isAtBottom {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                            }
-                        }
-                    }
-                    // else: history was prepended; loadOlder restores the
-                    // anchor itself.
-                }
+                // Chat behavior without manual scroll bookkeeping: start at
+                // the bottom (after layout, so it can't land mid-chat), and
+                // stay pinned there through content growth — new messages,
+                // image blobs arriving, bubbles resizing — but only while the
+                // user actually is at the bottom. Scrolled-up positions are
+                // left alone.
+                .defaultScrollAnchor(.bottom)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                // Fresh scroll state per chat; with the initial anchor this
+                // is the no-animation snap to the newest message.
+                .id(chat.id)
                 .onChange(of: chat.id) {
                     draft = ""
                 }
@@ -363,11 +344,42 @@ struct MessageBubbleView: View {
             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    /// Display size derived from core's stored pixel dimensions, so the
+    /// bubble has its final size BEFORE the image blob is loaded/downloaded —
+    /// no post-hoc growth, no scroll drift.
+    private var imageDisplaySize: CGSize? {
+        guard message.width > 0, message.height > 0 else { return nil }
+        let w = CGFloat(message.width)
+        let h = CGFloat(message.height)
+        let scale = min(320 / w, 320 / h, 1)
+        return CGSize(width: max(w * scale, 40), height: max(h * scale, 40))
+    }
+
     @ViewBuilder
     private var mediaContent: some View {
         switch message.kind {
         case .image, .gif, .sticker:
-            if let file = message.file, let image = NSImage(contentsOfFile: file) {
+            let image = message.file.flatMap(ImageCache.load)
+            if let size = imageDisplaySize {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.quaternary)
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        // Blob still downloading: reserve the final size.
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .frame(width: size.width, height: size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onTapGesture { openFile() }
+            } else if let image {
+                // Dimensions unknown: size from the decoded image (stable
+                // across renders once the file exists).
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -448,6 +460,24 @@ struct MessageBubbleView: View {
         Button("Delete", role: .destructive) {
             Task { await model.deleteMessage(msgId: message.id) }
         }
+    }
+}
+
+// MARK: - Image cache
+
+/// Decoded-image cache: bubbles re-render often in a LazyVStack and
+/// `NSImage(contentsOfFile:)` hits the disk every time.
+@MainActor
+enum ImageCache {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    static func load(_ path: String) -> NSImage? {
+        if let hit = cache.object(forKey: path as NSString) {
+            return hit
+        }
+        guard let image = NSImage(contentsOfFile: path) else { return nil }
+        cache.setObject(image, forKey: path as NSString)
+        return image
     }
 }
 

@@ -297,3 +297,18 @@ First real-account feedback fixes:
   appear/disappear); otherwise incoming messages leave the viewport alone.
 - Chat switch snaps to the newest message without animation (the animated scroll only
   runs for new-message-while-at-bottom).
+
+## 2026-07-17 — Scroll follow-up: layout-aware anchoring + stable image sizes
+
+The manual scroll bookkeeping raced layout: snapping to bottom before lazy cells and
+images had their real sizes landed mid-chat, and a blob finishing its download grew the
+bubble after the last scroll. Replaced with the purpose-built API (needs macOS 15,
+platform bumped): `.defaultScrollAnchor(.bottom)` for layout-aware initial position
+(+ `.id(chat.id)` so each chat starts fresh = snap semantics) and
+`.defaultScrollAnchor(.bottom, for: .sizeChanges)` to stay pinned through content
+growth only while actually at the bottom. Deleted isAtBottom/lastNewest tracking;
+prepend anchor-restore stays.
+
+Image bubbles now size themselves from core's stored pixel dimensions BEFORE the blob
+exists (placeholder at final size while downloading), so arrival changes pixels, not
+layout. Plus an NSCache for decoded images (LazyVStack re-renders hit disk otherwise).

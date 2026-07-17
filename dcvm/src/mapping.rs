@@ -128,6 +128,11 @@ pub fn map_event(typ: EventType) -> Option<VmEvent> {
                 })
             }
         }
+        // Contact renames/avatars show up in chat rows and message senders;
+        // a chat list reload re-derives them. Self-avatar changes (synced
+        // from another device) surface through accounts().
+        EventType::ContactsChanged(_) => Some(VmEvent::ChatlistChanged),
+        EventType::SelfavatarChanged => Some(VmEvent::AccountsChanged),
         EventType::ImexProgress(permille) => Some(VmEvent::ImexProgress {
             permille: u32::from(permille),
         }),

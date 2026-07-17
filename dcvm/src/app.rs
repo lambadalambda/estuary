@@ -86,6 +86,31 @@ fn path_string(path: std::path::PathBuf) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// One chat row from a loaded Chat + its summary (shared by list and by-id).
+async fn build_chat_item(
+    ctx: &Context,
+    chat_id: ChatId,
+    chat: &Chat,
+    summary: &deltachat::summary::Summary,
+) -> Result<ChatItem, VmError> {
+    Ok(ChatItem {
+        id: chat_id.to_u32(),
+        name: chat.get_name().to_string(),
+        preview: summary_preview(summary.prefix.as_ref(), &summary.text),
+        timestamp: summary.timestamp,
+        fresh_count: chat_id.get_fresh_msg_cnt(ctx).await? as u32,
+        is_self_talk: chat.is_self_talk(),
+        is_pinned: chat.visibility == ChatVisibility::Pinned,
+        is_muted: chat.is_muted(),
+        is_contact_request: chat.is_contact_request(),
+        color: color_to_hex(chat.get_color(ctx).await?),
+        is_group: chat.typ != Chattype::Single,
+        is_archived: chat.visibility == ChatVisibility::Archived,
+        is_device_talk: chat.is_device_talk(),
+        avatar: chat.get_profile_image(ctx).await?.map(path_string),
+    })
+}
+
 /// Loads chat rows for the given chatlist flags / search query.
 async fn chat_items(
     ctx: &Context,
@@ -101,22 +126,7 @@ async fn chat_items(
         }
         let chat = Chat::load_from_db(ctx, chat_id).await?;
         let summary = chatlist.get_summary(ctx, index, Some(&chat)).await?;
-        out.push(ChatItem {
-            id: chat_id.to_u32(),
-            name: chat.get_name().to_string(),
-            preview: summary_preview(summary.prefix.as_ref(), &summary.text),
-            timestamp: summary.timestamp,
-            fresh_count: chat_id.get_fresh_msg_cnt(ctx).await? as u32,
-            is_self_talk: chat.is_self_talk(),
-            is_pinned: chat.visibility == ChatVisibility::Pinned,
-            is_muted: chat.is_muted(),
-            is_contact_request: chat.is_contact_request(),
-            color: color_to_hex(chat.get_color(ctx).await?),
-            is_group: chat.typ != Chattype::Single,
-            is_archived: chat.visibility == ChatVisibility::Archived,
-            is_device_talk: chat.is_device_talk(),
-            avatar: chat.get_profile_image(ctx).await?.map(path_string),
-        });
+        out.push(build_chat_item(ctx, chat_id, &chat, &summary).await?);
     }
     Ok(out)
 }
@@ -206,7 +216,12 @@ impl DcApp {
             let selected = Arc::new(Mutex::new(accounts.get_selected_account_id()));
             let accounts = Arc::new(RwLock::new(accounts));
 
-            let pump_accounts = accounts.clone();
+            // Weak, or the pump would keep `Accounts` (and with it the event
+            // sender inside core's `Events`) alive forever: pump -> Accounts
+            // -> sender -> channel never closes -> pump never exits. With the
+            // cycle, a dropped DcApp leaks every Context and holds the
+            // accounts.lock, so no new DcApp could ever open the data dir.
+            let pump_accounts = Arc::downgrade(&accounts);
             RT.spawn(async move {
                 while let Some(event) = emitter.recv().await {
                     match event.typ {
@@ -216,8 +231,11 @@ impl DcApp {
                         // ChatlistChanged — so synthesize a full refresh:
                         // accounts plus every account's chat list.
                         EventType::EventChannelOverflow { .. } => {
+                            let Some(accounts) = pump_accounts.upgrade() else {
+                                break;
+                            };
                             let _ = listener.on_event(0, VmEvent::AccountsChanged);
-                            for id in pump_accounts.read().await.get_all() {
+                            for id in accounts.read().await.get_all() {
                                 let _ = listener.on_event(id, VmEvent::ChatlistChanged);
                             }
                         }
@@ -357,6 +375,37 @@ impl DcApp {
         .await
     }
 
+    /// Single fresh chat row by id — for notification decisions and other
+    /// point lookups where fetching whole lists would be wasteful or stale.
+    /// Returns None for unknown/deleted chats.
+    pub async fn chat_by_id(
+        &self,
+        account_id: u32,
+        chat_id: u32,
+    ) -> Result<Option<ChatItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let chat_id = ChatId::new(chat_id);
+            // No _optional variant for Chat; a missing/deleted chat is an
+            // expected outcome here, not an error.
+            let Ok(chat) = Chat::load_from_db(&ctx, chat_id).await else {
+                return Ok(None);
+            };
+            let last_msg_id = chat::get_chat_msgs(&ctx, chat_id)
+                .await?
+                .into_iter()
+                .rev()
+                .find_map(|item| match item {
+                    CoreChatItem::Message { msg_id } => Some(msg_id),
+                    _ => None,
+                });
+            let summary = Chatlist::get_summary2(&ctx, chat_id, last_msg_id, Some(&chat)).await?;
+            Ok(Some(build_chat_item(&ctx, chat_id, &chat, &summary).await?))
+        })
+        .await
+    }
+
     /// Archived chats only (the main list never contains them).
     pub async fn archived_chats(&self, account_id: u32) -> Result<Vec<ChatItem>, VmError> {
         let accounts = self.accounts.clone();
@@ -426,8 +475,13 @@ impl DcApp {
                 })
                 .collect();
             if let Some(before) = before_msg_id {
-                if let Some(pos) = ids.iter().position(|id| id.to_u32() == before) {
-                    ids.truncate(pos);
+                match ids.iter().position(|id| id.to_u32() == before) {
+                    Some(pos) => ids.truncate(pos),
+                    // Anchor gone (deleted elsewhere, ephemeral expiry):
+                    // there is no stable "older than" answer. Empty beats
+                    // returning the newest page again, which the caller
+                    // would prepend as duplicates.
+                    None => ids.clear(),
                 }
             }
             if limit > 0 && ids.len() > limit as usize {
@@ -591,7 +645,10 @@ impl DcApp {
         .await
     }
 
-    /// Blocks a chat (contact request or existing chat).
+    /// Blocks a chat. NOTE: core cannot block group chats — blocking a group
+    /// DELETES it and its history ("can't block groups yet"), and outgoing
+    /// broadcasts error. UIs should only offer this on contact requests and
+    /// 1:1 chats.
     pub async fn block_chat(&self, account_id: u32, chat_id: u32) -> Result<(), VmError> {
         let accounts = self.accounts.clone();
         on_rt(async move {
@@ -844,7 +901,15 @@ impl DcApp {
         on_rt(async move {
             let id = accounts.write().await.add_account().await?;
             let ctx = get_ctx(&accounts, id).await?;
-            seed_demo_account(&ctx).await?;
+            // Core's add_account auto-selects and PERSISTS the new account.
+            // If seeding fails, roll it back and resync the cache — otherwise
+            // the next launch lands on a broken half-seeded account.
+            if let Err(e) = seed_demo_account(&ctx).await {
+                let mut guard = accounts.write().await;
+                let _ = guard.remove_account(id).await;
+                *selected.lock().unwrap() = guard.get_selected_account_id();
+                return Err(e.into());
+            }
 
             let mut guard = accounts.write().await;
             guard.select_account(id).await?;
@@ -865,21 +930,26 @@ impl DcApp {
 
 const DEMO_ADDR: &str = "demo@example.org";
 
-/// Inject one incoming chat message via `receive_imf` (offline reception path).
-async fn demo_incoming(
+/// Inject one chat message via `receive_imf` with a Date relative to now.
+/// Both directions go through this (From: self = outgoing): send_text_msg
+/// always sorts at "now", so a back-dated conversation could never
+/// interleave incoming and outgoing correctly.
+async fn demo_mail(
     ctx: &Context,
-    from_name: &str,
-    from_addr: &str,
+    from: (&str, &str),
+    to_addr: &str,
     seq: u32,
-    date: &str,
+    minutes_ago: i64,
     body: &str,
     seen: bool,
 ) -> anyhow::Result<()> {
+    let (from_name, from_addr) = from;
+    let date = (chrono::Utc::now() - chrono::Duration::minutes(minutes_ago)).to_rfc2822();
     let raw = format!(
         "From: {from_name} <{from_addr}>\r\n\
-         To: {DEMO_ADDR}\r\n\
+         To: {to_addr}\r\n\
          Subject: demo\r\n\
-         Message-ID: <demo.{from_addr}.{seq}@example.com>\r\n\
+         Message-ID: <demo.{seq}@example.com>\r\n\
          Date: {date}\r\n\
          Chat-Version: 1.0\r\n\
          \r\n\
@@ -899,75 +969,31 @@ async fn seed_demo_account(ctx: &Context) -> anyhow::Result<()> {
     ctx.set_config_bool(Config::ForceEncryption, false).await?;
 
     // --- Chat 1: Elena --------------------------------------------------
-    let elena = Contact::create(ctx, "Elena", "elena@example.com").await?;
-    let elena_chat = ChatId::create_for_contact(ctx, elena).await?;
-    demo_incoming(
-        ctx,
-        "Elena",
-        "elena@example.com",
-        1,
-        "Tue, 14 Jul 2026 09:12:00 +0000",
-        "Hey! Did you get the photos from the coast trip?",
-        true,
-    )
-    .await?;
-    chat::send_text_msg(
-        ctx,
-        elena_chat,
-        "Just did — they look amazing! The lighthouse one is my favorite.".to_string(),
-    )
-    .await?;
-    demo_incoming(
-        ctx,
-        "Elena",
-        "elena@example.com",
-        2,
-        "Tue, 14 Jul 2026 09:20:00 +0000",
-        "Right? Let's print a few for grandma, she'll love them.",
-        true,
-    )
-    .await?;
-    chat::send_text_msg(
-        ctx,
-        elena_chat,
-        "Good idea, I'll order prints tomorrow.".to_string(),
-    )
-    .await?;
-    demo_incoming(
-        ctx,
-        "Elena",
-        "elena@example.com",
-        3,
-        "Wed, 15 Jul 2026 18:41:00 +0000",
-        "Don't forget the sunset panorama!",
-        false, // stays fresh -> unread badge in the demo UI
-    )
-    .await?;
+    // Dates are relative to now so ordering survives any seeding date;
+    // the last incoming message per chat stays unseen for unread badges.
+    let elena = ("Elena", "elena@example.com");
+    let me = ("Demo User", DEMO_ADDR);
+    Contact::create(ctx, elena.0, elena.1).await?;
+    demo_mail(ctx, elena, DEMO_ADDR, 1, 2 * 1440 + 60,
+        "Hey! Did you get the photos from the coast trip?", true).await?;
+    demo_mail(ctx, me, elena.1, 2, 2 * 1440 + 55,
+        "Just did \u{2014} they look amazing! The lighthouse one is my favorite.", true).await?;
+    demo_mail(ctx, elena, DEMO_ADDR, 3, 2 * 1440 + 50,
+        "Right? Let's print a few for grandma, she'll love them.", true).await?;
+    demo_mail(ctx, me, elena.1, 4, 2 * 1440 + 45,
+        "Good idea, I'll order prints tomorrow.", true).await?;
+    demo_mail(ctx, elena, DEMO_ADDR, 5, 40,
+        "Don't forget the sunset panorama!", false).await?;
 
     // --- Chat 2: Marco ---------------------------------------------------
-    let marco = Contact::create(ctx, "Marco", "marco@example.com").await?;
-    let marco_chat = ChatId::create_for_contact(ctx, marco).await?;
-    demo_incoming(
-        ctx,
-        "Marco",
-        "marco@example.com",
-        1,
-        "Wed, 15 Jul 2026 08:02:00 +0000",
-        "Are we still on for football on Saturday?",
-        true,
-    )
-    .await?;
-    chat::send_text_msg(ctx, marco_chat, "Yes! 10am at the usual field.".to_string()).await?;
-    demo_incoming(
-        ctx,
-        "Marco",
-        "marco@example.com",
-        2,
-        "Wed, 15 Jul 2026 08:15:00 +0000",
-        "Perfect, I'll bring the drinks.",
-        false,
-    )
-    .await?;
+    let marco = ("Marco", "marco@example.com");
+    Contact::create(ctx, marco.0, marco.1).await?;
+    demo_mail(ctx, marco, DEMO_ADDR, 6, 1440 + 30,
+        "Are we still on for football on Saturday?", true).await?;
+    demo_mail(ctx, me, marco.1, 7, 1440 + 25,
+        "Yes! 10am at the usual field.", true).await?;
+    demo_mail(ctx, marco, DEMO_ADDR, 8, 90,
+        "Perfect, I'll bring the drinks.", false).await?;
 
     // --- Saved Messages with a note ---------------------------------------
     let self_chat = ChatId::create_for_contact(ctx, ContactId::SELF).await?;

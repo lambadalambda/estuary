@@ -927,3 +927,79 @@ async fn mute_round_trip() {
     app.set_chat_muted(id, chat, 3600).await.unwrap();
     assert!(row(app.chat_list(id).await.unwrap()).is_muted);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn demo_conversation_renders_in_order() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_demo_account().await.unwrap();
+    let elena = app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.name == "Elena")
+        .expect("Elena chat");
+    let msgs = app.messages(id, elena.id, 0, None).await.unwrap();
+    let directions: Vec<bool> = msgs
+        .iter()
+        .filter(|m| !m.is_info)
+        .map(|m| m.is_outgoing)
+        .collect();
+    // The seeded back-and-forth must interleave: in, out, in, out, in.
+    // (send_text_msg sorts at "now", so this regressed when seed dates were
+    // fixed calendar days — both directions now go through receive_imf.)
+    assert_eq!(
+        directions,
+        vec![false, true, false, true, false],
+        "conversation order broken: {:?}",
+        msgs.iter().map(|m| (&m.text, m.is_outgoing)).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pagination_with_deleted_anchor_returns_empty() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    for i in 0..5 {
+        app.send_text(id, chat, format!("m{i}")).await.unwrap();
+    }
+    let page = app.messages(id, chat, 2, None).await.unwrap();
+    let anchor = page.first().unwrap().id;
+    app.delete_messages(id, vec![anchor]).await.unwrap();
+    // Anchor gone: must be empty, never the newest page again (the caller
+    // would prepend duplicates of what it already shows).
+    assert!(app
+        .messages(id, chat, 2, Some(anchor))
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn chat_by_id_returns_fresh_row() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    app.send_text(id, chat, "latest words".into()).await.unwrap();
+
+    let row = app
+        .chat_by_id(id, chat)
+        .await
+        .unwrap()
+        .expect("row for existing chat");
+    assert_eq!(row.id, chat);
+    assert_eq!(row.name, "Bob");
+    assert!(row.preview.contains("latest words"), "preview: {row:?}");
+
+    // Unknown chat id -> None, not an error.
+    assert!(app.chat_by_id(id, 999_999).await.unwrap().is_none());
+}

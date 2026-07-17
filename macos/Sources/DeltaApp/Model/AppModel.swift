@@ -31,6 +31,8 @@ final class AppModel {
     /// Sidebar search field text; non-empty switches the list to search hits.
     var searchQuery = ""
     var showSettings = false
+    var showNewChat = false
+    var showNewGroup = false
     private(set) var connectivityValue: UInt32 = 0
 
     // Login / onboarding state.
@@ -290,9 +292,17 @@ final class AppModel {
                 selectedChatId = nil
                 messages = []
             }
+            if !showingArchive, query.isEmpty {
+                updateDockBadge()
+            }
         } catch {
             // Keep the last known list; a follow-up event will retry.
         }
+    }
+
+    private func updateDockBadge() {
+        let unread = chats.filter { !$0.isMuted }.reduce(0) { $0 + Int($1.freshCount) }
+        NSApp.dockTile.badgeLabel = unread > 0 ? "\(unread)" : nil
     }
 
     func reloadMessages() async {
@@ -558,11 +568,17 @@ final class AppModel {
                 // Notify when the app is in the background or another chat
                 // is open (bundle builds only; bare `swift run` has no
                 // notification identity).
+                let chat = chats.first { $0.id == chatId }
                 if chatId != selectedChatId || !NSApplication.shared.isActive {
-                    let chat = chats.first { $0.id == chatId }
                     NotificationManager.postIncoming(
                         chatName: chat?.name ?? "New message",
                         preview: chat?.preview ?? "")
+                }
+                // Subtle in-app ping for messages landing in other chats
+                // (notifications already sound when the app is inactive).
+                if NSApplication.shared.isActive, chatId != selectedChatId,
+                   chat?.isMuted != true {
+                    NSSound(named: "Pop")?.play()
                 }
             }
 

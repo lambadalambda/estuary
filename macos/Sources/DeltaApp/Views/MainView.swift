@@ -2,8 +2,6 @@ import SwiftUI
 
 struct MainView: View {
     @Bindable var model: AppModel
-    @State private var showNewChat = false
-    @State private var showNewGroup = false
     @State private var confirmRemoveAccount = false
 
     var body: some View {
@@ -43,8 +41,8 @@ struct MainView: View {
                 }
                 ToolbarItem {
                     Menu {
-                        Button("New Chat…") { showNewChat = true }
-                        Button("New Group…") { showNewGroup = true }
+                        Button("New Chat…") { model.showNewChat = true }
+                        Button("New Group…") { model.showNewGroup = true }
                     } label: {
                         Label("New", systemImage: "square.and.pencil")
                     }
@@ -73,10 +71,10 @@ struct MainView: View {
         .onChange(of: model.selectedChatId) {
             Task { await model.chatSelectionChanged() }
         }
-        .sheet(isPresented: $showNewChat) {
+        .sheet(isPresented: $model.showNewChat) {
             NewChatSheet(model: model)
         }
-        .sheet(isPresented: $showNewGroup) {
+        .sheet(isPresented: $model.showNewGroup) {
             NewGroupSheet(model: model)
         }
         .sheet(isPresented: $model.showSettings) {

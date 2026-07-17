@@ -27,6 +27,28 @@ struct DeltaAppMain: App {
                     }
                 }
         }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Chat") { model.showNewChat = true }
+                    .keyboardShortcut("n")
+                    .disabled(model.screen != .main)
+                Button("New Group") { model.showNewGroup = true }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .disabled(model.screen != .main)
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button("Profile Settings…") { model.showSettings = true }
+                    .keyboardShortcut(",")
+                    .disabled(model.screen != .main)
+            }
+            CommandMenu("Chats") {
+                Button(model.showingArchive ? "Show Chats" : "Show Archived Chats") {
+                    Task { await model.toggleArchive() }
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(model.screen != .main)
+            }
+        }
     }
 }
 

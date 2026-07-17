@@ -312,3 +312,16 @@ prepend anchor-restore stays.
 Image bubbles now size themselves from core's stored pixel dimensions BEFORE the blob
 exists (placeholder at final size while downloading), so arrival changes pixels, not
 layout. Plus an NSCache for decoded images (LazyVStack re-renders hit disk otherwise).
+
+## 2026-07-17 — Native-feel polish (issue: native-feel-polish)
+
+- Multi-line growing composer (TextField axis .vertical, 1–5 lines; Return sends,
+  Option+Return newline), focus kept after send and set on chat switch.
+- Quick Look previews for attachments (tap or context menu); "Open in App" separate.
+- Menu-bar commands: New Chat ⌘N, New Group ⇧⌘N, Profile Settings ⌘, (replacing the
+  stock settings item), Show Archived ⇧⌘A — sheet state moved into AppModel so both
+  toolbar and menu drive the same sheets.
+- Dock badge: total unread across unmuted chats, updated with the (unfiltered) list.
+- Subtle "Pop" for messages landing in other chats while active (notifications cover
+  the inactive case).
+- Liquid Glass composer bar on macOS 26 via #available (min platform stays 15).

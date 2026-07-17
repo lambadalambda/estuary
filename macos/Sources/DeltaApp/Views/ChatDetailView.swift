@@ -1,4 +1,5 @@
 import AVFoundation
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -11,6 +12,8 @@ struct ChatDetailView: View {
     @State private var showAttachPicker = false
     @State private var forwardingMsgId: UInt32?
     @State private var loadingOlder = false
+    @State private var quickLookURL: URL?
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,7 +34,8 @@ struct ChatDetailView: View {
                             case .message(let message, let showAuthor):
                                 MessageBubbleView(
                                     model: model, message: message, showAuthor: showAuthor,
-                                    onForward: { forwardingMsgId = message.id })
+                                    onForward: { forwardingMsgId = message.id },
+                                    onPreview: { quickLookURL = $0 })
                             }
                         }
                         Color.clear
@@ -54,12 +58,15 @@ struct ChatDetailView: View {
                 .id(chat.id)
                 .onChange(of: chat.id) {
                     draft = ""
+                    composerFocused = true
                 }
             }
 
             Divider()
             composer
         }
+        .onAppear { composerFocused = true }
+        .quickLookPreview($quickLookURL)
         .navigationTitle(chat.name)
         .navigationSubtitle(chat.isContactRequest ? "Contact request" : "")
         .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
@@ -151,7 +158,7 @@ struct ChatDetailView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                 }
-                HStack(spacing: 8) {
+                HStack(alignment: .bottom, spacing: 8) {
                     Button {
                         showAttachPicker = true
                     } label: {
@@ -160,9 +167,14 @@ struct ChatDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    TextField("Message \(chat.name)…", text: $draft)
+                    .padding(.bottom, 2)
+                    // Grows up to 5 lines; Return sends, Option+Return
+                    // inserts a newline.
+                    TextField("Message \(chat.name)…", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.body)
+                        .lineLimit(1 ... 5)
+                        .focused($composerFocused)
                         .onSubmit(sendDraft)
                     Button(action: sendDraft) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -171,11 +183,12 @@ struct ChatDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
+                    .padding(.bottom, 2)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
-            .background(.bar)
+            .barBackground()
         }
     }
 
@@ -187,7 +200,20 @@ struct ChatDetailView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
+        composerFocused = true
         Task { await model.send(text) }
+    }
+}
+
+extension View {
+    /// Liquid Glass where the OS has it; classic bar material otherwise.
+    @ViewBuilder
+    func barBackground() -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: .rect)
+        } else {
+            self.background(.bar)
+        }
     }
 }
 
@@ -256,6 +282,8 @@ struct MessageBubbleView: View {
     let message: MessageItem
     let showAuthor: Bool
     var onForward: () -> Void = {}
+    /// Quick Look request (space-bar-style preview owned by the chat view).
+    var onPreview: (URL) -> Void = { _ in }
 
     var body: some View {
         if message.isInfo {
@@ -424,7 +452,14 @@ struct MessageBubbleView: View {
         .buttonStyle(.plain)
     }
 
+    /// Tap: Quick Look preview in place; "Open in App" lives in the menu.
     private func openFile() {
+        if let file = message.file {
+            onPreview(URL(fileURLWithPath: file))
+        }
+    }
+
+    private func openInApp() {
         if let file = message.file {
             NSWorkspace.shared.open(URL(fileURLWithPath: file))
         }
@@ -454,7 +489,8 @@ struct MessageBubbleView: View {
         }
         Button("Forward…", action: onForward)
         if message.file != nil {
-            Button("Open Attachment", action: openFile)
+            Button("Quick Look", action: openFile)
+            Button("Open in App", action: openInApp)
         }
         Divider()
         Button("Delete", role: .destructive) {

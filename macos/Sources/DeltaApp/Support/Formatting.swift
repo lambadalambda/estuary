@@ -104,6 +104,41 @@ func messageTimestamp(_ epochSeconds: Int64, now: Date = Date()) -> String {
     return messageTime(epochSeconds)
 }
 
+/// Whether the loaded newest-N message window must grow on reload: only when
+/// the user is scrolled up (their reading position depends on the old window)
+/// AND the previously oldest loaded message slid out of the fresh page. At
+/// the bottom, growth would prepend a page of cells and destabilize scroll.
+func windowNeedsGrowth(
+    previousOldest: UInt32?, page: [MessageItem], viewIsAtBottom: Bool
+) -> Bool {
+    guard !viewIsAtBottom, let previousOldest, !page.isEmpty else { return false }
+    return !page.contains { $0.id == previousOldest }
+}
+
+/// AppKit-scope link attribution for `LinkText` (NSTextView needs
+/// NSAttributedString attributes; the SwiftUI-scope `linkified` ones don't
+/// translate). The `.link` ranges also carry the pointing-hand cursor.
+func nsLinkified(
+    _ text: String, font: NSFont, textColor: NSColor, linkColor: NSColor
+) -> NSAttributedString {
+    let attributed = NSMutableAttributedString(
+        string: text,
+        attributes: [.font: font, .foregroundColor: textColor])
+    guard let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+    else { return attributed }
+    for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+        guard let url = match.url else { continue }
+        attributed.addAttributes([
+            .link: url,
+            .foregroundColor: linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ], range: match.range)
+    }
+    return attributed
+}
+
 /// Whether the text contains at least one detectable URL.
 func containsLink(_ text: String) -> Bool {
     guard let detector = try? NSDataDetector(

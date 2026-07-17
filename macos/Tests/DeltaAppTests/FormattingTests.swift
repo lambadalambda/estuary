@@ -142,3 +142,67 @@ import SwiftUI
         #expect(avatarInitial(for: "😀 party") == "😀")
     }
 }
+
+@Suite struct WindowGrowthTests {
+    func msg(_ id: UInt32) -> MessageItem {
+        MessageItem(
+            id: id, chatId: 1, text: "m", timestamp: 0, isOutgoing: false,
+            isInfo: false, senderName: "A", senderColor: "#e56555", state: .noState)
+    }
+
+    @Test func noGrowthWhileAtBottom() {
+        // Sending in a full-window chat slides the window; at the bottom the
+        // user needs no history preserved — growing would prepend a page and
+        // destabilize the scroll.
+        #expect(!windowNeedsGrowth(
+            previousOldest: 1, page: [msg(2), msg(3)], viewIsAtBottom: true))
+    }
+
+    @Test func growsWhenScrolledUpAndOldestSlidOff() {
+        #expect(windowNeedsGrowth(
+            previousOldest: 1, page: [msg(2), msg(3)], viewIsAtBottom: false))
+    }
+
+    @Test func noGrowthWhenOldestStillCovered() {
+        #expect(!windowNeedsGrowth(
+            previousOldest: 2, page: [msg(2), msg(3)], viewIsAtBottom: false))
+    }
+
+    @Test func noGrowthOnFreshChatOrEmptyPage() {
+        #expect(!windowNeedsGrowth(
+            previousOldest: nil, page: [msg(2)], viewIsAtBottom: false))
+        #expect(!windowNeedsGrowth(
+            previousOldest: 1, page: [], viewIsAtBottom: false))
+    }
+}
+
+@Suite struct NSLinkifiedTests {
+    @Test func linkRangeGetsLinkAndCursorAttributes() {
+        let attributed = nsLinkified(
+            "see https://delta.chat now",
+            font: .systemFont(ofSize: 13), textColor: .white, linkColor: .white)
+        var foundLink = false
+        attributed.enumerateAttribute(
+            .link, in: NSRange(location: 0, length: attributed.length)
+        ) { value, range, _ in
+            if value != nil {
+                foundLink = true
+                #expect((attributed.string as NSString).substring(with: range)
+                    == "https://delta.chat")
+            }
+        }
+        #expect(foundLink)
+    }
+
+    @Test func plainTextHasNoLinkAttribute() {
+        let attributed = nsLinkified(
+            "no links", font: .systemFont(ofSize: 13), textColor: .white, linkColor: .white)
+        var foundLink = false
+        attributed.enumerateAttribute(
+            .link, in: NSRange(location: 0, length: attributed.length)
+        ) { value, _, _ in
+            if value != nil { foundLink = true }
+        }
+        #expect(!foundLink)
+    }
+}

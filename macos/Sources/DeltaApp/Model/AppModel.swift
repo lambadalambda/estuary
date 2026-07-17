@@ -27,6 +27,8 @@ final class AppModel {
     /// Size of the loaded window; grows as the user scrolls into history.
     private var loadedLimit: UInt32 = AppModel.messagePageSize
     static let messagePageSize: UInt32 = 100
+    /// Reported by the chat view's bottom sentinel; gates window growth.
+    var viewIsAtBottom = true
     private var reloadChatsScheduled = false
     private var reloadMessagesScheduled = false
     /// Main-screen action failures (send/accept/block/…), shown as an alert.
@@ -374,8 +376,9 @@ final class AppModel {
             // user has scrolled to doesn't fall off the top mid-read. The
             // shared loadedLimit is only written after the selection guard.
             var grownLimit = loadedLimit
-            if let previousOldest, !page.isEmpty,
-               !page.contains(where: { $0.id == previousOldest }) {
+            if windowNeedsGrowth(
+                previousOldest: previousOldest, page: page,
+                viewIsAtBottom: viewIsAtBottom) {
                 grownLimit += Self.messagePageSize
                 page = try await service.messages(
                     accountId: accountId, chatId: chatId,
@@ -624,6 +627,7 @@ final class AppModel {
         loadedLimit = Self.messagePageSize
         hasMoreMessages = false
         historyExhausted = false
+        viewIsAtBottom = true
         // Clear immediately so the stale-window growth check in
         // reloadMessages never compares against the previous chat.
         messages = []

@@ -372,3 +372,15 @@ instead of overloading ChatlistChanged; per-account notification coalescing duri
 initial-sync storms of background accounts; live connectivity outside the settings
 sheet. showAuthor/avatar per-run rules and Color-hex validation got Swift unit tests
 (new test target, macos/Tests/DeltaAppTests).
+
+## 2026-07-17 — Link cursor (AppKit) + send-scroll window fix
+
+- pointerStyle(.link) never rendered: SwiftUI's text-selection pointer wins. Link-
+  bearing messages now render via an NSTextView-backed `LinkText` (per-range hand
+  cursor through the `.cursor` attribute, native link clicks, selection); plain
+  messages keep SwiftUI Text. `nsLinkified` (AppKit-scope attributes) is unit-tested.
+- "Send lands mid-chat in 100+ chats": the reload window-growth heuristic fired on
+  every send (window slides one, previous oldest drops off, misread as lost reading
+  position) and prepended a full page — destabilizing lazy layout. Growth is now
+  gated on the view's actual at-bottom state (bottom sentinel reports to the model);
+  decision extracted as pure `windowNeedsGrowth` and TDD'd (4 cases).

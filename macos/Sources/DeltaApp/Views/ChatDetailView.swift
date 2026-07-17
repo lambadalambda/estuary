@@ -49,6 +49,11 @@ struct ChatDetailView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(bottomAnchorID)
+                            // The model gates its reload window growth on
+                            // this: growth is for preserving a scrolled-up
+                            // reading position, never for the at-bottom case.
+                            .onAppear { model.viewIsAtBottom = true }
+                            .onDisappear { model.viewIsAtBottom = false }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -374,15 +379,20 @@ struct MessageBubbleView: View {
             mediaContent
 
             if !message.text.isEmpty {
-                Text(linkified(
-                    message.text,
-                    linkColor: message.isOutgoing ? .white : .accentColor))
-                    .textSelection(.enabled)
-                    .foregroundStyle(message.isOutgoing ? .white : .primary)
-                    // Hand cursor over link-bearing text (SwiftUI has no
-                    // per-range pointer, so the whole run gets it). nil
-                    // inherits the normal text cursor for link-free text.
-                    .pointerStyle(containsLink(message.text) ? .link : nil)
+                if containsLink(message.text) {
+                    // AppKit-backed: per-range hand cursor + native link
+                    // clicks; SwiftUI's pointerStyle loses to the selection
+                    // pointer here.
+                    LinkText(
+                        text: message.text,
+                        textColor: message.isOutgoing ? .white : .labelColor,
+                        linkColor: message.isOutgoing
+                            ? .white : NSColor(Color.accentColor))
+                } else {
+                    Text(message.text)
+                        .textSelection(.enabled)
+                        .foregroundStyle(message.isOutgoing ? .white : .primary)
+                }
             }
             HStack(spacing: 4) {
                 TimelineView(.everyMinute) { timeline in

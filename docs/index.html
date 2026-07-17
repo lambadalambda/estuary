@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estuary — where conversations converge</title>
+<meta name="description" content="Estuary is a native, webview-free Delta Chat client for macOS. End-to-end encrypted, decentralized messaging over chatmail — no Electron, no phone number.">
+<meta property="og:title" content="Estuary">
+<meta property="og:description" content="A native Delta Chat–compatible messenger for macOS.">
+<meta property="og:image" content="https://lambadalambda.github.io/estuary/icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --deep-teal: #0F3D3E;
+    --sea-glass: #7FBDB4;
+    --midnight: #0D1B2A;
+    --slate: #4B5B66;
+    --ivory: #F6F4EF;
+    --coral: #FF6F61;
+    --bg: var(--ivory);
+    --text: var(--midnight);
+    --muted: var(--slate);
+    --card: #FFFFFF;
+    --accent: var(--deep-teal);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--midnight);
+      --text: var(--ivory);
+      --muted: #9FB2BE;
+      --card: #14283A;
+      --accent: var(--sea-glass);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Sora", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  .hero { text-align: center; padding: 72px 0 48px; }
+  .hero img { width: 180px; max-width: 60vw; }
+  .hero h1 { font-size: 3.2rem; font-weight: 700; margin-top: 12px; }
+  .tagline { color: var(--muted); font-size: 1.25rem; font-weight: 300; }
+  .lede { max-width: 620px; margin: 20px auto 0; }
+  .cta { margin-top: 32px; }
+  .button {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+    padding: 14px 30px;
+    border-radius: 12px;
+    text-decoration: none;
+  }
+  .button:hover { filter: brightness(1.15); }
+  .cta .fine { font-size: .85rem; color: var(--muted); margin-top: 10px; }
+  .cta .fine code { font-size: .8rem; }
+  section { padding: 40px 0; }
+  h2 { font-size: 1.6rem; margin-bottom: 18px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 20px 22px;
+  }
+  .card h3 { font-size: 1.05rem; margin-bottom: 6px; }
+  .card p { font-size: .92rem; color: var(--muted); }
+  a { color: var(--accent); }
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    background: color-mix(in srgb, var(--slate) 14%, transparent);
+    border-radius: 6px;
+  }
+  code { padding: 1px 6px; }
+  pre { padding: 14px 18px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: .85rem;
+    padding: 48px 24px 40px;
+  }
+  footer .heart { color: var(--coral); }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="logo.png" alt="Estuary logo — waves flowing into a speech bubble">
+    <h1>Estuary</h1>
+    <p class="tagline">Where conversations converge.</p>
+    <p class="lede">
+      A <strong>native, webview-free</strong> messenger for macOS, built on the
+      same engine as <a href="https://delta.chat">Delta Chat</a>. End-to-end
+      encrypted, decentralized, no phone number required — your account is
+      just an e-mail address on a
+      <a href="https://chatmail.at">chatmail</a> relay.
+    </p>
+    <div class="cta">
+      <a class="button" href="https://github.com/lambadalambda/estuary/releases/download/nightly/Estuary-nightly.dmg">
+        Download nightly for macOS
+      </a>
+      <p class="fine">
+        macOS 15+, Apple silicon. Rebuilt on every commit; ad-hoc signed, so
+        first launch is right-click&nbsp;→&nbsp;Open.
+      </p>
+    </div>
+  </div>
+
+  <section>
+    <h2>Why Estuary?</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Actually native</h3>
+        <p>SwiftUI front to back — no Electron, no embedded browser. Fast,
+        light, and at home on your Mac: notifications, dock badge, Quick Look,
+        menu-bar shortcuts.</p>
+      </div>
+      <div class="card">
+        <h3>Delta Chat compatible</h3>
+        <p>The official <a href="https://github.com/chatmail/core">deltachat-core</a>
+        engine runs in-process. Chat with anyone on Delta Chat, and add
+        Estuary as a second device to your existing profile by scanning a QR
+        code.</p>
+      </div>
+      <div class="card">
+        <h3>Private by default</h3>
+        <p>Instant encrypted profile on a chatmail relay — no sign-up form,
+        no phone number, no visible address. End-to-end encryption is on from
+        the first message.</p>
+      </div>
+      <div class="card">
+        <h3>Open &amp; decentralized</h3>
+        <p>Built on open e-mail infrastructure: no lock-in, thousands of
+        servers to choose from, or run your own. Your data stays yours.</p>
+      </div>
+      <div class="card">
+        <h3>Full-featured</h3>
+        <p>Media, voice-message playback, reactions, replies, groups, search,
+        archive, muting, multi-profile — synced with your other devices.</p>
+      </div>
+      <div class="card">
+        <h3>Public domain</h3>
+        <p>Estuary's code is released under
+        <a href="https://unlicense.org">the Unlicense</a>. Fork it, ship it,
+        no strings attached (the bundled core is MPL-2.0).</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Build from source</h2>
+    <pre><code>git clone https://github.com/lambadalambda/estuary
+cd estuary
+make run-app</code></pre>
+    <p>Needs Rust, Xcode command-line tools, and <code>cmake</code>. Details in the
+      <a href="https://github.com/lambadalambda/estuary#building--running">README</a>.</p>
+  </section>
+</main>
+
+<footer>
+  Made with <span class="heart">♥</span> for real conversations ·
+  <a href="https://github.com/lambadalambda/estuary">GitHub</a> ·
+  <a href="https://delta.chat">Delta Chat</a> ·
+  <a href="https://chatmail.at">chatmail</a><br>
+  An independent project, not affiliated with the Delta Chat team.
+</footer>
+</body>
+</html>

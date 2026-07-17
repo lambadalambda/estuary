@@ -622,3 +622,22 @@ eyeball-verified.
   open + ~500-item grown window (hoist per-bubble TimelineView if needed),
   then delete the rescue machinery. Also: deployment target is macOS 15 —
   dropped a dead #available(15) guard.
+
+## 2026-07-18 — Root cause: LazyVStack estimates (blank-open finally explained)
+
+The user's scroll-up trace was the smoking gun: 2000pt of blank scrolling
+with content frozen at 6138, then realization snaps content to 2738 — the
+lazy estimate was 2.2x the REAL height, and the bottom-anchored viewport
+was parked beyond the real content's end in phantom space. The nudge log
+also proved container-size invalidation re-solves estimates but does NOT
+re-anchor (offset frozen through the nudge), so no stopgap could win.
+Fix: message list is now a plain VStack (open window is ~100 fixed-size
+items) — exact layout, no estimates, no phantom space; scrollTo always
+resolves. Sentinel is visibility-triggered only (eager onAppear fires once
+at insertion — would fire a pointless page load per open). All rescue
+machinery deleted (never shipped: AppKit clip-move was replaced by the
+container nudge after approach review, and the nudge by this).
+Follow-up queued: profile a ~500-item grown window (per-bubble closures
+defeat struct-equality skips → all bubbles re-eval per keystroke; hoist
+TimelineView / cap the window if it hitches). Layout behavior untestable
+per project rules — user-verified against the known repro.

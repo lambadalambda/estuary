@@ -14,23 +14,30 @@ struct ChatDetailView: View {
     @State private var loadingOlder = false
     @State private var quickLookURL: URL?
     @FocusState private var composerFocused: Bool
-    @State private var rescueNudge = false
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 6) {
+                    // Plain VStack on purpose: LazyVStack's height estimates
+                    // under bottom anchoring caused three user-facing bugs in
+                    // one day (jump-to-top, two blank-open variants) — geo
+                    // logs showed estimates 2.2x the real content height,
+                    // parking the viewport in phantom space no scroll API
+                    // could escape. The open window is ~100 fixed-size items;
+                    // exact eager layout makes stranding impossible.
+                    VStack(spacing: 6) {
                         if model.hasMoreMessages {
                             ProgressView()
                                 .controlSize(.small)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .onAppear { loadOlder(proxy: proxy) }
-                                // onAppear won't re-fire while the sentinel
-                                // stays inside the lazy container's realized
-                                // region (the anchor restore parks it just
-                                // off-screen); visibility changes do.
+                                // Visibility only (no onAppear): eager
+                                // layout inserts the sentinel on every open,
+                                // which would fire a pointless page load per
+                                // chat. It starts far above the viewport
+                                // (visible=false) and re-arms whenever a
+                                // prepend pushes it off-screen.
                                 .onScrollVisibilityChange { visible in
                                     if visible { loadOlder(proxy: proxy) }
                                 }
@@ -52,10 +59,10 @@ struct ChatDetailView: View {
                             .id(bottomAnchorID)
                             // The model gates reload window growth AND the
                             // history-restore suppression on this. Actual
-                            // visibility, not onAppear/onDisappear: the lazy
-                            // container's realized region can span more than
-                            // the viewport, which would report "at bottom"
-                            // for a scrolled-up user in short chats.
+                            // visibility, not onAppear/onDisappear: with the
+                            // eager VStack, onAppear fires exactly once at
+                            // insertion, so an appear-based flag would be
+                            // stuck "at bottom" forever.
                             .onScrollVisibilityChange { visible in
                                 model.scrollDebug("view: bottom anchor visible=\(visible)")
                                 model.viewIsAtBottom = visible
@@ -73,10 +80,6 @@ struct ChatDetailView: View {
                 // left alone.
                 .defaultScrollAnchor(.bottom)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                // 1pt container-size nudge — the rescue lever for the
-                // blank-open bug: shrinking the scroll view's frame forces
-                // the same full lazy re-solve as a window resize.
-                .padding(.bottom, rescueNudge ? 1 : 0)
                 .scrollGeometryDebug(model: model)
                 // Fresh scroll state per chat; with the initial anchor this
                 // is the no-animation snap to the newest message.
@@ -84,38 +87,6 @@ struct ChatDetailView: View {
                 .onChange(of: chat.id) {
                     draft = ""
                     composerFocused = true
-                    rescueNudge = false
-                }
-                // Rescue for the window-size-dependent blank open: for some
-                // viewport heights the initial bottom-anchored layout of the
-                // lazy stack strands the viewport in unrealized space while
-                // the geometry still LOOKS sane, and ScrollViewProxy.scrollTo
-                // silently no-ops there (geo logs). A window resize always
-                // heals it — a container-size invalidation re-solves the
-                // whole lazy layout and re-applies the bottom anchor. Shot 1
-                // (~120ms): cheap proxy re-pin for when the anchor still
-                // resolves. Shot 2 (~450ms): the nudge below toggles 1pt of
-                // ScrollView padding, riding exactly that proven resize
-                // path. Deliberately NOT guarded on viewIsAtBottom: the
-                // stranded state reports not-at-bottom, which would defeat
-                // the rescue — and this close to open, snapping to the
-                // newest message is the right outcome.
-                .task(id: chat.id) {
-                    try? await Task.sleep(for: .milliseconds(120))
-                    // Task.sleep in a cancelled task returns instead of
-                    // throwing into try? — without this check a rapid chat
-                    // switch fires a stale re-pin at the new chat.
-                    guard !Task.isCancelled else { return }
-                    model.scrollDebug("view: post-open re-pin bottom")
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-
-                    try? await Task.sleep(for: .milliseconds(330))
-                    guard !Task.isCancelled else { return }
-                    model.scrollDebug("view: container-nudge rescue")
-                    rescueNudge = true
-                    try? await Task.sleep(for: .milliseconds(50))
-                    guard !Task.isCancelled else { return }
-                    rescueNudge = false
                 }
             }
 
@@ -667,8 +638,8 @@ struct MessageBubbleView: View {
 
 // MARK: - Image cache
 
-/// Decoded-image cache: bubbles re-render often in a LazyVStack and
-/// `NSImage(contentsOfFile:)` hits the disk every time.
+/// Decoded-image cache: every bubble body re-evaluates on view updates
+/// (eager VStack) and `NSImage(contentsOfFile:)` hits the disk every time.
 @MainActor
 enum ImageCache {
     private static let cache = NSCache<NSString, NSImage>()

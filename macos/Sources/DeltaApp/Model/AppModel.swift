@@ -421,10 +421,9 @@ final class AppModel {
         /// Keep this id anchored at the top: preserves a scrolled-up
         /// reading position through the prepend.
         case restore(anchor: UInt32)
-        /// Prepended while pinned at the bottom (huge chats fire the
-        /// sentinel spuriously during initial layout): the lazy container
-        /// can strand the viewport in unrealized space — the view must
-        /// explicitly re-pin the bottom.
+        /// Prepended while genuinely pinned at the bottom (e.g. a
+        /// viewport-filling load): keep the newest message pinned — a
+        /// top-anchor restore would scroll away from it.
         case pinBottom
     }
 

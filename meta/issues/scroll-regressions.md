@@ -57,3 +57,11 @@ Stopgap shipped: 120ms proxy re-pin + 450ms 1pt container nudge (the
 resize-heal path). Real fix queued: replace LazyVStack with plain VStack
 (100 fixed-size items in the open window; three lazy-realization
 regressions to date), profile, then delete the rescue machinery.
+
+## Root-cause fix (2026-07-18)
+
+LazyVStack replaced with plain VStack after the geo trace proved 2.2x
+height overestimates parked the viewport in phantom space (and that no
+scroll API nor container nudge could re-anchor it). Rescue machinery
+deleted. Remaining before archive: user confirms the repro chat, and a
+profiling pass on a deep-scrolled (~500-item) window.

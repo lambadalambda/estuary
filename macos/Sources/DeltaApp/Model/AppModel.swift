@@ -437,10 +437,22 @@ final class AppModel {
             messages.insert(contentsOf: older, at: 0)
             loadedLimit += UInt32(older.count)
             hasMoreMessages = older.count >= Int(Self.messagePageSize)
-            return oldest.id
+            return Self.historyRestoreAnchor(
+                previousOldest: oldest.id, viewIsAtBottom: viewIsAtBottom)
         } catch {
             return nil
         }
+    }
+
+    /// The id the view should re-anchor at the top after history is
+    /// prepended — nil while pinned at the bottom: the bottom size-change
+    /// anchor already absorbs growth there, and restoring would fling the
+    /// viewport to the top of the chat (chats whose loaded window fits the
+    /// viewport realize the load-older sentinel right on open/post).
+    nonisolated static func historyRestoreAnchor(
+        previousOldest: UInt32, viewIsAtBottom: Bool
+    ) -> UInt32? {
+        viewIsAtBottom ? nil : previousOldest
     }
 
     /// Coalesced reloads: core bursts events during sync; one pending reload

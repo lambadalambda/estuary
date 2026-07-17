@@ -49,11 +49,15 @@ struct ChatDetailView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(bottomAnchorID)
-                            // The model gates its reload window growth on
-                            // this: growth is for preserving a scrolled-up
-                            // reading position, never for the at-bottom case.
-                            .onAppear { model.viewIsAtBottom = true }
-                            .onDisappear { model.viewIsAtBottom = false }
+                            // The model gates reload window growth AND the
+                            // history-restore suppression on this. Actual
+                            // visibility, not onAppear/onDisappear: the lazy
+                            // container's realized region can span more than
+                            // the viewport, which would report "at bottom"
+                            // for a scrolled-up user in short chats.
+                            .onScrollVisibilityChange { visible in
+                                model.viewIsAtBottom = visible
+                            }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)

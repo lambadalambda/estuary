@@ -33,3 +33,10 @@ Screenshot review (2026-07-17) found three chrome-level rough edges:
 
 - Baseline alignment and the floating-card look are visual — eyeball-verified
   by the user, declared untestable per project rules.
+
+## Outcome (2026-07-17)
+
+Done and user-confirmed ("nice, looks great"): sidebar scroller fades
+(OverlayScrollers window-sweep redesign, unit-tested for both hierarchy
+shapes), composer icons baseline-aligned, floating rounded composer card
+over the tiled backdrop. New light/dark captures installed on the site.

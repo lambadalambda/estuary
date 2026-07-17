@@ -13,3 +13,4 @@
 - [x] [Publish: README, license, GitHub repo, nightly DMG, Pages site](issues/publish-github-nightly-site.md)
 - [x] [Estuary rebrand — first slice (name + palette)](issues/estuary-rebrand.md)
 - [x] [Website screenshots with demo data](issues/website-screenshots.md)
+- [x] [Chat chrome polish: sidebar scrollbar, composer alignment + shape](issues/chat-chrome-polish.md)

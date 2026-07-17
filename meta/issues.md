@@ -5,4 +5,3 @@
 - [ ] [App bundle polish](issues/app-bundle-polish.md)
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
-- [ ] [Chat chrome polish: sidebar scrollbar, composer alignment + shape](issues/chat-chrome-polish.md)

@@ -21,9 +21,16 @@ struct OnboardingView: View {
             }
             Spacer()
 
-            Image(systemName: "paperplane.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
+            if let logo = EstuaryTheme.logo {
+                Image(nsImage: logo)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 96)
+            } else {
+                Image(systemName: "paperplane.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.tint)
+            }
             Text(EstuaryTheme.appName)
                 .font(.largeTitle.bold())
             Text(EstuaryTheme.tagline)

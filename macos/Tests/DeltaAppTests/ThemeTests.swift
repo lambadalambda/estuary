@@ -35,6 +35,13 @@ import SwiftUI
         #expect(EstuaryTheme.bubble != Color(hex: EstuaryTheme.seaGlassHex))
     }
 
+    @Test @MainActor func logoResourceLoads() {
+        // Guards the Package.swift resource declaration: a typo'd resource
+        // path fails at runtime (onboarding shows the SF-symbol fallback),
+        // not at build time.
+        #expect(EstuaryTheme.logo != nil)
+    }
+
     @Test func badgeIsCoralWithDarkText() {
         #expect(EstuaryTheme.badge == Color(hex: EstuaryTheme.coralHex))
         // White on coral is ~2.7:1 — badge numerals need the dark palette

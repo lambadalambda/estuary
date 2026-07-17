@@ -49,4 +49,13 @@ enum EstuaryTheme {
     /// Badge numerals: white on coral is only ~2.7:1, so the badge carries
     /// dark text instead (muted gray badges keep white).
     static let badgeText = Color(hex: midnightBlueHex)
+
+    /// The wave-into-speech-bubble logo (transparent PNG, bundled). Optional:
+    /// callers fall back to an SF symbol if the resource is missing.
+    @MainActor static let logo: NSImage? = {
+        guard let url = Bundle.module.url(
+            forResource: "estuary-logo", withExtension: "png")
+        else { return nil }
+        return NSImage(contentsOf: url)
+    }()
 }

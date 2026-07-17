@@ -25,6 +25,10 @@ let package = Package(
             name: "DeltaApp",
             dependencies: ["DeltaCore"],
             path: "Sources/DeltaApp",
+            // Brand assets (Bundle.module). The Makefile `app` target must
+            // copy the generated DeltaApp_DeltaApp.bundle into the .app's
+            // Contents/Resources, or Bundle.module traps at runtime.
+            resources: [.copy("Resources/estuary-logo.png")],
             linkerSettings: [
                 .linkedLibrary("dcvm"),
                 .unsafeFlags(["-L\(rustLibDir)"]),

@@ -220,13 +220,20 @@ struct ChatDetailView: View {
 
 extension View {
     /// Liquid Glass where the OS has it; classic bar material otherwise.
+    /// The compiler guard keeps pre-26 SDKs building (CI runners): the
+    /// glassEffect SYMBOL only exists from the macOS 26 SDK (Swift 6.2+),
+    /// and #available is a runtime check, not a compile-time one.
     @ViewBuilder
     func barBackground() -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.glassEffect(.regular, in: .rect)
         } else {
             self.background(.bar)
         }
+        #else
+        self.background(.bar)
+        #endif
     }
 }
 

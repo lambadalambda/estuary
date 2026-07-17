@@ -24,6 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Newest Xcode on the image: the Liquid Glass path needs the macOS 26
+      # SDK; on older SDKs the code compile-guards down to bar material.
+      - name: Select newest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "using $XCODE"
+          sudo xcode-select -s "$XCODE"
+          swift --version
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: dcvm

@@ -59,7 +59,6 @@ struct ChatDetailView: View {
                     .padding(.vertical, 10)
                     .background(OverlayScrollers())
                 }
-                .background(ChatBackdrop())
                 // Chat behavior without manual scroll bookkeeping: start at
                 // the bottom (after layout, so it can't land mid-chat), and
                 // stay pinned there through content growth — new messages,
@@ -77,7 +76,6 @@ struct ChatDetailView: View {
                 }
             }
 
-            Divider()
             composer
         }
         .onAppear { composerFocused = true }
@@ -144,7 +142,7 @@ struct ChatDetailView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity)
-            .background(.bar)
+            .composerCard()
         } else {
             VStack(spacing: 0) {
                 if let replyTo = model.replyTo {
@@ -173,7 +171,10 @@ struct ChatDetailView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                 }
-                HStack(alignment: .bottom, spacing: 8) {
+                // Baseline alignment centers the icons with a single line
+                // and keeps them anchored to the last line as the field
+                // grows — no hand-tuned paddings.
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Button {
                         showAttachPicker = true
                     } label: {
@@ -182,7 +183,6 @@ struct ChatDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 2)
                     // Grows up to 5 lines; Return sends, Option+Return
                     // inserts a newline.
                     TextField("Message \(chat.name)…", text: $draft, axis: .vertical)
@@ -198,12 +198,11 @@ struct ChatDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
-                    .padding(.bottom, 2)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
-            .barBackground()
+            .composerCard()
         }
     }
 
@@ -221,21 +220,24 @@ struct ChatDetailView: View {
 }
 
 extension View {
-    /// Liquid Glass where the OS has it; classic bar material otherwise.
-    /// The compiler guard keeps pre-26 SDKs building (CI runners): the
-    /// glassEffect SYMBOL only exists from the macOS 26 SDK (Swift 6.2+),
-    /// and #available is a runtime check, not a compile-time one.
-    @ViewBuilder
-    func barBackground() -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: .rect)
-        } else {
-            self.background(.bar)
-        }
-        #else
-        self.background(.bar)
-        #endif
+    /// One rounded-card recipe for the chat chrome: message bubbles and the
+    /// composer share it, so radius, surface, and shadow can't drift apart.
+    fileprivate func cardSurface(_ fill: AnyShapeStyle, shadowed: Bool) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(fill)
+                .shadow(color: .black.opacity(shadowed ? 0.10 : 0), radius: 1.5, y: 1))
+    }
+
+    /// Floating input card over the tiled chat backdrop — an incoming-bubble
+    /// surface, so the composer reads as part of the conversation instead of
+    /// a separate square bar. The top padding keeps a strip of backdrop
+    /// visible between the scrolled messages and the card.
+    fileprivate func composerCard() -> some View {
+        cardSurface(AnyShapeStyle(EstuaryTheme.incomingBubble), shadowed: true)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 10)
     }
 }
 
@@ -447,16 +449,13 @@ struct MessageBubbleView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(message.isOutgoing
-                    ? AnyShapeStyle(EstuaryTheme.bubble)
-                    : AnyShapeStyle(EstuaryTheme.incomingBubble))
-                // The card fill is deliberately close to the surface (calm);
-                // this faint shadow is what delineates incoming bubbles.
-                .shadow(
-                    color: .black.opacity(message.isOutgoing ? 0 : 0.10),
-                    radius: 1.5, y: 1))
+        // The card fill is deliberately close to the surface (calm);
+        // the faint shadow is what delineates incoming bubbles.
+        .cardSurface(
+            message.isOutgoing
+                ? AnyShapeStyle(EstuaryTheme.bubble)
+                : AnyShapeStyle(EstuaryTheme.incomingBubble),
+            shadowed: !message.isOutgoing)
     }
 
     /// Display size derived from core's stored pixel dimensions, so the

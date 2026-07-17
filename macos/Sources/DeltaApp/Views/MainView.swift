@@ -39,6 +39,9 @@ struct MainView: View {
                     }
             }
             .listStyle(.sidebar)
+            // The List's scroll view is a sibling of this background, not an
+            // ancestor — apply() handles that shape.
+            .background(OverlayScrollers())
             .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
             .navigationTitle(model.showingArchive ? "Archived" : "Chats")
             .searchable(text: $model.searchQuery, placement: .sidebar, prompt: "Search chats")
@@ -79,14 +82,20 @@ struct MainView: View {
                 Text("All chats and keys of this profile are deleted from this Mac. Other devices with the same profile are not affected.")
             }
         } detail: {
-            if let chat = model.selectedChat {
-                ChatDetailView(model: model, chat: chat)
-            } else {
-                ContentUnavailableView(
-                    "No Chat Selected",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Pick a conversation from the sidebar."))
+            Group {
+                if let chat = model.selectedChat {
+                    ChatDetailView(model: model, chat: chat)
+                } else {
+                    ContentUnavailableView(
+                        "No Chat Selected",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("Pick a conversation from the sidebar."))
+                }
             }
+            // The detail column owns the tiled surface: messages, floating
+            // composer, AND the empty state share it — no background flash
+            // when selection changes.
+            .background(ChatBackdrop())
         }
         .onChange(of: model.selectedChatId) {
             Task { await model.chatSelectionChanged() }

@@ -1,0 +1,35 @@
+# Scroll regressions: jump-to-top on select/post, sidebar scroller flash
+
+## Summary
+
+User-reported after the chrome polish landed:
+
+1. Selecting a chat, or posting in one, can scroll the conversation all the
+   way to the top — reproducible for some chats.
+2. On chat selection the legacy scrollbar briefly flashes in the chat list.
+
+## Analysis
+
+1. `loadOlderMessages` returns a top-anchor id and the view restores it via
+   `proxy.scrollTo(anchor, .top)`. When the viewport is at the bottom (chat
+   just opened / just posted) and the load-older sentinel is realized —
+   which happens for chats whose loaded window fits the viewport — the
+   restore flings the view to the top. At the bottom the
+   `.defaultScrollAnchor(.bottom, for: .sizeChanges)` pin already handles
+   prepended content; the restore only exists for scrolled-up reading.
+2. AppKit re-stamps the preferred (legacy) scroller style when the List
+   re-tiles on selection change. Since the per-update re-apply was removed
+   (perf), nothing corrects it until a rare trigger — a regression from the
+   OverlayScrollers redesign.
+
+## Requirements
+
+- History restore anchor is suppressed while the view is at the bottom.
+- Overlay scroller style is pinned per scroll view: a revert is corrected
+  synchronously (before it can draw), not on the next global trigger.
+
+## Acceptance Criteria
+
+- Unit tests: restore-anchor decision (nil at bottom, id when scrolled up);
+  scroller style re-pins after an external revert.
+- User confirms: no jump-to-top on select/post, no sidebar scroller flash.

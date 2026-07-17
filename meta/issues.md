@@ -5,3 +5,4 @@
 - [ ] [App bundle polish](issues/app-bundle-polish.md)
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
+- [ ] [Scroll regressions: jump-to-top on select/post, sidebar scroller flash](issues/scroll-regressions.md)

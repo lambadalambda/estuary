@@ -550,3 +550,34 @@ eyeball-verified.
 - Composer icon alignment: `.lastTextBaseline` instead of hand-tuned bottom
   paddings. Untestable visuals (baseline alignment incl. multi-line drafts,
   card look, scroller fade) are eyeball-verified per project rules.
+
+## 2026-07-17 — Scroll regressions (user report after chrome polish)
+
+- Jump-to-top on select/post: the loadOlder anchor restore
+  (`proxy.scrollTo(oldest, .top)`) also ran while the viewport was pinned
+  at the bottom — for chats whose loaded window fits the viewport the
+  sentinel is realized right on open, so opening/posting flung the view to
+  the top. Restore is now suppressed at the bottom
+  (AppModel.historyRestoreAnchor, unit-tested); the
+  `.defaultScrollAnchor(.bottom, for: .sizeChanges)` pin absorbs prepends.
+- Sidebar legacy-scroller flash on selection: AppKit re-stamps the
+  preferred style when the List re-tiles; dropping the per-update re-apply
+  (perf fix) left nothing to correct it — a regression from the sweep
+  redesign. Scroll views are now KVO-pinned (scrollerStyle +
+  autohidesScrollers corrected synchronously, before drawing); pins live as
+  associated objects so their lifetime matches the scroll view. KVO on
+  NSScrollView.scrollerStyle works — proven by test, revert corrected
+  within the setter call.
+- User clarification: the jump hits HUGE chats with scrollback — the lazy
+  container realizes its top edge during initial layout (before settling at
+  the bottom anchor), spuriously firing the load-older sentinel; the
+  unconditional anchor restore then scrolled to the old window top. The
+  at-bottom suppression covers it; the spurious load degrades to a harmless
+  history prefetch.
+- Review catch on the fix itself: viewIsAtBottom was realization-based
+  (onAppear/onDisappear span the realized region, not the viewport), which
+  could wrongly suppress a legitimate restore for a scrolled-up user in
+  short chats. Now visibility-based via onScrollVisibilityChange — also
+  makes windowNeedsGrowth honest. Known pre-existing edge (review, left
+  open): if content still fits the viewport after a prepend, the sentinel
+  never re-fires and the spinner can stall until the next visibility change.

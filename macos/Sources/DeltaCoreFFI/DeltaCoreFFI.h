@@ -309,6 +309,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_block_chat(uint64_t ptr, uint32_t account_i
 uint64_t uniffi_dcvm_fn_method_dcapp_cancel_ongoing(uint64_t ptr, uint32_t account_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_BY_ID
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_BY_ID
+uint64_t uniffi_dcvm_fn_method_dcapp_chat_by_id(uint64_t ptr, uint32_t account_id, uint32_t chat_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_LIST
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_CHAT_LIST
 uint64_t uniffi_dcvm_fn_method_dcapp_chat_list(uint64_t ptr, uint32_t account_id
@@ -785,6 +790,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_block_chat(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CANCEL_ONGOING
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CANCEL_ONGOING
 uint16_t uniffi_dcvm_checksum_method_dcapp_cancel_ongoing(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHAT_BY_ID
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_CHAT_BY_ID
+uint16_t uniffi_dcvm_checksum_method_dcapp_chat_by_id(void
     
 );
 #endif

@@ -612,7 +612,10 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func archivedChats(accountId: UInt32) async throws  -> [ChatItem]
     
     /**
-     * Blocks a chat (contact request or existing chat).
+     * Blocks a chat. NOTE: core cannot block group chats — blocking a group
+     * DELETES it and its history ("can't block groups yet"), and outgoing
+     * broadcasts error. UIs should only offer this on contact requests and
+     * 1:1 chats.
      */
     func blockChat(accountId: UInt32, chatId: UInt32) async throws 
     
@@ -620,6 +623,13 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      * Cancels an ongoing configure or backup transfer for this account.
      */
     func cancelOngoing(accountId: UInt32) async throws 
+    
+    /**
+     * Single fresh chat row by id — for notification decisions and other
+     * point lookups where fetching whole lists would be wasteful or stale.
+     * Returns None for unknown/deleted chats.
+     */
+    func chatById(accountId: UInt32, chatId: UInt32) async throws  -> ChatItem?
     
     func chatList(accountId: UInt32) async throws  -> [ChatItem]
     
@@ -912,7 +922,10 @@ open func archivedChats(accountId: UInt32)async throws  -> [ChatItem]  {
 }
     
     /**
-     * Blocks a chat (contact request or existing chat).
+     * Blocks a chat. NOTE: core cannot block group chats — blocking a group
+     * DELETES it and its history ("can't block groups yet"), and outgoing
+     * broadcasts error. UIs should only offer this on contact requests and
+     * 1:1 chats.
      */
 open func blockChat(accountId: UInt32, chatId: UInt32)async throws   {
     return
@@ -945,6 +958,27 @@ open func cancelOngoing(accountId: UInt32)async throws   {
             completeFunc: ffi_dcvm_rust_future_complete_void,
             freeFunc: ffi_dcvm_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Single fresh chat row by id — for notification decisions and other
+     * point lookups where fetching whole lists would be wasteful or stale.
+     * Returns None for unknown/deleted chats.
+     */
+open func chatById(accountId: UInt32, chatId: UInt32)async throws  -> ChatItem?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_chat_by_id(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeChatItem.lift,
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -2890,6 +2924,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeChatItem: FfiConverterRustBuffer {
+    typealias SwiftType = ChatItem?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeChatItem.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeChatItem.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeQuoteInfo: FfiConverterRustBuffer {
     typealias SwiftType = QuoteInfo?
 
@@ -3152,10 +3210,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_archived_chats() != 48506) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_block_chat() != 8862) {
+    if (uniffi_dcvm_checksum_method_dcapp_block_chat() != 64773) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_cancel_ongoing() != 30716) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_chat_by_id() != 47568) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_chat_list() != 45232) {

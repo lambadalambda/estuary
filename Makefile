@@ -44,6 +44,7 @@ run-app: app
 
 test:
 	cd dcvm && cargo test
+	cd macos && swift test $(SWIFT_FLAGS)
 
 # Full non-interactive verification: Rust tests + Swift compile/link.
 check: test swift-build

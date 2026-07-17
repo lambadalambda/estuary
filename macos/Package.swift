@@ -32,6 +32,17 @@ let package = Package(
                 // errors dictated): netwatch/system-configuration.
                 .linkedFramework("SystemConfiguration")
             ]
+        ),
+
+        .testTarget(
+            name: "DeltaAppTests",
+            dependencies: ["DeltaApp"],
+            path: "Tests/DeltaAppTests",
+            linkerSettings: [
+                .linkedLibrary("dcvm"),
+                .unsafeFlags(["-L\(rustLibDir)"]),
+                .linkedFramework("SystemConfiguration")
+            ]
         )
     ]
 )

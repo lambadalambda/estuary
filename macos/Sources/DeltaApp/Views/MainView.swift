@@ -357,6 +357,12 @@ struct SettingsSheet: View {
             LabeledContent("Address", value: model.currentAccount?.addr ?? "—")
                 .font(.callout)
 
+            LabeledContent(
+                "Build",
+                value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
+                    as? String ?? "dev (swift run)")
+                .font(.callout)
+
             LabeledContent("Connectivity") {
                 HStack(spacing: 6) {
                     Circle()

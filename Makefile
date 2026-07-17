@@ -36,6 +36,10 @@ app: swift-build
 	rm -rf macos/DeltaApp.app
 	mkdir -p macos/DeltaApp.app/Contents/MacOS
 	cp macos/Info.plist macos/DeltaApp.app/Contents/
+	# Stamp the build so "which code am I running?" is answerable from the
+	# app itself (Settings sheet) and Finder's Get Info.
+	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-parse --short HEAD)" \
+	    macos/DeltaApp.app/Contents/Info.plist
 	cp macos/.build/debug/DeltaApp macos/DeltaApp.app/Contents/MacOS/
 	codesign --force --sign - macos/DeltaApp.app
 

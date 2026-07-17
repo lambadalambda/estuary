@@ -56,3 +56,11 @@ with the warm ivory background. Scope:
   material; dark mode uses the website's card navy. Must contrast with the
   surface in both modes (theme-tested).
 - No new loud elements; everything else stays native.
+
+## Slice 3 (2026-07-17): quote contrast fix + tiling chat background
+
+- BUG (user-found): quote blocks inside OUTGOING (deep teal) bubbles render
+  dark text on dark background — unreadable in light mode.
+- Tiling chat background from user-provided pattern (CC0 sunset photo also
+  provided for the mock showcase): light = pattern on warm ivory; dark =
+  inverted/tinted onto midnight. Pre-generated tiles, bundled as resources.

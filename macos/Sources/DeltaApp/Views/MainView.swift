@@ -92,6 +92,10 @@ struct MainView: View {
                         description: Text("Pick a conversation from the sidebar."))
                 }
             }
+            // Fill before backgrounding: ContentUnavailableView hugs its
+            // content, which shrank the backdrop to a small box on the
+            // empty screen.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             // The detail column owns the tiled surface: messages, floating
             // composer, AND the empty state share it — no background flash
             // when selection changes.

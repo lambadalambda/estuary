@@ -33,3 +33,10 @@ User-reported after the chrome polish landed:
 - Unit tests: restore-anchor decision (nil at bottom, id when scrolled up);
   scroller style re-pins after an external revert.
 - User confirms: no jump-to-top on select/post, no sidebar scroller flash.
+
+## Outcome (2026-07-17)
+
+User-confirmed fixed ("yup, that fixed it") after three commits: at-bottom
+restore suppression, KVO style pin (sidebar flash), and the pin-bottom
+rescue for the stranded-viewport blank pane. DCNATIVE_DEBUG_SCROLL=1
+diagnostics stay in for future scroll forensics.

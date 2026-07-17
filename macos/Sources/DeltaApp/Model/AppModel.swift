@@ -98,6 +98,14 @@ final class AppModel {
         if screen == .onboarding, env["DCNATIVE_AUTODEMO"] == "1" {
             await tryDemo()
         }
+        // Screenshot hook: open the newest chat so captures show a
+        // conversation. Untestable as-is (ProcessInfo read, like the hooks
+        // around it); the selection path itself is covered elsewhere.
+        if screen == .main, env["DCNATIVE_AUTOSELECT"] == "1",
+           let first = chats.first {
+            selectedChatId = first.id
+            await chatSelectionChanged()
+        }
         if screen == .onboarding, env["DCNATIVE_AUTOCREATE"] == "1" {
             profileName = "Autocreate Test"
             await createProfile()

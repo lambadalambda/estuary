@@ -10,6 +10,12 @@ struct DeltaAppMain: App {
         // Running via `swift run` (no .app bundle): become a regular,
         // focusable app with a Dock icon.
         NSApplication.shared.setActivationPolicy(.regular)
+        // Screenshot hook: force an appearance regardless of the system
+        // setting ("light"/"dark"), so both variants can be captured.
+        if let forced = ProcessInfo.processInfo.environment["DCNATIVE_APPEARANCE"] {
+            NSApplication.shared.appearance =
+                NSAppearance(named: forced == "dark" ? .darkAqua : .aqua)
+        }
     }
 
     var body: some Scene {
@@ -36,6 +42,7 @@ struct DeltaAppMain: App {
                     }
                 }
         }
+        .defaultSize(width: 1080, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") { model.showNewChat = true }

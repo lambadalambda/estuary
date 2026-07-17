@@ -14,4 +14,3 @@
 - [x] [Estuary rebrand — first slice (name + palette)](issues/estuary-rebrand.md)
 - [x] [Website screenshots with demo data](issues/website-screenshots.md)
 - [x] [Chat chrome polish: sidebar scrollbar, composer alignment + shape](issues/chat-chrome-polish.md)
-- [x] [Scroll regressions: jump-to-top on select/post, sidebar scroller flash](issues/scroll-regressions.md)

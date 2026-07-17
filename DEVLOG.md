@@ -592,3 +592,14 @@ eyeball-verified.
   from the initial layout — verified against the real huge-chat repro by
   the user; if it recurs, defer the scrollTo one tick. DCNATIVE_DEBUG_SCROLL=1
   prints sentinel/anchor/outcome diagnostics for exactly that case.
+- Reopened: blank-open persists and is WINDOW-SIZE-dependent (a given size
+  reliably breaks the problematic chat; any resize heals instantly; logs
+  show zero loadOlder activity → the prepend theory is falsified for this
+  repro). The initial bottom-anchored lazy layout itself strands the
+  viewport, with the bottom-anchor visibility flapping ~12x while it
+  settles. Stopgap shipped: two unguarded post-open re-pins (~120/450ms,
+  cancellation-checked — a viewIsAtBottom guard would defeat the rescue
+  since the stranded state reports not-at-bottom) + opt-in
+  onScrollGeometryChange diagnostics (offset/content/container) to
+  pin down the stranded geometry for a principled geometry-triggered fix.
+  All view-timing behavior — untestable per project rules, user-verified.

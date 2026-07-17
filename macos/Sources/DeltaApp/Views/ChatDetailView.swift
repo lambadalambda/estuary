@@ -72,12 +72,35 @@ struct ChatDetailView: View {
                 // left alone.
                 .defaultScrollAnchor(.bottom)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                .scrollGeometryDebug(model: model)
                 // Fresh scroll state per chat; with the initial anchor this
                 // is the no-animation snap to the newest message.
                 .id(chat.id)
                 .onChange(of: chat.id) {
                     draft = ""
                     composerFocused = true
+                }
+                // Rescue for the window-size-dependent blank open: for some
+                // viewport heights the initial bottom-anchored layout of the
+                // lazy stack strands the viewport outside the realized
+                // content (any resize heals it — a full relayout). Explicit
+                // re-pins after layout settles do the same. Two shots
+                // (~120ms and ~450ms after open) because the settling
+                // oscillation can outlast the first on cold image-heavy
+                // opens. Deliberately NOT guarded on viewIsAtBottom: the
+                // stranded state reports not-at-bottom, which would defeat
+                // the rescue — and this close to open, snapping to the
+                // newest message is the right outcome anyway.
+                .task(id: chat.id) {
+                    for delay in [120, 330] {
+                        try? await Task.sleep(for: .milliseconds(delay))
+                        // Task.sleep in a cancelled task returns instead of
+                        // throwing into try? — without this check a rapid
+                        // chat switch fires a stale re-pin at the new chat.
+                        guard !Task.isCancelled else { return }
+                        model.scrollDebug("view: post-open re-pin bottom")
+                        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                    }
                 }
             }
 
@@ -230,7 +253,39 @@ struct ChatDetailView: View {
     }
 }
 
+/// Snapshot of the scroll geometry, Int-truncated so the change callback
+/// dedups to meaningful movement instead of every sub-point frame.
+private struct ScrollGeoSample: Equatable {
+    let offset: Int
+    let content: Int
+    let container: Int
+}
+
 extension View {
+    /// Scroll diagnostics for DCNATIVE_DEBUG_SCROLL=1: offset vs content
+    /// vs container height is exactly what distinguishes "viewport parked
+    /// outside the content" from "content never realized" in the
+    /// blank-open bug. Kept off the scroll hot path entirely unless the
+    /// env is set (the flag is process-constant, so the branch is stable)
+    /// or below macOS 15.
+    @ViewBuilder
+    func scrollGeometryDebug(model: AppModel) -> some View {
+        if #available(macOS 15.0, *), AppModel.scrollDebugEnabled {
+            onScrollGeometryChange(for: ScrollGeoSample.self) { geo in
+                ScrollGeoSample(
+                    offset: Int(geo.contentOffset.y),
+                    content: Int(geo.contentSize.height),
+                    container: Int(geo.containerSize.height))
+            } action: { _, new in
+                model.scrollDebug(
+                    "geo: offset=\(new.offset) content=\(new.content) "
+                        + "container=\(new.container)")
+            }
+        } else {
+            self
+        }
+    }
+
     /// One rounded-card recipe for the chat chrome: message bubbles and the
     /// composer share it, so radius, surface, and shadow can't drift apart.
     fileprivate func cardSurface(_ fill: AnyShapeStyle, shadowed: Bool) -> some View {

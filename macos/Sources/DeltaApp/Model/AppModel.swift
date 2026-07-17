@@ -467,10 +467,15 @@ final class AppModel {
         viewIsAtBottom ? .pinBottom : .restore(anchor: previousOldest)
     }
 
+    /// Computed once: process env is constant, and reading it bridges the
+    /// whole environ per call — too costly for scroll-frame call sites.
+    nonisolated static let scrollDebugEnabled =
+        ProcessInfo.processInfo.environment["DCNATIVE_DEBUG_SCROLL"] == "1"
+
     /// Scroll diagnostics, opt-in via DCNATIVE_DEBUG_SCROLL=1 (launch from
     /// a terminal to see them).
     nonisolated func scrollDebug(_ message: @autoclosure () -> String) {
-        if ProcessInfo.processInfo.environment["DCNATIVE_DEBUG_SCROLL"] == "1" {
+        if Self.scrollDebugEnabled {
             print("[scroll] \(message())")
         }
     }
@@ -672,6 +677,9 @@ final class AppModel {
         // reloadMessages never compares against the previous chat.
         messages = []
         await reloadMessages()
+        scrollDebug(
+            "open chat=\(selectedChatId.map(String.init) ?? "-") "
+                + "msgs=\(messages.count) hasMore=\(hasMoreMessages)")
         await markSelectedChatNoticed()
     }
 

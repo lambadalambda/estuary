@@ -40,3 +40,13 @@ User-confirmed fixed ("yup, that fixed it") after three commits: at-bottom
 restore suppression, KVO style pin (sidebar flash), and the pin-bottom
 rescue for the stranded-viewport blank pane. DCNATIVE_DEBUG_SCROLL=1
 diagnostics stay in for future scroll forensics.
+
+## Reopened (2026-07-17, same evening)
+
+Blank-open still reproduces for the problematic chat, and it is
+window-size-dependent: a given size reliably breaks it, ANY resize heals it
+instantly, and switching away/back at the broken size re-breaks it.
+DCNATIVE_DEBUG_SCROLL logs show NO loadOlder activity — the prepend theory
+is falsified for this repro; the initial bottom-anchored layout itself
+strands the viewport (bottom-anchor visibility flaps ~12x per open while
+layout oscillates). Next: scroll-geometry diagnostics + post-open re-pin.

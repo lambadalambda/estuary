@@ -340,6 +340,7 @@ struct MessageBubbleView: View {
             HStack(alignment: .bottom) {
                 Spacer(minLength: 80)
                 bubbleWithReactions
+                    .frame(maxWidth: 560, alignment: .trailing)
             }
         } else {
             HStack(alignment: .top, spacing: 8) {
@@ -357,6 +358,7 @@ struct MessageBubbleView: View {
                     }
                 }
                 bubbleWithReactions
+                    .frame(maxWidth: 560, alignment: .leading)
                 Spacer(minLength: 80)
             }
         }
@@ -373,7 +375,11 @@ struct MessageBubbleView: View {
     }
 
     private var bubble: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Content defines the bubble width (bubbles hug their text and stay
+        // anchored to their side); the timestamp overlays bottom-trailing
+        // instead of stretching the bubble to the full row width.
+        ZStack(alignment: .bottomTrailing) {
+            VStack(alignment: .leading, spacing: 3) {
             if showAuthor {
                 Text(message.senderName)
                     .font(.caption.weight(.bold))
@@ -424,6 +430,9 @@ struct MessageBubbleView: View {
                         .foregroundStyle(message.isOutgoing ? .white : .primary)
                 }
             }
+            }
+            // Reserved line so the overlaid footer never covers text.
+            .padding(.bottom, 15)
             HStack(spacing: 4) {
                 TimelineView(.everyMinute) { timeline in
                     Text(messageTimestamp(message.timestamp, now: timeline.date))
@@ -434,7 +443,6 @@ struct MessageBubbleView: View {
                 }
             }
             .foregroundStyle(message.isOutgoing ? Color.white.opacity(0.75) : Color.secondary)
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

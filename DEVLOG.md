@@ -512,3 +512,14 @@ pairs → renamed honestly. Dynamic-color creation extracted into one
   hooks, user captures the windows (⇧⌘4+Space; agent shell has no window-
   server access — CGWindowList returns zero bounds, screencapture blank).
   Both variants on the site via <picture> prefers-color-scheme.
+
+## 2026-07-17 — Overlay scrollers in the chat (user: intrusive scrollbar)
+
+The persistent scroll track (system "Always show scroll bars") reads as
+intrusive on the tiled surface. `OverlayScrollers` NSViewRepresentable walks
+up to the backing NSScrollView and forces scrollerStyle = .overlay (fade
+after scrolling). Review catch: AppKit reverts the style on
+preferredScrollerStyleDidChange (pref flip, mouse plug) with no SwiftUI
+update to piggyback on → explicit NotificationCenter observer re-applies.
+AppKit view-walking is untestable in unit tests (no window hierarchy) —
+eyeball-verified.

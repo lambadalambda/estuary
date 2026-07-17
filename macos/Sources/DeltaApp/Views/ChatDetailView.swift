@@ -57,6 +57,7 @@ struct ChatDetailView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .background(OverlayScrollers())
                 }
                 .background(ChatBackdrop())
                 // Chat behavior without manual scroll bookkeeping: start at

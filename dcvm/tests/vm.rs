@@ -1003,3 +1003,49 @@ async fn chat_by_id_returns_fresh_row() {
     // Unknown chat id -> None, not an error.
     assert!(app.chat_by_id(id, 999_999).await.unwrap().is_none());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn demo_account_seeds_rich_showcase() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_demo_account().await.unwrap();
+    let chats = app.chat_list(id).await.unwrap();
+    assert!(
+        chats.len() >= 5,
+        "want a full sidebar, got {:?}",
+        chats.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
+    // The flagship group sorts newest so the autoselect hook opens it.
+    let first = &chats[0];
+    assert!(first.is_group, "newest chat should be the group, got {:?}", first.name);
+    assert_eq!(first.name, "Weekend Hikers");
+    let msgs = app.messages(id, first.id, 0, None).await.unwrap();
+    let senders: std::collections::HashSet<&str> = msgs
+        .iter()
+        .filter(|m| !m.is_outgoing && !m.is_info)
+        .map(|m| m.sender_name.as_str())
+        .collect();
+    assert!(senders.len() >= 3, "group needs >=3 distinct senders, got {senders:?}");
+    // A reaction chip somewhere in the showcase (Elena's chat).
+    let elena = chats.iter().find(|c| c.name == "Elena").expect("Elena chat");
+    let elena_msgs = app.messages(id, elena.id, 0, None).await.unwrap();
+    assert!(
+        elena_msgs.iter().any(|m| !m.reactions.is_empty()),
+        "want a seeded reaction chip"
+    );
+    // Non-ASCII bodies must survive: without a charset header the em dash
+    // decoded as mojibake ("â€\u{9d}"-style) in the UI.
+    let priya = chats.iter().find(|c| c.name == "Priya").expect("Priya chat");
+    let priya_msgs = app.messages(id, priya.id, 0, None).await.unwrap();
+    assert!(
+        priya_msgs.iter().any(|m| m.text.contains('\u{2014}')),
+        "em dash mangled: {:?}",
+        priya_msgs.iter().map(|m| &m.text).collect::<Vec<_>>()
+    );
+    // Classic-mail subject prepending ("Weekend Hikers – ...") must not
+    // leak into the rendered group messages.
+    assert!(
+        !msgs.iter().any(|m| m.text.contains("Weekend Hikers")),
+        "subject leaked into body: {:?}",
+        msgs.iter().map(|m| &m.text).collect::<Vec<_>>()
+    );
+}

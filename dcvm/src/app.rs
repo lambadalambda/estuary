@@ -952,6 +952,49 @@ async fn demo_mail(
          Message-ID: <demo.{seq}@example.com>\r\n\
          Date: {date}\r\n\
          Chat-Version: 1.0\r\n\
+         MIME-Version: 1.0\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
+         \r\n\
+         {body}\r\n"
+    );
+    receive_imf(ctx, raw.as_bytes(), seen).await?;
+    Ok(())
+}
+
+/// Group message via a classic multi-recipient mail: core builds an ad-hoc
+/// group named after the subject. No Chat-Version — chat messages to many
+/// recipients don't ad-hoc-group; classic mail does. Later messages thread
+/// via In-Reply-To to stay in the same group.
+async fn demo_group_mail(
+    ctx: &Context,
+    from: (&str, &str),
+    to_addrs: &str,
+    subject: &str,
+    seq: u32,
+    minutes_ago: i64,
+    body: &str,
+    seen: bool,
+) -> anyhow::Result<()> {
+    let (from_name, from_addr) = from;
+    let date = (chrono::Utc::now() - chrono::Duration::minutes(minutes_ago)).to_rfc2822();
+    // "Re: <subject>" on EVERY mail: core recognizes reply subjects and
+    // stops prepending "<subject> – " to rendered bodies, while the ad-hoc
+    // group name still comes from the Re:-stripped subject.
+    let subject_line = format!("Re: {subject}");
+    let reply_header = if seq > 1 {
+        "In-Reply-To: <demo.group.1@example.com>\r\n"
+    } else {
+        ""
+    };
+    let raw = format!(
+        "From: {from_name} <{from_addr}>\r\n\
+         To: {to_addrs}\r\n\
+         Subject: {subject_line}\r\n\
+         Message-ID: <demo.group.{seq}@example.com>\r\n\
+         {reply_header}\
+         Date: {date}\r\n\
+         MIME-Version: 1.0\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
          \r\n\
          {body}\r\n"
     );
@@ -995,10 +1038,61 @@ async fn seed_demo_account(ctx: &Context) -> anyhow::Result<()> {
     demo_mail(ctx, marco, DEMO_ADDR, 8, 90,
         "Perfect, I'll bring the drinks.", false).await?;
 
-    // --- Saved Messages with a note ---------------------------------------
-    let self_chat = ChatId::create_for_contact(ctx, ContactId::SELF).await?;
-    chat::send_text_msg(ctx, self_chat, "Shopping list: bread, cheese, coffee".to_string())
-        .await?;
+    // --- Older 1:1s to fill the sidebar -----------------------------------
+    let priya = ("Priya", "priya@example.com");
+    let jonas = ("Jonas", "jonas@example.com");
+    Contact::create(ctx, priya.0, priya.1).await?;
+    Contact::create(ctx, jonas.0, jonas.1).await?;
+    demo_mail(ctx, priya, DEMO_ADDR, 9, 3 * 1440 + 200,
+        "The pottery class was so much fun, we should go again!", true).await?;
+    demo_mail(ctx, me, priya.1, 10, 3 * 1440 + 190,
+        "Definitely. Same time next month?", true).await?;
+    demo_mail(ctx, priya, DEMO_ADDR, 11, 3 * 1440 + 185,
+        "It's a date \u{2014} I'll book us two wheels.", true).await?;
+    demo_mail(ctx, jonas, DEMO_ADDR, 12, 4 * 1440 + 100,
+        "Found that book you mentioned \u{2014} it's great so far.", true).await?;
+    demo_mail(ctx, me, jonas.1, 13, 4 * 1440 + 90,
+        "Told you! Wait until the twist in chapter 12.", true).await?;
+    demo_mail(ctx, jonas, DEMO_ADDR, 14, 4 * 1440 + 85,
+        "No spoilers!!", true).await?;
+
+    // --- Flagship group (ad-hoc via multi-recipient classic mail) ---------
+    // Latest activity in the account, so it sorts first and the
+    // DCNATIVE_AUTOSELECT screenshot hook opens it.
+    let everyone = format!(
+        "{DEMO_ADDR}, {}, {}, {}",
+        elena.1, marco.1, priya.1
+    );
+    let group = "Weekend Hikers";
+    demo_group_mail(ctx, marco, &everyone, group, 1, 1440 + 120,
+        "Trail plan for Sunday: meet at the falls parking lot, 9am?", true).await?;
+    demo_group_mail(ctx, me, &everyone, group, 2, 1440 + 110,
+        "Works for me. Weather forecast looks perfect.", true).await?;
+    demo_group_mail(ctx, elena, &everyone, group, 3, 55,
+        "I'll bring the good trail mix this time", true).await?;
+    demo_group_mail(ctx, priya, &everyone, group, 4, 12,
+        "Can someone give me a ride? My car's in the shop.", false).await?;
+
+    // --- A reaction chip on Elena's latest message ------------------------
+    if let Some(elena_chat) = ChatId::lookup_by_contact(
+        ctx, Contact::lookup_id_by_addr(
+            ctx, elena.1, deltachat::contact::Origin::ManuallyCreated).await?
+            .ok_or_else(|| anyhow::anyhow!("elena contact"))?,
+    ).await? {
+        let last = chat::get_chat_msgs(ctx, elena_chat)
+            .await?
+            .into_iter()
+            .filter_map(|item| match item {
+                CoreChatItem::Message { msg_id } => Some(msg_id),
+                _ => None,
+            })
+            .next_back()
+            .ok_or_else(|| anyhow::anyhow!("elena messages"))?;
+        reaction::send_reaction(ctx, last, "\u{2764}\u{fe0f}").await?;
+    }
+
+    // No Saved Messages note: creating the self-chat stamps it "now", which
+    // would outsort the flagship group (the sidebar is full enough without).
 
     Ok(())
 }

@@ -1,0 +1,64 @@
+# Nightly build: every push to main recreates the `nightly` prerelease with
+# a fresh DMG. Same dev-profile Rust + debug Swift as the local `make app`
+# loop (an honest nightly; release-profile packaging is a separate issue).
+name: nightly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Queue (don't cancel): a cancel between `release delete` and `release
+# create` would leave the stable download URL 404ing until the next run.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dcvm
+
+      - name: Rust tests
+        run: cd dcvm && cargo test
+
+      # `make app` covers cargo build -> uniffi bindings -> swift build ->
+      # .app assembly (icon, SPM resource bundle, git-SHA stamp, ad-hoc sign).
+      - name: Build app bundle
+        run: make app
+
+      - name: Swift tests
+        run: cd macos && swift test --disable-sandbox
+
+      - name: Package DMG
+        run: |
+          mkdir dmg-staging
+          cp -R macos/Estuary.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname Estuary -srcfolder dmg-staging \
+            -ov -format UDZO Estuary-nightly.dmg
+
+      # Delete-and-recreate keeps the asset URL stable:
+      # releases/download/nightly/Estuary-nightly.dmg
+      - name: Recreate nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly Estuary-nightly.dmg \
+            --prerelease \
+            --title "Estuary nightly ($(git rev-parse --short HEAD))" \
+            --notes "Automated build of \`main\` @ ${GITHUB_SHA}.
+
+          Ad-hoc signed (no Apple developer certificate): on first launch,
+          right-click the app → Open, or run
+          \`xattr -dr com.apple.quarantine /Applications/Estuary.app\`."

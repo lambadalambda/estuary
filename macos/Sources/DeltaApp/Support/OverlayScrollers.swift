@@ -84,10 +84,36 @@ struct OverlayScrollers: NSViewRepresentable {
             let current = queue[index]
             index += 1
             if let scrollView = current as? NSScrollView {
-                scrollView.scrollerStyle = .overlay
-                scrollView.autohidesScrollers = true
+                pin(scrollView)
             }
             queue.append(contentsOf: current.subviews)
         }
+    }
+
+    // Associated-object key: a pin lives exactly as long as its scroll view.
+    private nonisolated(unsafe) static var pinKey: UInt8 = 0
+
+    /// AppKit re-stamps the preferred (legacy) style whenever it re-tiles a
+    /// scroll view — a List selection change was enough to flash the legacy
+    /// bar back in. A one-shot set can't stick, so the pin observes both
+    /// properties and corrects a revert synchronously, before it can draw.
+    private static func pin(_ scrollView: NSScrollView) {
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+        guard objc_getAssociatedObject(scrollView, &pinKey) == nil else { return }
+        let observations = [
+            scrollView.observe(\.scrollerStyle) { scrollView, _ in
+                if scrollView.scrollerStyle != .overlay {
+                    scrollView.scrollerStyle = .overlay
+                }
+            },
+            scrollView.observe(\.autohidesScrollers) { scrollView, _ in
+                if !scrollView.autohidesScrollers {
+                    scrollView.autohidesScrollers = true
+                }
+            },
+        ]
+        objc_setAssociatedObject(
+            scrollView, &pinKey, observations, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 }

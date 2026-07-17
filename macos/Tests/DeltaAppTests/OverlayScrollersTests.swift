@@ -67,6 +67,25 @@ import Testing
         #expect(sidebar.autohidesScrollers && detail.autohidesScrollers)
     }
 
+    @Test func repinsWhenAppKitRevertsTheStyle() {
+        // AppKit re-stamps the preferred (legacy) style when it re-tiles a
+        // scroll view (e.g. List selection change). The pin must correct a
+        // revert synchronously, before it can draw a legacy bar.
+        let scrollView = legacyScrollView()
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        scrollView.documentView = document
+        let anchor = NSView()
+        document.addSubview(anchor)
+        OverlayScrollers.apply(from: anchor)
+        #expect(scrollView.scrollerStyle == .overlay)
+
+        scrollView.scrollerStyle = .legacy
+        scrollView.autohidesScrollers = false
+
+        #expect(scrollView.scrollerStyle == .overlay)
+        #expect(scrollView.autohidesScrollers)
+    }
+
     @Test func doesNothingWithoutAScrollView() {
         let container = NSView()
         let anchor = NSView()

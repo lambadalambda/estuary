@@ -26,7 +26,9 @@ final class AppModel {
     private var historyExhausted = false
     /// Size of the loaded window; grows as the user scrolls into history.
     private var loadedLimit: UInt32 = AppModel.messagePageSize
-    static let messagePageSize: UInt32 = 100
+    // Eager layout renders the whole window (see ChatDetailView's VStack
+    // note) — keep pages small; a viewport shows ~10 messages at most.
+    static let messagePageSize: UInt32 = 50
     /// Reported by the chat view's bottom sentinel; gates window growth.
     var viewIsAtBottom = true
     private var reloadChatsScheduled = false

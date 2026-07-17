@@ -24,8 +24,9 @@ struct ChatDetailView: View {
                     // one day (jump-to-top, two blank-open variants) — geo
                     // logs showed estimates 2.2x the real content height,
                     // parking the viewport in phantom space no scroll API
-                    // could escape. The open window is ~100 fixed-size items;
-                    // exact eager layout makes stranding impossible.
+                    // could escape. The open window is one small page of
+                    // fixed-size items; exact eager layout makes stranding
+                    // impossible.
                     VStack(spacing: 6) {
                         if model.hasMoreMessages {
                             ProgressView()

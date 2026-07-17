@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>DeltaApp</string>
+    <string>Estuary</string>
     <key>CFBundleDisplayName</key>
-    <string>Delta Native</string>
+    <string>Estuary</string>
     <key>CFBundleIdentifier</key>
     <string>org.deltachat.native.prototype</string>
     <key>CFBundleExecutable</key>

@@ -197,11 +197,12 @@ struct ChatRowView: View {
                         // Muted chats keep their count but lose the loud color.
                         Text("\(chat.freshCount)")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(
+                                chat.isMuted ? Color.white : EstuaryTheme.badgeText)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
-                                chat.isMuted ? Color.gray.opacity(0.55) : Color.accentColor,
+                                chat.isMuted ? Color.gray.opacity(0.55) : EstuaryTheme.badge,
                                 in: Capsule())
                     }
                 }

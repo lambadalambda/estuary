@@ -192,7 +192,7 @@ struct ChatDetailView: View {
                     Button(action: sendDraft) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title2)
-                            .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(canSend ? EstuaryTheme.accent : Color.secondary)
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
@@ -387,7 +387,7 @@ struct MessageBubbleView: View {
                         text: message.text,
                         textColor: message.isOutgoing ? .white : .labelColor,
                         linkColor: message.isOutgoing
-                            ? .white : NSColor(Color.accentColor))
+                            ? .white : EstuaryTheme.accentNSColor)
                 } else {
                     Text(message.text)
                         .textSelection(.enabled)
@@ -410,7 +410,7 @@ struct MessageBubbleView: View {
         .padding(.vertical, 8)
         .background(
             message.isOutgoing
-                ? AnyShapeStyle(Color.accentColor)
+                ? AnyShapeStyle(EstuaryTheme.bubble)
                 : AnyShapeStyle(.quinary),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -583,12 +583,12 @@ struct ReactionChipsView: View {
                     .padding(.vertical, 3)
                     .background(
                         reaction.isFromSelf
-                            ? AnyShapeStyle(Color.accentColor.opacity(0.25))
+                            ? AnyShapeStyle(EstuaryTheme.accent.opacity(0.25))
                             : AnyShapeStyle(.quaternary),
                         in: Capsule())
                     .overlay(
                         Capsule().strokeBorder(
-                            reaction.isFromSelf ? Color.accentColor : .clear, lineWidth: 1))
+                            reaction.isFromSelf ? EstuaryTheme.accent : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }

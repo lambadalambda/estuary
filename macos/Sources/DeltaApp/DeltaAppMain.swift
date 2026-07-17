@@ -13,8 +13,12 @@ struct DeltaAppMain: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(EstuaryTheme.appName) {
             RootView(model: model)
+                // Estuary accent for all system controls (selection,
+                // buttons, toggles); explicit brand colors come straight
+                // from EstuaryTheme.
+                .tint(EstuaryTheme.accent)
                 .task {
                     NSApp.activate(ignoringOtherApps: true)
                     await model.bootstrap()

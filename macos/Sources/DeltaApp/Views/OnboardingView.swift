@@ -24,9 +24,9 @@ struct OnboardingView: View {
             Image(systemName: "paperplane.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.tint)
-            Text("Delta Native")
+            Text(EstuaryTheme.appName)
                 .font(.largeTitle.bold())
-            Text("Instant, decentralized messaging.")
+            Text(EstuaryTheme.tagline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 

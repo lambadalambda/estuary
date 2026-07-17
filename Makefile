@@ -33,18 +33,18 @@ run: bindings
 # NSCameraUsageDescription; a bare `swift run` binary gets the prompt
 # attributed to the terminal instead. Ad-hoc signed so TCC grants persist.
 app: swift-build
-	rm -rf macos/DeltaApp.app
-	mkdir -p macos/DeltaApp.app/Contents/MacOS
-	cp macos/Info.plist macos/DeltaApp.app/Contents/
+	rm -rf macos/Estuary.app macos/DeltaApp.app
+	mkdir -p macos/Estuary.app/Contents/MacOS
+	cp macos/Info.plist macos/Estuary.app/Contents/
 	# Stamp the build so "which code am I running?" is answerable from the
 	# app itself (Settings sheet) and Finder's Get Info.
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-parse --short HEAD)" \
-	    macos/DeltaApp.app/Contents/Info.plist
-	cp macos/.build/debug/DeltaApp macos/DeltaApp.app/Contents/MacOS/
-	codesign --force --sign - macos/DeltaApp.app
+	    macos/Estuary.app/Contents/Info.plist
+	cp macos/.build/debug/DeltaApp macos/Estuary.app/Contents/MacOS/
+	codesign --force --sign - macos/Estuary.app
 
 run-app: app
-	open macos/DeltaApp.app
+	open macos/Estuary.app
 
 test:
 	cd dcvm && cargo test

@@ -7,3 +7,4 @@ generated/
 *.dylib
 *.a
 macos/DeltaApp.app/
+macos/Estuary.app/

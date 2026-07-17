@@ -581,3 +581,14 @@ eyeball-verified.
   makes windowNeedsGrowth honest. Known pre-existing edge (review, left
   open): if content still fits the viewport after a prepend, the sentinel
   never re-fires and the spinner can stall until the next visibility change.
+- Follow-up user report: with the restore suppressed, the huge chat opened
+  BLANK (no scrollbar), content popping in at the bottom only after a real
+  scroll gesture — the spurious initial prepend strands the viewport in
+  unrealized lazy space, and the old jump-to-top restore had been the
+  accidental rescue. loadOlderMessages now returns a HistoryLoadOutcome
+  (.restore for scrolled-up reading, .pinBottom when pinned at the bottom)
+  and the view re-pins via scrollTo(bottomAnchorID, .bottom). Caveat
+  (review): the rescue relies on the bottom anchor id staying resolvable
+  from the initial layout — verified against the real huge-chat repro by
+  the user; if it recurs, defer the scrollTo one tick. DCNATIVE_DEBUG_SCROLL=1
+  prints sentinel/anchor/outcome diagnostics for exactly that case.

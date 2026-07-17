@@ -56,6 +56,7 @@ struct ChatDetailView: View {
                             // the viewport, which would report "at bottom"
                             // for a scrolled-up user in short chats.
                             .onScrollVisibilityChange { visible in
+                                model.scrollDebug("view: bottom anchor visible=\(visible)")
                                 model.viewIsAtBottom = visible
                             }
                     }
@@ -112,10 +113,16 @@ struct ChatDetailView: View {
         guard !loadingOlder else { return }
         loadingOlder = true
         Task {
-            let anchorId = await model.loadOlderMessages()
-            if let anchorId {
+            switch await model.loadOlderMessages() {
+            case .restore(let anchorId):
                 // MessageListEntry ids are "msg-<id>" strings.
+                model.scrollDebug("view: restore to msg-\(anchorId)")
                 proxy.scrollTo("msg-\(anchorId)", anchor: .top)
+            case .pinBottom:
+                model.scrollDebug("view: re-pin bottom after prepend")
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+            case .nothing:
+                break
             }
             loadingOlder = false
         }

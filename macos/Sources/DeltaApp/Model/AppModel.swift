@@ -414,12 +414,25 @@ final class AppModel {
         }
     }
 
+    /// What the view must do with the scroll position after a history load.
+    enum HistoryLoadOutcome: Equatable, Sendable {
+        /// Nothing was prepended (no more history, stale switch, error).
+        case nothing
+        /// Keep this id anchored at the top: preserves a scrolled-up
+        /// reading position through the prepend.
+        case restore(anchor: UInt32)
+        /// Prepended while pinned at the bottom (huge chats fire the
+        /// sentinel spuriously during initial layout): the lazy container
+        /// can strand the viewport in unrealized space — the view must
+        /// explicitly re-pin the bottom.
+        case pinBottom
+    }
+
     /// Loads one more page of history above the current window.
-    /// Returns the id to keep anchored at the top, if anything was loaded.
-    func loadOlderMessages() async -> UInt32? {
+    func loadOlderMessages() async -> HistoryLoadOutcome {
         guard let accountId = selectedAccountId, let chatId = selectedChatId,
               hasMoreMessages, let oldest = messages.first
-        else { return nil }
+        else { return .nothing }
         do {
             let older = try await service.messages(
                 accountId: accountId, chatId: chatId,
@@ -428,31 +441,38 @@ final class AppModel {
             // page was in flight; never splice A's history into B.
             guard accountId == selectedAccountId, chatId == selectedChatId,
                   messages.first?.id == oldest.id
-            else { return nil }
+            else { return .nothing }
             guard !older.isEmpty else {
                 historyExhausted = true
                 hasMoreMessages = false
-                return nil
+                return .nothing
             }
             messages.insert(contentsOf: older, at: 0)
             loadedLimit += UInt32(older.count)
             hasMoreMessages = older.count >= Int(Self.messagePageSize)
-            return Self.historyRestoreAnchor(
+            let outcome = Self.historyLoadOutcome(
                 previousOldest: oldest.id, viewIsAtBottom: viewIsAtBottom)
+            scrollDebug(
+                "loadOlder: +\(older.count) before #\(oldest.id), "
+                    + "atBottom=\(viewIsAtBottom) -> \(outcome)")
+            return outcome
         } catch {
-            return nil
+            return .nothing
         }
     }
 
-    /// The id the view should re-anchor at the top after history is
-    /// prepended — nil while pinned at the bottom: the bottom size-change
-    /// anchor already absorbs growth there, and restoring would fling the
-    /// viewport to the top of the chat (chats whose loaded window fits the
-    /// viewport realize the load-older sentinel right on open/post).
-    nonisolated static func historyRestoreAnchor(
+    nonisolated static func historyLoadOutcome(
         previousOldest: UInt32, viewIsAtBottom: Bool
-    ) -> UInt32? {
-        viewIsAtBottom ? nil : previousOldest
+    ) -> HistoryLoadOutcome {
+        viewIsAtBottom ? .pinBottom : .restore(anchor: previousOldest)
+    }
+
+    /// Scroll diagnostics, opt-in via DCNATIVE_DEBUG_SCROLL=1 (launch from
+    /// a terminal to see them).
+    nonisolated func scrollDebug(_ message: @autoclosure () -> String) {
+        if ProcessInfo.processInfo.environment["DCNATIVE_DEBUG_SCROLL"] == "1" {
+            print("[scroll] \(message())")
+        }
     }
 
     /// Coalesced reloads: core bursts events during sync; one pending reload

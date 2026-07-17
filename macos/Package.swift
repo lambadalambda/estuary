@@ -28,7 +28,12 @@ let package = Package(
             // Brand assets (Bundle.module). The Makefile `app` target must
             // copy the generated DeltaApp_DeltaApp.bundle into the .app's
             // Contents/Resources, or Bundle.module traps at runtime.
-            resources: [.copy("Resources/estuary-logo.png")],
+            resources: [
+                .copy("Resources/estuary-logo.png"),
+                .copy("Resources/mock-sunset.jpg"),
+                .copy("Resources/chat-tile-light.png"),
+                .copy("Resources/chat-tile-dark.png"),
+            ],
             linkerSettings: [
                 .linkedLibrary("dcvm"),
                 .unsafeFlags(["-L\(rustLibDir)"]),

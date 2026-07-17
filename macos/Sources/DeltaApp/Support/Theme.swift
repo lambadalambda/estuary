@@ -78,4 +78,23 @@ enum EstuaryTheme {
         else { return nil }
         return NSImage(contentsOf: url)
     }()
+
+    @MainActor private static let tileLight = loadTile("chat-tile-light")
+    @MainActor private static let tileDark = loadTile("chat-tile-dark")
+
+    /// Tiling chat-background pattern (pre-generated from the brand pattern
+    /// by `make tiles`; the dark variant is inverted onto midnight).
+    /// Missing resources degrade to the flat `chatSurface`.
+    @MainActor static func chatTile(dark: Bool) -> NSImage? {
+        dark ? tileDark : tileLight
+    }
+
+    @MainActor private static func loadTile(_ name: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        // 512px bitmap declared at 256pt -> renders @2x on retina.
+        image.size = NSSize(width: 256, height: 256)
+        return image
+    }
 }

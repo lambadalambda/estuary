@@ -51,6 +51,13 @@ import SwiftUI
         #expect(EstuaryTheme.bubble != Color(hex: EstuaryTheme.seaGlassHex))
     }
 
+    @Test @MainActor func chatTilesLoadForBothModes() {
+        // Guards the tile resource declarations; a missing tile silently
+        // degrades to the flat surface color.
+        #expect(EstuaryTheme.chatTile(dark: false) != nil)
+        #expect(EstuaryTheme.chatTile(dark: true) != nil)
+    }
+
     @Test @MainActor func logoResourceLoads() {
         // Guards the Package.swift resource declaration: a typo'd resource
         // path fails at runtime (onboarding shows the SF-symbol fallback),

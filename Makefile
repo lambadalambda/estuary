@@ -11,7 +11,7 @@ BINDGEN = cargo run --features cli --bin uniffi-bindgen-swift -- \
 # `make SWIFT_FLAGS=` to keep SPM's own sandboxing on a normal machine.
 SWIFT_FLAGS ?= --disable-sandbox
 
-.PHONY: rust bindings swift-build run app run-app icon test check
+.PHONY: rust bindings swift-build run app run-app icon tiles test check
 
 rust:
 	cd dcvm && cargo build
@@ -46,6 +46,13 @@ app: swift-build
 	cp -R macos/.build/debug/DeltaApp_DeltaApp.bundle \
 	    macos/Estuary.app/Contents/Resources/
 	codesign --force --sign - macos/Estuary.app
+
+# Regenerate the chat-background tiles from the brand pattern. Only needed
+# when assets/brand/chat-pattern.png changes.
+tiles:
+	swift dev/icon/gen-tiles.swift assets/brand/chat-pattern.png /tmp/estuary-tiles
+	cp /tmp/estuary-tiles/chat-tile-light.png /tmp/estuary-tiles/chat-tile-dark.png \
+	    macos/Sources/DeltaApp/Resources/
 
 # Regenerate the icon pipeline from the brand source (checkerboard-removal
 # + rounded-square composite + .icns). Only needed when the logo changes.

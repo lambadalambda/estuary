@@ -411,3 +411,24 @@ approved a brand sheet: teal/coral palette, wave-into-speech-bubble icon.
   Flagged-plausible, accepted: dark-mode sea-glass tint behind prominent
   buttons — macOS auto-contrasts control labels for light accents (same
   mechanism as the system yellow accent), needs a dark-mode eyeball.
+
+## 2026-07-17 — App icon + onboarding logo (issue: app-bundle-polish, icon slice)
+
+User delivered the wave-into-speech-bubble logo — as an AI export with the
+transparency checkerboard BAKED INTO the pixels (hasAlpha: no). Recovery
+pipeline in `dev/icon/gen-icon.swift` (make icon):
+
+- Border-seeded flood fill over the two sampled checker colors recovers real
+  alpha; the interior white wave is safe because the fill only spreads
+  through checker-colored pixels. 1px anti-aliasing rim gets half alpha.
+- Premultiplied-alpha gotcha: zeroing ONLY the alpha byte leaves RGB
+  contributing on composite (src-over adds premultiplied RGB regardless) —
+  the icon rendered a white box behind the logo until RGB was zeroed too.
+- Composite follows Apple's icon grid (824px rounded square, r=185, on a
+  1024 canvas), warm-ivory fill like the brand sheet's header lockup;
+  `iconutil` packs the ten-size iconset into assets/brand/Estuary.icns.
+- Onboarding shows the real logo (bundled via SPM resources, loaded through
+  `Bundle.module`, SF-symbol fallback). Resource presence is TDD'd — and the
+  Makefile now copies DeltaApp_DeltaApp.bundle into Contents/Resources,
+  because Bundle.module TRAPS at runtime if the bundle is missing from the
+  .app. Icon rendering itself is eyeball-verified (build artifact).

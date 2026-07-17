@@ -62,6 +62,10 @@
   .cta .fine { font-size: .85rem; color: var(--muted); margin-top: 10px; }
   .cta .fine code { font-size: .8rem; }
   section { padding: 40px 0; }
+  /* Window captures carry the native macOS shadow on transparency —
+     no extra frame styling needed. */
+  .shot { padding: 8px 0 24px; }
+  .shot img { width: 100%; height: auto; }
   h2 { font-size: 1.6rem; margin-bottom: 18px; }
   .grid {
     display: grid;
@@ -116,6 +120,14 @@
       </p>
     </div>
   </div>
+
+  <section class="shot">
+    <picture>
+      <source srcset="screenshot-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="screenshot-light.png" loading="lazy"
+           alt="Estuary showing a conversation with a photo, a quoted reply with reactions, and a chat list with unread badges">
+    </picture>
+  </section>
 
   <section>
     <h2>Why Estuary?</h2>

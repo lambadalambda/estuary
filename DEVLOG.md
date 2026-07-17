@@ -497,3 +497,18 @@ pairs → renamed honestly. Dynamic-color creation extracted into one
   Showcase shape is pinned by MockShowcaseTests. Screenshot env recipe:
   DCNATIVE_MOCK=1 DCNATIVE_AUTODEMO=1 DCNATIVE_AUTOSELECT=1
   DCNATIVE_APPEARANCE=light|dark.
+
+## 2026-07-17 — Hugging bubbles + website screenshots
+
+- User request (with official-DC reference shot): bubbles must hug their
+  content, anchored to their side, instead of stretching the full row. The
+  stretch came from the timestamp footer's `.frame(maxWidth: .infinity)`
+  inside the bubble VStack — any greedy child makes the whole bubble
+  greedy. Now: content VStack + timestamp as a ZStack(.bottomTrailing)
+  overlay (reserved bottom padding so it never covers text) + a 560pt
+  readability cap on wide windows. Pure layout, eyeball-verified via the
+  screenshot loop.
+- Screenshot pipeline in practice: mock showcase + AUTOSELECT/APPEARANCE
+  hooks, user captures the windows (⇧⌘4+Space; agent shell has no window-
+  server access — CGWindowList returns zero bounds, screencapture blank).
+  Both variants on the site via <picture> prefers-color-scheme.

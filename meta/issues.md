@@ -6,3 +6,4 @@
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
 - [ ] [Estuary rebrand — first slice (name + palette)](issues/estuary-rebrand.md)
+- [ ] [Website screenshots with demo data](issues/website-screenshots.md)

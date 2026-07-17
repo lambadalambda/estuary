@@ -4,4 +4,4 @@
 - [ ] [Webxdc support](issues/webxdc-support.md)
 - [ ] [App bundle polish](issues/app-bundle-polish.md)
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
-- [ ] [Chat list width + message loading/scroll behavior](issues/chat-list-width-and-scroll-behavior.md)
+- [ ] [Native-feel polish batch](issues/native-feel-polish.md)

@@ -22,3 +22,9 @@
 
 - Swift tests for the growth decision + link attribution; user confirms cursor and
   send-scroll behavior on a stamped build.
+
+## Outcome (2026-07-17)
+
+Both fixed and user-confirmed on stamped build 625719b: NSTextView-backed LinkText
+for per-range hand cursor; window growth gated on view-reported at-bottom state
+(pure windowNeedsGrowth, TDD'd).

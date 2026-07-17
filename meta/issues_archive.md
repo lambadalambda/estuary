@@ -9,3 +9,4 @@
 - [x] [Chat list width + message loading/scroll behavior](issues/chat-list-width-and-scroll-behavior.md)
 - [x] [Whole-app bug audit](issues/whole-app-bug-audit.md)
 - [x] [Links, in-chat avatars, human timestamps, full muting](issues/links-avatars-timestamps-muting.md)
+- [x] [Link hover cursor + scroll-on-send in large chats](issues/link-cursor-and-send-scroll.md)

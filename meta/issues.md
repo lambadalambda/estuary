@@ -5,4 +5,3 @@
 - [ ] [App bundle polish](issues/app-bundle-polish.md)
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
-- [ ] [Link hover cursor + scroll-on-send in large chats](issues/link-cursor-and-send-scroll.md)

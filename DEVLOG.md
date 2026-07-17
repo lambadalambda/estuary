@@ -641,3 +641,8 @@ Follow-up queued: profile a ~500-item grown window (per-bubble closures
 defeat struct-equality skips → all bubbles re-eval per keystroke; hoist
 TimelineView / cap the window if it hitches). Layout behavior untestable
 per project rules — user-verified against the known repro.
+- Page size halved 100 → 50 after user confirmation: eager layout renders
+  the whole loaded window and a viewport shows ~10 messages, so smaller
+  pages halve open-time layout/decode work. Review traced the halved
+  margin: a viewport-filling initial window still converges in one bounded
+  auto-load with the bottom pinned.

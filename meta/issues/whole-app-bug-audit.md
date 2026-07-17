@@ -14,3 +14,11 @@ concurrency, FFI semantics, state-machine holes, UX logic.
 ## Acceptance Criteria
 
 - Review findings triaged (fixed / rejected with reason) and documented in DEVLOG.
+
+## Outcome (2026-07-17)
+
+Triaged ~25 findings from 3 parallel reviewers + 2 diff reviewers; all confirmed
+correctness bugs fixed (see DEVLOG "Whole-app audit" entry). Deferred, tracked here:
+- Distinct `EventsDropped` VmEvent instead of overloading ChatlistChanged (altitude).
+- Notification coalescing for background-account sync bursts.
+- Live connectivity indicator outside the settings sheet.

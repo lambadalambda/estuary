@@ -7,3 +7,5 @@
 - [x] [Close UI gaps: media, reactions, and chat management](issues/close-ui-gaps-media-reactions-chat-management.md)
 - [x] [Second-device join fails against newer iOS: upgrade pinned core](issues/upgrade-core-for-dcbackup-version.md)
 - [x] [Chat list width + message loading/scroll behavior](issues/chat-list-width-and-scroll-behavior.md)
+- [x] [Whole-app bug audit](issues/whole-app-bug-audit.md)
+- [x] [Links, in-chat avatars, human timestamps, full muting](issues/links-avatars-timestamps-muting.md)

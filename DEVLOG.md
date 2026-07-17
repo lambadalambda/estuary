@@ -337,3 +337,38 @@ layout. Plus an NSCache for decoded images (LazyVStack re-renders hit disk other
 - Muting: set_chat_muted over the FFI (MuteDuration::Forever/NotMuted, synced),
   mute/unmute in the row context menu, gray unread badge, no sound, no notification
   for muted chats. Offline mute round-trip test (24 dcvm tests total).
+
+## 2026-07-17 — Whole-app audit: 3 parallel reviewers, ~25 findings, fix pass
+
+Three independent audit agents (Rust/FFI, Swift concurrency/bridge, app state/UX)
+converged on the same core bug families. Fixed in this pass:
+
+**Rust:** event pump held a strong Arc cycle keeping Accounts (and the accounts.lock)
+alive after DcApp drop — now Weak with upgrade-or-exit; demo conversation order was
+scrambled after its hardcoded dates passed (send_text_msg sorts at "now") — both
+directions now injected via receive_imf with relative dates (regression-tested);
+add_demo_account error path rolls back the auto-selected half-seeded account;
+messages(before: deleted-anchor) returned the NEWEST page (duplicate prepends) — now
+empty (tested); ContactsChanged/SelfavatarChanged were unmapped (no refresh signal);
+new chat_by_id point lookup (TDD) so notification decisions never scan stale lists.
+
+**Swift:** the stale-await family — reloadChats/reloadMessages/loadOlderMessages all
+re-validate account/chat/filter state after every await (chat A's slow fetch can no
+longer render inside chat B, nor corrupt its pagination window); read receipts and
+mark-noticed no longer fire while the app is inactive (they run on activation
+instead); notifications now work for ALL accounts, use a fresh chat_by_id lookup
+(fixes muted-chat bypass under search/archive and one-event-stale previews), and
+queue while the permission prompt is unanswered; event bursts are coalesced (80 ms)
+instead of one full reload per event; onboarding flows can't brick isConfiguring or
+clobber each other; search keystrokes no longer destroy the open chat's draft;
+archive toggle clears search; account switch/remove resets filters and dock badge;
+deleted messages clear a dangling reply banner; forward sheet lists all chats, not
+the filtered sidebar; audio player resets when playback finishes (with stale-player
+identity guard); camera scanner can't fire after stop (lock, not queue-async flag);
+main-screen errors surface as an alert instead of leaking into onboarding.
+
+**Deferred (accepted for now, in the audit issue):** distinct EventsDropped signal
+instead of overloading ChatlistChanged; per-account notification coalescing during
+initial-sync storms of background accounts; live connectivity outside the settings
+sheet. showAuthor/avatar per-run rules and Color-hex validation got Swift unit tests
+(new test target, macos/Tests/DeltaAppTests).

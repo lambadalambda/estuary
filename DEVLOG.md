@@ -432,3 +432,26 @@ pipeline in `dev/icon/gen-icon.swift` (make icon):
   Makefile now copies DeltaApp_DeltaApp.bundle into Contents/Resources,
   because Bundle.module TRAPS at runtime if the bundle is missing from the
   .app. Icon rendering itself is eyeball-verified (build artifact).
+
+## 2026-07-17 — Going public (issue: publish-github-nightly-site)
+
+Repo published as github.com/lambadalambda/estuary. Pieces:
+
+- **License**: the Unlicense (public-domain dedication) for our code; core
+  stays MPL-2.0 (noted in README, deliberately NOT inside LICENSE — extra
+  text there breaks GitHub's licensee similarity matching). Review caught
+  dcvm/Cargo.toml still claiming MPL-2.0 from the prototype scaffold.
+- **README**: rewritten around the brand (logo header, website + nightly
+  links, honest Gatekeeper note for ad-hoc-signed builds).
+- **CI nightly** (.github/workflows/nightly.yml): macos-15 runner, rust-cache,
+  cargo test → make app → swift test → drag-install DMG (hdiutil UDZO) →
+  delete+recreate the `nightly` prerelease so the asset URL stays stable.
+  Concurrency queues rather than cancels: a cancel between release delete
+  and create would 404 the download link (review catch). Dev-profile build,
+  same as `make app` — honest nightly; release packaging = app-bundle-polish.
+- **Website**: docs/index.html (single file, palette + Sora, light/dark),
+  served by GitHub Pages from main:/docs. Review catch: the features card
+  claimed "voice messages" while recording is still on the not-yet list —
+  now says playback.
+- CI YAML/HTML aren't unit-testable; verification = the live workflow run
+  and the served page.

@@ -45,3 +45,14 @@ exists.
   presence ("last seen"), list filter tabs, accent-color picker (could be a
   later issue).
 - Sora font: branding-only if ever bundled (OFL); chat text stays system.
+
+## Slice 2 (2026-07-17): calm ivory surfaces
+
+User verdict on slice 1: keep teal/coral, and "make it look calmer overall"
+with the warm ivory background. Scope:
+
+- Chat conversation surface: warm ivory in light mode, midnight blue in dark.
+- Incoming bubbles: flat white cards (mockup look) instead of gray system
+  material; dark mode uses the website's card navy. Must contrast with the
+  surface in both modes (theme-tested).
+- No new loud elements; everything else stays native.

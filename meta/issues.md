@@ -6,4 +6,3 @@
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
 - [ ] [Empty state: tiled backdrop only covers the placeholder box](issues/empty-state-backdrop-fill.md)
-- [ ] [Scroll regressions: jump-to-top on select/post, sidebar scroller flash](issues/scroll-regressions.md)

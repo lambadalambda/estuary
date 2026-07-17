@@ -26,3 +26,9 @@ macOS 26.
 
 - Deliberately NOT bumping min platform to 26: glass is gated with #available.
 - macOS 26's SwiftUI WebView/WebPage is the natural engine for the webxdc issue later.
+
+- Profile a deep-scrolled message window (~10 history pages, now eager
+  VStack): per-bubble closures defeat struct-equality skips, so every
+  bubble re-evaluates per composer keystroke. If it hitches: hoist the
+  per-bubble TimelineView, or cap/trim the grown window when re-pinned at
+  the bottom.

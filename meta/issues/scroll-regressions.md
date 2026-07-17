@@ -65,3 +65,9 @@ height overestimates parked the viewport in phantom space (and that no
 scroll API nor container nudge could re-anchor it). Rescue machinery
 deleted. Remaining before archive: user confirms the repro chat, and a
 profiling pass on a deep-scrolled (~500-item) window.
+
+## Outcome (2026-07-18)
+
+User-confirmed across all chats ("afaict this fixed it everywhere") after
+the VStack root-cause fix. Page size tuned 100 → 50 for the eager window.
+The deep-window profiling follow-up moved to the native-feel-polish issue.

@@ -78,6 +78,11 @@ let dark = makeContext()
 dark.setFillColor(hexColor("#0D1B2A"))
 dark.fill(full)
 dark.setBlendMode(.screen)
-dark.setAlpha(0.5)
-dark.draw(inverted, in: full)
+// The inverted strokes are only ~0.2 luminance; one screen pass reads as
+// nearly invisible on midnight (user-verified). Stacked passes amplify the
+// strokes multiplicatively while the near-black background barely moves.
+dark.setAlpha(0.75)
+for _ in 0..<3 {
+    dark.draw(inverted, in: full)
+}
 writePNG(dark.makeImage()!, "chat-tile-dark.png")

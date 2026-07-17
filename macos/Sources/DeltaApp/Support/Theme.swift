@@ -27,17 +27,37 @@ enum EstuaryTheme {
         dark ? seaGlassHex : deepTealHex
     }
 
-    /// Adaptive primary accent (send button, links, selection tint) as
-    /// NSColor for AppKit consumers (LinkText attributes). The dynamic
-    /// provider re-resolves on appearance changes; a plain color picked at
-    /// view-build time would not.
-    static let accentNSColor = NSColor(name: nil) { appearance in
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return NSColor(Color(hex: accentHex(dark: dark)))
+    /// Appearance-adaptive color. NSColor's dynamic provider re-resolves on
+    /// appearance changes; a plain color picked at view-build time would not.
+    private static func adaptive(_ hex: @escaping (Bool) -> String) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(Color(hex: hex(dark)))
+        }
     }
+
+    /// Adaptive primary accent (send button, links, selection tint) as
+    /// NSColor for AppKit consumers (LinkText attributes).
+    static let accentNSColor = adaptive(accentHex)
 
     /// SwiftUI face of `accentNSColor`.
     static let accent = Color(nsColor: accentNSColor)
+
+    /// Chat conversation background: warm ivory in light (the calm brand
+    /// surface), midnight blue in dark.
+    static func chatSurfaceHex(dark: Bool) -> String {
+        dark ? midnightBlueHex : warmIvoryHex
+    }
+
+    static let chatSurface = Color(nsColor: adaptive(chatSurfaceHex))
+
+    /// Incoming bubbles: flat white cards on the ivory surface (mockup
+    /// look); a card navy on the midnight surface in dark mode.
+    static func incomingBubbleHex(dark: Bool) -> String {
+        dark ? "#14283A" : "#FFFFFF"
+    }
+
+    static let incomingBubble = Color(nsColor: adaptive(incomingBubbleHex))
 
     /// Outgoing bubble fill: deep teal in BOTH appearances — bubbles carry
     /// white text, and the dark-mode accent (sea glass) is too light for it.

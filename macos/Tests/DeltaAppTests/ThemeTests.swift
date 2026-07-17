@@ -27,6 +27,22 @@ import SwiftUI
         #expect(EstuaryTheme.accentHex(dark: true) == EstuaryTheme.seaGlassHex)
     }
 
+    @Test func chatSurfaceIsIvoryInLightMidnightInDark() {
+        #expect(EstuaryTheme.chatSurfaceHex(dark: false) == EstuaryTheme.warmIvoryHex)
+        #expect(EstuaryTheme.chatSurfaceHex(dark: true) == EstuaryTheme.midnightBlueHex)
+    }
+
+    @Test func incomingBubbleDiffersFromSurfaceInBothModes() {
+        // Guards accidental same-color pairs only. The fills are DESIGNED
+        // to sit close (calm); visual delineation comes from the bubble
+        // shadow in ChatDetailView, which no color assertion can cover.
+        for dark in [false, true] {
+            #expect(EstuaryTheme.incomingBubbleHex(dark: dark)
+                != EstuaryTheme.chatSurfaceHex(dark: dark))
+            #expect(Color(hex: EstuaryTheme.incomingBubbleHex(dark: dark)) != Color.gray)
+        }
+    }
+
     @Test func bubbleStaysDeepTealForWhiteTextContrast() {
         // Outgoing bubbles carry white text; the dark-mode accent (sea
         // glass) would wash it out, so the bubble must not follow the

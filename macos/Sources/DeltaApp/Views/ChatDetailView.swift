@@ -58,6 +58,7 @@ struct ChatDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                 }
+                .background(EstuaryTheme.chatSurface)
                 // Chat behavior without manual scroll bookkeeping: start at
                 // the bottom (after layout, so it can't land mid-chat), and
                 // stay pinned there through content growth — new messages,
@@ -416,10 +417,15 @@ struct MessageBubbleView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            message.isOutgoing
-                ? AnyShapeStyle(EstuaryTheme.bubble)
-                : AnyShapeStyle(.quinary),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(message.isOutgoing
+                    ? AnyShapeStyle(EstuaryTheme.bubble)
+                    : AnyShapeStyle(EstuaryTheme.incomingBubble))
+                // The card fill is deliberately close to the surface (calm);
+                // this faint shadow is what delineates incoming bubbles.
+                .shadow(
+                    color: .black.opacity(message.isOutgoing ? 0 : 0.10),
+                    radius: 1.5, y: 1))
     }
 
     /// Display size derived from core's stored pixel dimensions, so the

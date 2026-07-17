@@ -58,7 +58,7 @@ struct ChatDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                 }
-                .background(EstuaryTheme.chatSurface)
+                .background(ChatBackdrop())
                 // Chat behavior without manual scroll bookkeeping: start at
                 // the bottom (after layout, so it can't land mid-chat), and
                 // stay pinned there through content growth — new messages,
@@ -280,6 +280,22 @@ struct ForwardSheet: View {
     }
 }
 
+/// Chat surface + the tiled brand pattern (per-appearance variant).
+struct ChatBackdrop: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            EstuaryTheme.chatSurface
+            if let tile = EstuaryTheme.chatTile(dark: scheme == .dark) {
+                Image(nsImage: tile)
+                    .resizable(resizingMode: .tile)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - Day separator
 
 struct DayMarkerView: View {
@@ -366,18 +382,24 @@ struct MessageBubbleView: View {
             if let quote = message.quote {
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color(hex: quote.senderColor))
+                        .fill(message.isOutgoing
+                            ? Color.white.opacity(0.85) : Color(hex: quote.senderColor))
                         .frame(width: 3)
                     VStack(alignment: .leading, spacing: 1) {
                         if !quote.senderName.isEmpty {
                             Text(quote.senderName)
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(Color(hex: quote.senderColor))
+                                // Contact colors are tuned for light/dark
+                                // surfaces, not the deep-teal bubble — on
+                                // outgoing everything must stay white.
+                                .foregroundStyle(message.isOutgoing
+                                    ? Color.white : Color(hex: quote.senderColor))
                         }
                         Text(quote.text)
                             .font(.caption)
                             .lineLimit(2)
-                            .opacity(0.8)
+                            .foregroundStyle(message.isOutgoing ? .white : .primary)
+                            .opacity(0.85)
                     }
                 }
                 .padding(6)

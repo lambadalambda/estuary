@@ -108,9 +108,15 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
-    func messages(accountId: UInt32, chatId: UInt32) async throws -> [MessageItem] {
-        do { return try await app().messages(accountId: accountId, chatId: chatId).map(mapMessage) }
-        catch { throw mapError(error) }
+    func messages(
+        accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?
+    ) async throws -> [MessageItem] {
+        do {
+            return try await app().messages(
+                accountId: accountId, chatId: chatId,
+                limit: limit, beforeMsgId: beforeMsgId
+            ).map(mapMessage)
+        } catch { throw mapError(error) }
     }
 
     func sendText(accountId: UInt32, chatId: UInt32, text: String) async throws -> UInt32 {

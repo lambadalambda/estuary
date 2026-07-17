@@ -283,3 +283,17 @@ API fallout fixed in dcvm:
 
 Verified: 22 offline tests + both relay tests green on v2.53; swift build clean;
 demo smoke run alive; bundle rebuilt. Real iOS join pending user retry.
+
+## 2026-07-17 — Scroll/pagination polish (issue: chat-list-width-and-scroll-behavior)
+
+First real-account feedback fixes:
+- Sidebar: min 300 / ideal 360 (was 240/300) — names and previews no longer truncate.
+- Message pagination: `messages(limit, before_msg_id)` in the FFI (limit 0 = all, used
+  by tests). The app loads the newest 100 and fetches another page when a top sentinel
+  becomes visible, restoring the scroll anchor ("msg-<id>") after prepending. Event
+  reloads refresh exactly the loaded window, so reactions/state updates on visible
+  history still appear without loading everything.
+- Bottom-follow only when already at bottom (tracked by a bottom-sentinel
+  appear/disappear); otherwise incoming messages leave the viewport alone.
+- Chat switch snaps to the newest message without animation (the animated scroll only
+  runs for new-message-while-at-bottom).

@@ -10,12 +10,25 @@ struct ChatDetailView: View {
     @State private var draft = ""
     @State private var showAttachPicker = false
     @State private var forwardingMsgId: UInt32?
+    /// Tracked via the bottom sentinel: follow new messages only while the
+    /// user is already at the bottom.
+    @State private var isAtBottom = true
+    @State private var lastChatId: UInt32?
+    @State private var lastNewestMsgId: UInt32?
+    @State private var loadingOlder = false
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 6) {
+                        if model.hasMoreMessages {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .onAppear { loadOlder(proxy: proxy) }
+                        }
                         ForEach(buildMessageListEntries(model.messages)) { entry in
                             switch entry {
                             case .dayMarker(_, let label):
@@ -29,6 +42,8 @@ struct ChatDetailView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(bottomAnchorID)
+                            .onAppear { isAtBottom = true }
+                            .onDisappear { isAtBottom = false }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -37,13 +52,27 @@ struct ChatDetailView: View {
                     proxy.scrollTo(bottomAnchorID, anchor: .bottom)
                 }
                 .onChange(of: model.messages) {
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    let newest = model.messages.last?.id
+                    if lastChatId != chat.id {
+                        // Chat switch: snap straight to the newest message.
+                        lastChatId = chat.id
+                        lastNewestMsgId = newest
                         proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                    } else if newest != lastNewestMsgId {
+                        // Something new at the bottom: follow it only if the
+                        // user was already there; never yank them up-thread.
+                        lastNewestMsgId = newest
+                        if isAtBottom {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                            }
+                        }
                     }
+                    // else: history was prepended; loadOlder restores the
+                    // anchor itself.
                 }
                 .onChange(of: chat.id) {
                     draft = ""
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
                 }
             }
 
@@ -69,6 +98,21 @@ struct ChatDetailView: View {
         }
         .sheet(item: $forwardingMsgId) { msgId in
             ForwardSheet(model: model, msgId: msgId)
+        }
+    }
+
+    /// Fetches one page of history and keeps the previous top message
+    /// anchored so the viewport doesn't jump when content is prepended.
+    private func loadOlder(proxy: ScrollViewProxy) {
+        guard !loadingOlder else { return }
+        loadingOlder = true
+        Task {
+            let anchorId = await model.loadOlderMessages()
+            if let anchorId {
+                // MessageListEntry ids are "msg-<id>" strings.
+                proxy.scrollTo("msg-\(anchorId)", anchor: .top)
+            }
+            loadingOlder = false
         }
     }
 

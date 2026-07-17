@@ -21,7 +21,7 @@ struct MainView: View {
                     }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300)
+            .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
             .navigationTitle(model.showingArchive ? "Archived" : "Chats")
             .searchable(text: $model.searchQuery, placement: .sidebar, prompt: "Search chats")
             .onChange(of: model.searchQuery) {

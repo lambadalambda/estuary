@@ -690,7 +690,12 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      */
     func maybeNetwork() async throws 
     
-    func messages(accountId: UInt32, chatId: UInt32) async throws  -> [MessageItem]
+    /**
+     * Loads messages, newest last. `limit == 0` means all. With
+     * `before_msg_id`, returns up to `limit` messages strictly older than
+     * that message (for loading history while scrolling up).
+     */
+    func messages(accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?) async throws  -> [MessageItem]
     
     /**
      * Removes an account and deletes its data. Core reassigns the selection
@@ -1203,12 +1208,17 @@ open func maybeNetwork()async throws   {
         )
 }
     
-open func messages(accountId: UInt32, chatId: UInt32)async throws  -> [MessageItem]  {
+    /**
+     * Loads messages, newest last. `limit == 0` means all. With
+     * `before_msg_id`, returns up to `limit` messages strictly older than
+     * that message (for loading history while scrolling up).
+     */
+open func messages(accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?)async throws  -> [MessageItem]  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_messages(
-                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId)
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterUInt32.lower(limit),FfiConverterOptionUInt32.lower(beforeMsgId)
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
@@ -3154,7 +3164,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_maybe_network() != 54996) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_messages() != 20834) {
+    if (uniffi_dcvm_checksum_method_dcapp_messages() != 46702) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_remove_account() != 23628) {

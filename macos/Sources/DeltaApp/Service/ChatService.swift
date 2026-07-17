@@ -160,7 +160,10 @@ protocol ChatService: Sendable {
     func startIo() async throws
     func stopIo() async throws
     func chatList(accountId: UInt32) async throws -> [ChatItem]
-    func messages(accountId: UInt32, chatId: UInt32) async throws -> [MessageItem]
+    /// Newest last. `limit == 0` means all; `beforeMsgId` pages into history.
+    func messages(
+        accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?
+    ) async throws -> [MessageItem]
     func sendText(accountId: UInt32, chatId: UInt32, text: String) async throws -> UInt32
     func markNoticed(accountId: UInt32, chatId: UInt32) async throws
     func createChat(accountId: UInt32, email: String, name: String) async throws -> UInt32

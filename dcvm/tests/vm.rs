@@ -111,7 +111,7 @@ async fn create_chat_and_send_text() {
     })
     .await;
 
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let sent = msgs
         .iter()
         .find(|m| m.id == msg_id)
@@ -177,7 +177,7 @@ hi alice, got a minute?\r\n";
     };
     assert_eq!(ev_chat, chat_id);
 
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let incoming = msgs
         .iter()
         .find(|m| m.id == ev_msg)
@@ -312,7 +312,7 @@ async fn demo_account_seeds_conversations() {
     // each demo chat holds a back-and-forth conversation
     let mut checked = 0;
     for chat in &real_chats {
-        let msgs = app.messages(id, chat.id).await.unwrap();
+        let msgs = app.messages(id, chat.id, 0, None).await.unwrap();
         if msgs.is_empty() {
             continue;
         }
@@ -464,7 +464,7 @@ async fn second_device_join_transfers_account_offline() {
         chats.iter().map(|c| &c.name).collect::<Vec<_>>()
     );
     let elena = chats.iter().find(|c| c.name == "Elena").unwrap();
-    let msgs = app.messages(joiner_id, elena.id).await.unwrap();
+    let msgs = app.messages(joiner_id, elena.id, 0, None).await.unwrap();
     assert!(msgs.len() >= 3, "messages not transferred: {msgs:?}");
 
     // Joiner saw transfer progress up to 1000 (done).
@@ -597,7 +597,7 @@ async fn message_roundtrip_on_local_relay() {
     let received = loop {
         let mut found = None;
         for c in app.chat_list(bob).await.unwrap() {
-            let msgs = app.messages(bob, c.id).await.unwrap();
+            let msgs = app.messages(bob, c.id, 0, None).await.unwrap();
             if let Some(m) = msgs
                 .iter()
                 .find(|m| m.text.contains("ping over the local relay"))
@@ -661,7 +661,7 @@ async fn attachments_quotes_and_reactions() {
         )
         .await
         .expect("send attachment");
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let sent = msgs.iter().find(|m| m.id == sent_id).unwrap();
     assert_eq!(sent.kind, dcvm::MessageKind::Image);
     assert!(sent.file.is_some(), "blob path missing: {sent:?}");
@@ -673,7 +673,7 @@ async fn attachments_quotes_and_reactions() {
         .send_message(id, chat_id, Some("a reply".into()), None, Some(sent_id))
         .await
         .expect("send reply");
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let reply = msgs.iter().find(|m| m.id == reply_id).unwrap();
     let quote = reply.quote.as_ref().expect("quote present");
     assert!(quote.text.contains("look at this"), "quote: {quote:?}");
@@ -689,10 +689,10 @@ Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
     )
     .await
     .unwrap();
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let incoming = msgs.iter().find(|m| !m.is_outgoing && !m.is_info).unwrap();
     app.send_reaction(id, incoming.id, "👍".into()).await.unwrap();
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let reacted = msgs.iter().find(|m| m.id == incoming.id).unwrap();
     assert_eq!(
         reacted.reactions,
@@ -703,7 +703,7 @@ Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
         }]
     );
     app.send_reaction(id, incoming.id, "".into()).await.unwrap();
-    let msgs = app.messages(id, chat_id).await.unwrap();
+    let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     assert!(msgs.iter().find(|m| m.id == incoming.id).unwrap().reactions.is_empty());
 }
 
@@ -723,7 +723,7 @@ async fn delete_forward_and_mark_seen() {
 
     let msg_id = app.send_text(id, chat_a, "forward me".into()).await.unwrap();
     app.forward_messages(id, vec![msg_id], chat_b).await.unwrap();
-    let forwarded = app.messages(id, chat_b).await.unwrap();
+    let forwarded = app.messages(id, chat_b, 0, None).await.unwrap();
     assert!(
         forwarded.iter().any(|m| m.text == "forward me" && m.is_outgoing),
         "not forwarded: {forwarded:?}"
@@ -731,7 +731,7 @@ async fn delete_forward_and_mark_seen() {
 
     app.delete_messages(id, vec![msg_id]).await.unwrap();
     assert!(!app
-        .messages(id, chat_a)
+        .messages(id, chat_a, 0, None)
         .await
         .unwrap()
         .iter()
@@ -751,7 +751,7 @@ Date: Wed, 15 Jul 2026 11:00:00 +0000\r\n\r\nunread\r\n",
     let row = |chats: Vec<dcvm::ChatItem>| chats.into_iter().find(|c| c.id == chat_a).unwrap();
     assert_eq!(row(app.chat_list(id).await.unwrap()).fresh_count, 1);
     let unseen: Vec<u32> = app
-        .messages(id, chat_a)
+        .messages(id, chat_a, 0, None)
         .await
         .unwrap()
         .iter()
@@ -854,4 +854,49 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
     // Connectivity: offline account is on the DC scale (no IO -> not connected).
     let conn = app.connectivity(id).await.unwrap();
     assert!((1000..=4000).contains(&conn), "connectivity: {conn}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_pagination() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    for i in 0..25 {
+        app.send_text(id, chat, format!("msg {i}")).await.unwrap();
+    }
+
+    // Newest page.
+    let page = app.messages(id, chat, 10, None).await.unwrap();
+    assert_eq!(page.len(), 10);
+    assert_eq!(page.last().unwrap().text, "msg 24");
+    assert_eq!(page.first().unwrap().text, "msg 15");
+
+    // Older page before the first of the newest page.
+    let older = app
+        .messages(id, chat, 10, Some(page.first().unwrap().id))
+        .await
+        .unwrap();
+    assert_eq!(older.len(), 10);
+    assert_eq!(older.last().unwrap().text, "msg 14");
+    assert_eq!(older.first().unwrap().text, "msg 5");
+
+    // Final partial page, then nothing.
+    let oldest = app
+        .messages(id, chat, 10, Some(older.first().unwrap().id))
+        .await
+        .unwrap();
+    assert_eq!(oldest.len(), 5);
+    assert_eq!(oldest.first().unwrap().text, "msg 0");
+    let none = app
+        .messages(id, chat, 10, Some(oldest.first().unwrap().id))
+        .await
+        .unwrap();
+    assert!(none.is_empty());
+
+    // limit 0 = everything.
+    assert_eq!(app.messages(id, chat, 0, None).await.unwrap().len(), 25);
 }

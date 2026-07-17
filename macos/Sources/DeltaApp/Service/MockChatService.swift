@@ -123,11 +123,20 @@ actor MockChatService: ChatService {
         }
     }
 
-    func messages(accountId: UInt32, chatId: UInt32) throws -> [MessageItem] {
+    func messages(
+        accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?
+    ) throws -> [MessageItem] {
         guard chatsByAccount[accountId]?.contains(where: { $0.id == chatId }) == true else {
             throw ServiceError.core(msg: "no such chat: \(chatId)")
         }
-        return messagesByChat[chatId] ?? []
+        var all = messagesByChat[chatId] ?? []
+        if let beforeMsgId, let pos = all.firstIndex(where: { $0.id == beforeMsgId }) {
+            all = Array(all[..<pos])
+        }
+        if limit > 0 && all.count > Int(limit) {
+            all = Array(all.suffix(Int(limit)))
+        }
+        return all
     }
 
     func sendText(accountId: UInt32, chatId: UInt32, text: String) throws -> UInt32 {

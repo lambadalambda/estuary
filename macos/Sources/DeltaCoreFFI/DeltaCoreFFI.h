@@ -381,7 +381,7 @@ uint64_t uniffi_dcvm_fn_method_dcapp_maybe_network(uint64_t ptr
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_MESSAGES
-uint64_t uniffi_dcvm_fn_method_dcapp_messages(uint64_t ptr, uint32_t account_id, uint32_t chat_id
+uint64_t uniffi_dcvm_fn_method_dcapp_messages(uint64_t ptr, uint32_t account_id, uint32_t chat_id, uint32_t limit, RustBuffer before_msg_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_REMOVE_ACCOUNT

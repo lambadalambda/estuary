@@ -401,20 +401,39 @@ impl DcApp {
         .await
     }
 
+    /// Loads messages, newest last. `limit == 0` means all. With
+    /// `before_msg_id`, returns up to `limit` messages strictly older than
+    /// that message (for loading history while scrolling up).
     pub async fn messages(
         &self,
         account_id: u32,
         chat_id: u32,
+        limit: u32,
+        before_msg_id: Option<u32>,
     ) -> Result<Vec<MessageItem>, VmError> {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
-            let items = chat::get_chat_msgs(&ctx, ChatId::new(chat_id)).await?;
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                let CoreChatItem::Message { msg_id } = item else {
-                    continue;
-                };
+            // Ids only — cheap; the expensive per-message loading below is
+            // what pagination bounds.
+            let mut ids: Vec<MsgId> = chat::get_chat_msgs(&ctx, ChatId::new(chat_id))
+                .await?
+                .into_iter()
+                .filter_map(|item| match item {
+                    CoreChatItem::Message { msg_id } => Some(msg_id),
+                    _ => None,
+                })
+                .collect();
+            if let Some(before) = before_msg_id {
+                if let Some(pos) = ids.iter().position(|id| id.to_u32() == before) {
+                    ids.truncate(pos);
+                }
+            }
+            if limit > 0 && ids.len() > limit as usize {
+                ids.drain(..ids.len() - limit as usize);
+            }
+            let mut out = Vec::with_capacity(ids.len());
+            for msg_id in ids {
                 let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? else {
                     continue;
                 };

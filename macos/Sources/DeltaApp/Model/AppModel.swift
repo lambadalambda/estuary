@@ -19,6 +19,11 @@ final class AppModel {
     /// Bound to the sidebar List selection.
     var selectedChatId: UInt32?
     private(set) var messages: [MessageItem] = []
+    /// Whether older history exists beyond the currently loaded window.
+    private(set) var hasMoreMessages = false
+    /// Size of the loaded window; grows as the user scrolls into history.
+    private var loadedLimit: UInt32 = AppModel.messagePageSize
+    static let messagePageSize: UInt32 = 100
     /// Message being replied to (composer banner); sent as quote.
     var replyTo: MessageItem?
     /// Sidebar shows the archive instead of the normal list.
@@ -296,10 +301,39 @@ final class AppModel {
             return
         }
         do {
-            messages = try await service.messages(accountId: accountId, chatId: chatId)
+            // Refresh the whole loaded window so state/reaction changes on
+            // already-visible history are picked up, but never more.
+            let page = try await service.messages(
+                accountId: accountId, chatId: chatId,
+                limit: loadedLimit, beforeMsgId: nil)
+            messages = page
+            hasMoreMessages = page.count >= Int(loadedLimit)
             await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
         } catch {
             messages = []
+        }
+    }
+
+    /// Loads one more page of history above the current window.
+    /// Returns the id to keep anchored at the top, if anything was loaded.
+    func loadOlderMessages() async -> UInt32? {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId,
+              hasMoreMessages, let oldest = messages.first
+        else { return nil }
+        do {
+            let older = try await service.messages(
+                accountId: accountId, chatId: chatId,
+                limit: Self.messagePageSize, beforeMsgId: oldest.id)
+            guard !older.isEmpty else {
+                hasMoreMessages = false
+                return nil
+            }
+            messages.insert(contentsOf: older, at: 0)
+            loadedLimit += UInt32(older.count)
+            hasMoreMessages = older.count >= Int(Self.messagePageSize)
+            return oldest.id
+        } catch {
+            return nil
         }
     }
 
@@ -436,6 +470,8 @@ final class AppModel {
     /// Called when the sidebar selection changes.
     func chatSelectionChanged() async {
         replyTo = nil
+        loadedLimit = Self.messagePageSize
+        hasMoreMessages = false
         await reloadMessages()
         await markSelectedChatNoticed()
     }

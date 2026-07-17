@@ -1,20 +1,40 @@
-# deltachat-native build orchestration (dev profile everywhere; a release
-# build of deltachat core takes 10+ minutes and is not pre-warmed).
+# deltachat-native build orchestration.
 #
 # Build order matters: rust -> bindings -> swift.
+#
+# Profiles: debug (default) for the local loop; `make app-release` (or
+# `make PROFILE=release <target>`) for distributable builds. A release
+# build of deltachat core takes 10+ minutes cold — CI caches it.
+
+PROFILE ?= debug
+ifeq ($(PROFILE),release)
+CARGO_PROFILE_FLAG = --release
+SWIFT_CONFIG_FLAG = -c release
+# Separate scratch dir per profile: SPM caches the evaluated manifest,
+# which bakes in the DCVM_PROFILE lib dir — sharing a scratch dir would
+# link whichever profile's lib was cached first.
+SWIFT_SCRATCH = .build-release
+else
+CARGO_PROFILE_FLAG =
+SWIFT_CONFIG_FLAG =
+SWIFT_SCRATCH = .build
+endif
+# Package.swift reads this to pick the rust lib dir.
+export DCVM_PROFILE = $(PROFILE)
 
 BINDGEN = cargo run --features cli --bin uniffi-bindgen-swift -- \
-          target/debug/libdcvm.a
+          target/$(PROFILE)/libdcvm.a
 
 # SPM's manifest sandbox (sandbox-exec) cannot nest inside the restricted dev
 # shell this repo is developed in, so it is disabled by default. Override with
 # `make SWIFT_FLAGS=` to keep SPM's own sandboxing on a normal machine.
 SWIFT_FLAGS ?= --disable-sandbox
+SWIFT_BUILD_FLAGS = $(SWIFT_FLAGS) $(SWIFT_CONFIG_FLAG) --scratch-path $(SWIFT_SCRATCH)
 
-.PHONY: rust bindings swift-build run app run-app icon tiles test check
+.PHONY: rust bindings swift-build run app app-release run-app icon tiles test check
 
 rust:
-	cd dcvm && cargo build
+	cd dcvm && cargo build $(CARGO_PROFILE_FLAG)
 
 bindings: rust
 	cd dcvm && $(BINDGEN) ../macos/Sources/DeltaCore --swift-sources
@@ -24,7 +44,7 @@ bindings: rust
 
 # Build-only Swift check (non-interactive; works headless/CI, unlike `run`).
 swift-build: bindings
-	cd macos && swift build $(SWIFT_FLAGS)
+	cd macos && swift build $(SWIFT_BUILD_FLAGS)
 
 run: bindings
 	cd macos && swift run $(SWIFT_FLAGS) DeltaApp
@@ -40,12 +60,16 @@ app: swift-build
 	# app itself (Settings sheet) and Finder's Get Info.
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-parse --short HEAD)" \
 	    macos/Estuary.app/Contents/Info.plist
-	cp macos/.build/debug/DeltaApp macos/Estuary.app/Contents/MacOS/
+	cp macos/$(SWIFT_SCRATCH)/$(PROFILE)/DeltaApp macos/Estuary.app/Contents/MacOS/
 	cp assets/brand/Estuary.icns macos/Estuary.app/Contents/Resources/AppIcon.icns
 	# SPM resource bundle: without it Bundle.module traps at first access.
-	cp -R macos/.build/debug/DeltaApp_DeltaApp.bundle \
+	cp -R macos/$(SWIFT_SCRATCH)/$(PROFILE)/DeltaApp_DeltaApp.bundle \
 	    macos/Estuary.app/Contents/Resources/
 	codesign --force --sign - macos/Estuary.app
+
+# Distributable build: release-profile Rust core + release Swift.
+app-release:
+	$(MAKE) PROFILE=release app
 
 # Regenerate the chat-background tiles from the brand pattern. Only needed
 # when assets/brand/chat-pattern.png changes.
@@ -67,8 +91,8 @@ run-app: app
 	open macos/Estuary.app
 
 test:
-	cd dcvm && cargo test
-	cd macos && swift test $(SWIFT_FLAGS)
+	cd dcvm && cargo test $(CARGO_PROFILE_FLAG)
+	cd macos && swift test $(SWIFT_BUILD_FLAGS)
 
 # Full non-interactive verification: Rust tests + Swift compile/link.
 check: test swift-build

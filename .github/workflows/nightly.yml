@@ -1,6 +1,7 @@
 # Nightly build: every push to main recreates the `nightly` prerelease with
-# a fresh DMG. Same dev-profile Rust + debug Swift as the local `make app`
-# loop (an honest nightly; release-profile packaging is a separate issue).
+# a fresh DMG, built release-profile (Rust + Swift). Rust stays on ONE
+# profile throughout (cargo test --release) so the cache carries a single
+# core build instead of two.
 name: nightly
 
 on:
@@ -40,17 +41,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: dcvm
+          # Rotate the key for the release-profile switch: an exact hit on
+          # the old debug-artifact cache would skip saving, cold-building
+          # release core on EVERY run instead of once.
+          prefix-key: release
 
       - name: Rust tests
-        run: cd dcvm && cargo test
+        run: cd dcvm && cargo test --release
 
-      # `make app` covers cargo build -> uniffi bindings -> swift build ->
-      # .app assembly (icon, SPM resource bundle, git-SHA stamp, ad-hoc sign).
+      # `make app-release` covers cargo build --release -> uniffi bindings ->
+      # swift build -c release -> .app assembly (icon, SPM resource bundle,
+      # git-SHA stamp, ad-hoc sign).
       - name: Build app bundle
-        run: make app
+        run: make app-release
 
+      # Debug-config test build, but linked against the release rust lib so
+      # the dev-profile core is never built on this runner.
       - name: Swift tests
-        run: cd macos && swift test --disable-sandbox
+        run: cd macos && DCVM_PROFILE=release swift test --disable-sandbox
 
       - name: Package DMG
         run: |

@@ -1,9 +1,12 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-// Dev profile: libdcvm.a comes out of `cargo build` (see root Makefile).
-// A release build of deltachat core takes 10+ minutes, so we link debug.
-let rustLibDir = "\(Context.packageDirectory)/../dcvm/target/debug"
+// Which cargo profile's libdcvm.a to link — the Makefile exports
+// DCVM_PROFILE (debug default; release for `make app-release`). NOTE: SPM
+// caches the evaluated manifest, so a profile switch needs a separate
+// scratch dir (the Makefile handles this) or the old lib dir sticks.
+let rustProfile = Context.environment["DCVM_PROFILE"] ?? "debug"
+let rustLibDir = "\(Context.packageDirectory)/../dcvm/target/\(rustProfile)"
 
 let package = Package(
     name: "DeltaApp",

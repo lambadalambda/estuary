@@ -646,3 +646,17 @@ per project rules — user-verified against the known repro.
   pages halve open-time layout/decode work. Review traced the halved
   margin: a viewport-filling initial window still converges in one bounded
   auto-load with the bottom pinned.
+
+## 2026-07-18 — Release-profile packaging (nightly ships release now)
+
+`make app-release`: one PROFILE knob drives cargo --release, the uniffi
+lib path, the SPM lib dir (DCVM_PROFILE env read in Package.swift), and
+.app assembly. Separate SPM scratch dir per profile — belt-and-suspenders;
+review verified empirically that current SPM re-evaluates
+Context.environment per build even in a shared scratch. CI builds release
+end-to-end on a SINGLE Rust profile (cargo test --release shares artifacts
+with the app build; Swift tests link the release lib) and rotates the
+rust-cache prefix-key — review catch: an exact hit on the old debug cache
+would never save release artifacts, cold-building core every night. Local
+release app (76MB bundle) verified launching against mock data. Build
+plumbing is untestable per rules — verified by building both profiles.

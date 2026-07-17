@@ -101,15 +101,23 @@ struct OverlayScrollers: NSViewRepresentable {
         scrollView.scrollerStyle = .overlay
         scrollView.autohidesScrollers = true
         guard objc_getAssociatedObject(scrollView, &pinKey) == nil else { return }
+        // The @Sendable KVO handlers fire synchronously on the mutating
+        // thread — AppKit re-tiles scrollers on the main thread, so assert
+        // that isolation (and crash loudly on any off-main mutation) rather
+        // than hop queues, which would let the revert draw first.
         let observations = [
             scrollView.observe(\.scrollerStyle) { scrollView, _ in
-                if scrollView.scrollerStyle != .overlay {
-                    scrollView.scrollerStyle = .overlay
+                MainActor.assumeIsolated {
+                    if scrollView.scrollerStyle != .overlay {
+                        scrollView.scrollerStyle = .overlay
+                    }
                 }
             },
             scrollView.observe(\.autohidesScrollers) { scrollView, _ in
-                if !scrollView.autohidesScrollers {
-                    scrollView.autohidesScrollers = true
+                MainActor.assumeIsolated {
+                    if !scrollView.autohidesScrollers {
+                        scrollView.autohidesScrollers = true
+                    }
                 }
             },
         ]

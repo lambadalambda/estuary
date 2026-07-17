@@ -64,3 +64,9 @@ with the warm ivory background. Scope:
 - Tiling chat background from user-provided pattern (CC0 sunset photo also
   provided for the mock showcase): light = pattern on warm ivory; dark =
   inverted/tinted onto midnight. Pre-generated tiles, bundled as resources.
+
+## Outcome (2026-07-17)
+
+All three slices shipped and user-confirmed: name/palette/icon, calm ivory
+surfaces, quote-contrast fix + tiling backgrounds ("tile looks great",
+"yup, looks good"). Follow-on taste items go to native-feel-polish.

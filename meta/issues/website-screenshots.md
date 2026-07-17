@@ -30,3 +30,10 @@ GitHub Pages site.
 - The AUTOSELECT hook body is one guarded call; the ProcessInfo read makes
   the hook itself untestable without env injection — noted explicitly.
 - Screenshot capture and page layout are eyeball-verified.
+
+## Outcome (2026-07-17)
+
+Live and user-confirmed ("yup, looks good"): light/dark showcase captures
+(mock seed, hugging bubbles, tiled background) served on the landing page
+via prefers-color-scheme. Capture flow needed the user's hands — the agent
+shell has no window-server access.

@@ -11,3 +11,5 @@
 - [x] [Links, in-chat avatars, human timestamps, full muting](issues/links-avatars-timestamps-muting.md)
 - [x] [Link hover cursor + scroll-on-send in large chats](issues/link-cursor-and-send-scroll.md)
 - [x] [Publish: README, license, GitHub repo, nightly DMG, Pages site](issues/publish-github-nightly-site.md)
+- [x] [Estuary rebrand — first slice (name + palette)](issues/estuary-rebrand.md)
+- [x] [Website screenshots with demo data](issues/website-screenshots.md)

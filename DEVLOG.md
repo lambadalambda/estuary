@@ -523,3 +523,30 @@ preferredScrollerStyleDidChange (pref flip, mouse plug) with no SwiftUI
 update to piggyback on → explicit NotificationCenter observer re-applies.
 AppKit view-walking is untestable in unit tests (no window hierarchy) —
 eyeball-verified.
+
+## 2026-07-17 — Chat chrome polish (sidebar scroller, composer card)
+
+- Correction of the entry above: AppKit view-walking IS unit-testable —
+  NSScrollView hierarchies build fine headless, no window needed
+  (OverlayScrollersTests). Only the live-window timing/insertion races stay
+  eyeball-only.
+- OverlayScrollers redesigned after the sidebar needed it too: a List's
+  NSScrollView is a *sibling* of a `.background` anchor, not an ancestor,
+  and review showed any "style the first match" lookup fails open (styles
+  the wrong pane's scroller, reports success, never retries — SwiftUI gives
+  no locality guarantees in its platform hierarchy). apply() now sweeps the
+  whole window and styles EVERY scroll view — idempotent, race-tolerant.
+  Also dropped the updateNSView re-apply: it ran on every composer
+  keystroke; insertion + 0.4s retry + style-change observer cover all real
+  reversion events.
+- Composer is now a floating rounded card (incoming-bubble surface) over the
+  tiled backdrop instead of a square bar — resolves the shape clash with the
+  rounded sidebar. Bubble + composer share one `cardSurface` recipe so they
+  can't drift apart. The Liquid Glass `barBackground` helper (and its
+  `#if compiler(>=6.2)` CI guard) is gone with the bar.
+- Backdrop ownership moved up to MainView's detail column so the
+  "No Chat Selected" state sits on the same tiled surface (no flash on
+  selection changes).
+- Composer icon alignment: `.lastTextBaseline` instead of hand-tuned bottom
+  paddings. Untestable visuals (baseline alignment incl. multi-line drafts,
+  card look, scroller fade) are eyeball-verified per project rules.

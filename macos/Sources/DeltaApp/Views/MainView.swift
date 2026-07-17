@@ -10,9 +10,24 @@ struct MainView: View {
                 ChatRowView(chat: chat)
                     .tag(chat.id)
                     .contextMenu {
-                        Button(chat.isMuted ? "Unmute" : "Mute") {
-                            Task {
-                                await model.setMuted(chatId: chat.id, muted: !chat.isMuted)
+                        if chat.isMuted {
+                            Button("Unmute") {
+                                Task { await model.setMuted(chatId: chat.id, durationSeconds: 0) }
+                            }
+                        } else {
+                            Menu("Mute") {
+                                Button("For 1 Hour") {
+                                    Task { await model.setMuted(chatId: chat.id, durationSeconds: 3600) }
+                                }
+                                Button("For 8 Hours") {
+                                    Task { await model.setMuted(chatId: chat.id, durationSeconds: 8 * 3600) }
+                                }
+                                Button("For 1 Week") {
+                                    Task { await model.setMuted(chatId: chat.id, durationSeconds: 7 * 24 * 3600) }
+                                }
+                                Button("Forever") {
+                                    Task { await model.setMuted(chatId: chat.id, durationSeconds: -1) }
+                                }
                             }
                         }
                         Button(chat.isArchived ? "Unarchive" : "Archive") {

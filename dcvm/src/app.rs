@@ -602,20 +602,23 @@ impl DcApp {
         .await
     }
 
-    /// Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+    /// Mutes a chat: `duration_seconds` 0 = unmute, negative = forever,
+    /// positive = until now + duration. Synced to other devices.
     pub async fn set_chat_muted(
         &self,
         account_id: u32,
         chat_id: u32,
-        muted: bool,
+        duration_seconds: i64,
     ) -> Result<(), VmError> {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
-            let duration = if muted {
-                chat::MuteDuration::Forever
-            } else {
-                chat::MuteDuration::NotMuted
+            let duration = match duration_seconds {
+                0 => chat::MuteDuration::NotMuted,
+                s if s < 0 => chat::MuteDuration::Forever,
+                s => chat::MuteDuration::Until(
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(s as u64),
+                ),
             };
             chat::set_muted(&ctx, ChatId::new(chat_id), duration).await?;
             Ok(())

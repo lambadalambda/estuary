@@ -436,7 +436,7 @@ uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_archived(uint64_t ptr, uint32_t ac
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_MUTED
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_CHAT_MUTED
-uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_muted(uint64_t ptr, uint32_t account_id, uint32_t chat_id, int8_t muted
+uint64_t uniffi_dcvm_fn_method_dcapp_set_chat_muted(uint64_t ptr, uint32_t account_id, uint32_t chat_id, int64_t duration_seconds
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SET_DISPLAY_NAME

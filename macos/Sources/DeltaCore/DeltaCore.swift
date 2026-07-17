@@ -737,9 +737,10 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws 
     
     /**
-     * Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+     * Mutes a chat: `duration_seconds` 0 = unmute, negative = forever,
+     * positive = until now + duration. Synced to other devices.
      */
-    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws 
+    func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64) async throws 
     
     func setDisplayName(accountId: UInt32, name: String) async throws 
     
@@ -1407,14 +1408,15 @@ open func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool)asyn
 }
     
     /**
-     * Mutes or unmutes a chat (mute is indefinite; synced to other devices).
+     * Mutes a chat: `duration_seconds` 0 = unmute, negative = forever,
+     * positive = until now + duration. Synced to other devices.
      */
-open func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool)async throws   {
+open func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_set_chat_muted(
-                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterBool.lower(muted)
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(chatId),FfiConverterInt64.lower(durationSeconds)
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_void,
@@ -3231,7 +3233,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_set_chat_archived() != 62327) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_set_chat_muted() != 53737) {
+    if (uniffi_dcvm_checksum_method_dcapp_set_chat_muted() != 62087) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_set_display_name() != 55875) {

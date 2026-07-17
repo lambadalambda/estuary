@@ -220,9 +220,11 @@ actor CoreChatService: ChatService {
         } catch { throw mapError(error) }
     }
 
-    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws {
-        do { try await app().setChatMuted(accountId: accountId, chatId: chatId, muted: muted) }
-        catch { throw mapError(error) }
+    func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64) async throws {
+        do {
+            try await app().setChatMuted(
+                accountId: accountId, chatId: chatId, durationSeconds: durationSeconds)
+        } catch { throw mapError(error) }
     }
 
     func archivedChats(accountId: UInt32) async throws -> [ChatItem] {

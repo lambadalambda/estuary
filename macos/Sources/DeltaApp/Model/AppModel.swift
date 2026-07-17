@@ -374,9 +374,11 @@ final class AppModel {
         await reloadChats()
     }
 
-    func setMuted(chatId: UInt32, muted: Bool) async {
+    /// 0 = unmute, negative = forever, positive = seconds from now.
+    func setMuted(chatId: UInt32, durationSeconds: Int64) async {
         guard let accountId = selectedAccountId else { return }
-        try? await service.setChatMuted(accountId: accountId, chatId: chatId, muted: muted)
+        try? await service.setChatMuted(
+            accountId: accountId, chatId: chatId, durationSeconds: durationSeconds)
         await reloadChats()
     }
 

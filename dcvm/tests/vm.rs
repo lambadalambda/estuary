@@ -915,9 +915,15 @@ async fn mute_round_trip() {
     let row = |chats: Vec<dcvm::ChatItem>| chats.into_iter().find(|c| c.id == chat).unwrap();
     assert!(!row(app.chat_list(id).await.unwrap()).is_muted);
 
-    app.set_chat_muted(id, chat, true).await.unwrap();
+    // Forever.
+    app.set_chat_muted(id, chat, -1).await.unwrap();
     assert!(row(app.chat_list(id).await.unwrap()).is_muted);
 
-    app.set_chat_muted(id, chat, false).await.unwrap();
+    // Unmute.
+    app.set_chat_muted(id, chat, 0).await.unwrap();
     assert!(!row(app.chat_list(id).await.unwrap()).is_muted);
+
+    // Timed: an hour from now counts as muted; core un-mutes on expiry.
+    app.set_chat_muted(id, chat, 3600).await.unwrap();
+    assert!(row(app.chat_list(id).await.unwrap()).is_muted);
 }

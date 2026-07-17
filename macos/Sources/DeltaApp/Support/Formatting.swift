@@ -91,6 +91,25 @@ func messageTime(_ epochSeconds: Int64) -> String {
         .formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
 }
 
+/// Message-footer timestamp: relative while fresh ("now", "5 min"), clock
+/// time afterwards. Day context comes from the day separators.
+func messageTimestamp(_ epochSeconds: Int64, now: Date = Date()) -> String {
+    let elapsed = now.timeIntervalSince(
+        Date(timeIntervalSince1970: TimeInterval(epochSeconds)))
+    if elapsed < 60 { return "now" }
+    if elapsed < 3600 { return "\(Int(elapsed / 60)) min" }
+    return messageTime(epochSeconds)
+}
+
+/// Whether the text contains at least one detectable URL.
+func containsLink(_ text: String) -> Bool {
+    guard let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+    else { return false }
+    return detector.firstMatch(
+        in: text, range: NSRange(text.startIndex..., in: text)) != nil
+}
+
 // MARK: - Message list assembly (messages + day separators)
 
 enum MessageListEntry: Identifiable, Equatable {

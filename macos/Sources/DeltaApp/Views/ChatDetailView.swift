@@ -369,10 +369,16 @@ struct MessageBubbleView: View {
                     linkColor: message.isOutgoing ? .white : .accentColor))
                     .textSelection(.enabled)
                     .foregroundStyle(message.isOutgoing ? .white : .primary)
+                    // Hand cursor over link-bearing text (SwiftUI has no
+                    // per-range pointer, so the whole run gets it). nil
+                    // inherits the normal text cursor for link-free text.
+                    .pointerStyle(containsLink(message.text) ? .link : nil)
             }
             HStack(spacing: 4) {
-                Text(messageTime(message.timestamp))
-                    .font(.caption2)
+                TimelineView(.everyMinute) { timeline in
+                    Text(messageTimestamp(message.timestamp, now: timeline.date))
+                        .font(.caption2)
+                }
                 if message.isOutgoing {
                     DeliveryStateView(state: message.state)
                 }

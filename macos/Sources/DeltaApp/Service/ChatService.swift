@@ -204,8 +204,9 @@ protocol ChatService: Sendable {
     func acceptChat(accountId: UInt32, chatId: UInt32) async throws
     func blockChat(accountId: UInt32, chatId: UInt32) async throws
     func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) async throws
-    /// Mute is indefinite and synced to other devices.
-    func setChatMuted(accountId: UInt32, chatId: UInt32, muted: Bool) async throws
+    /// 0 = unmute, negative = forever, positive = seconds from now.
+    /// Synced to other devices.
+    func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64) async throws
     func archivedChats(accountId: UInt32) async throws -> [ChatItem]
     func searchChats(accountId: UInt32, query: String) async throws -> [ChatItem]
     func searchMessages(accountId: UInt32, query: String) async throws -> [MessageItem]

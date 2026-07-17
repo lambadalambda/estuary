@@ -11,7 +11,7 @@ BINDGEN = cargo run --features cli --bin uniffi-bindgen-swift -- \
 # `make SWIFT_FLAGS=` to keep SPM's own sandboxing on a normal machine.
 SWIFT_FLAGS ?= --disable-sandbox
 
-.PHONY: rust bindings swift-build run app run-app test check
+.PHONY: rust bindings swift-build run app run-app icon test check
 
 rust:
 	cd dcvm && cargo build
@@ -34,14 +34,27 @@ run: bindings
 # attributed to the terminal instead. Ad-hoc signed so TCC grants persist.
 app: swift-build
 	rm -rf macos/Estuary.app macos/DeltaApp.app
-	mkdir -p macos/Estuary.app/Contents/MacOS
+	mkdir -p macos/Estuary.app/Contents/MacOS macos/Estuary.app/Contents/Resources
 	cp macos/Info.plist macos/Estuary.app/Contents/
 	# Stamp the build so "which code am I running?" is answerable from the
 	# app itself (Settings sheet) and Finder's Get Info.
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-parse --short HEAD)" \
 	    macos/Estuary.app/Contents/Info.plist
 	cp macos/.build/debug/DeltaApp macos/Estuary.app/Contents/MacOS/
+	cp assets/brand/Estuary.icns macos/Estuary.app/Contents/Resources/AppIcon.icns
+	# SPM resource bundle: without it Bundle.module traps at first access.
+	cp -R macos/.build/debug/DeltaApp_DeltaApp.bundle \
+	    macos/Estuary.app/Contents/Resources/
 	codesign --force --sign - macos/Estuary.app
+
+# Regenerate the icon pipeline from the brand source (checkerboard-removal
+# + rounded-square composite + .icns). Only needed when the logo changes.
+icon:
+	swift dev/icon/gen-icon.swift assets/brand/logo-original.png /tmp/estuary-icon
+	iconutil -c icns /tmp/estuary-icon/Estuary.iconset -o assets/brand/Estuary.icns
+	cp /tmp/estuary-icon/logo.png assets/brand/logo.png
+	sips -Z 512 /tmp/estuary-icon/logo.png \
+	    --out macos/Sources/DeltaApp/Resources/estuary-logo.png
 
 run-app: app
 	open macos/Estuary.app

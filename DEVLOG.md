@@ -384,3 +384,30 @@ sheet. showAuthor/avatar per-run rules and Color-hex validation got Swift unit t
   position) and prepended a full page — destabilizing lazy layout. Growth is now
   gated on the view's actual at-bottom state (bottom sentinel reports to the model);
   decision extracted as pure `windowNeedsGrowth` and TDD'd (4 cases).
+
+## 2026-07-17 — Estuary rebrand, first slice (issue: estuary-rebrand)
+
+The app has a name: **Estuary** ("where conversations converge" — delta and
+estuary are both river mouths; Delta Chat compatible, not a fork). User
+approved a brand sheet: teal/coral palette, wave-into-speech-bubble icon.
+
+- `EstuaryTheme` (TDD'd: hex validity — a typo'd hex silently falls back to
+  gray — role distinctness, adaptive accent): deep teal `#0F3D3E` accent in
+  light mode, sea glass `#7FBDB4` in dark (deep teal reads near-black there),
+  via an NSColor dynamic provider so appearance switches re-resolve. Outgoing
+  bubbles stay deep teal in BOTH modes: they carry white text, and sea glass
+  would wash it out. Unread badges are coral `#FF6F61` (muted stays gray).
+- Renames: Info.plist name/display "Estuary", bundle output `Estuary.app`,
+  window title, onboarding title + tagline. Deliberately UNCHANGED: bundle id
+  (TCC camera + notification grants are keyed to it), data dir
+  `DeltaChatNative` (existing accounts), internal target names (churn).
+- Visual result (accent rendering in both appearances) is eyeball-verified,
+  not unit-testable; constants and adaptive selection logic are.
+- Icon asset pending → app-bundle-polish issue. Mockup features out of scope:
+  calls/presence (no core support), list filter tabs, accent picker.
+- Review pass caught: coral badge with white numerals is ~2.7:1 → badge text
+  is midnight blue now (muted gray badges keep white); badge theme test
+  tightened to guard the actual `badge`/`badgeText` colors, not hex literals.
+  Flagged-plausible, accepted: dark-mode sea-glass tint behind prominent
+  buttons — macOS auto-contrasts control labels for light accents (same
+  mechanism as the system yellow accent), needs a dark-mode eyeball.

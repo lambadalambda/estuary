@@ -526,14 +526,15 @@ actor MockChatService: ChatService {
         func makeChat(
             name: String, color: String,
             pinned: Bool = false, muted: Bool = false,
-            request: Bool = false, selfTalk: Bool = false, fresh: UInt32 = 0
+            request: Bool = false, selfTalk: Bool = false, fresh: UInt32 = 0,
+            group: Bool = false
         ) -> UInt32 {
             let id = nextChatId
             nextChatId += 1
             chats.append(ChatItem(
                 id: id, name: name, preview: "", timestamp: 0, freshCount: fresh,
                 isSelfTalk: selfTalk, isPinned: pinned, isMuted: muted,
-                isContactRequest: request, color: color))
+                isContactRequest: request, color: color, isGroup: group))
             messagesByChat[id] = []
             return id
         }
@@ -566,81 +567,78 @@ actor MockChatService: ChatService {
 
         let day: Int64 = 24 * 60
 
-        // Saved Messages (self talk, pinned).
-        let saved = makeChat(name: "Saved Messages", color: "#c98a2b", pinned: true, selfTalk: true)
-        addMessage(saved, "Remember: uniffi bindings must be regenerated after every API change.", minutesAgo: day + 120, outgoing: true, state: .delivered)
-        addMessage(saved, "Shopping list: coffee, rye bread, batteries", minutesAgo: 200, outgoing: true, state: .delivered)
+        // Saved Messages (self talk). Deliberately NOT pinned: pinned sorts
+        // first, and the screenshot autoselect hook opens chats.first.
+        let saved = makeChat(name: "Saved Messages", color: "#c98a2b", selfTalk: true)
+        addMessage(saved, "Packing list: tent, headlamp, trail mix", minutesAgo: day + 120, outgoing: true, state: .delivered)
+        addMessage(saved, "Cabin door code: 4711", minutesAgo: day + 100, outgoing: true, state: .delivered)
 
-        // Alice — active 1:1 chat with fresh messages.
-        let alice = (name: "Alice", color: "#e56555")
-        let aliceChat = makeChat(name: alice.name, color: alice.color, fresh: 3)
-        echoChats.insert(aliceChat)
-        addMessage(aliceChat, "Hey! Did you see the native prototype?", minutesAgo: 2 * day + 300, sender: alice)
-        addMessage(aliceChat, "Yes! SwiftUI shell over a Rust core, wild times.", minutesAgo: 2 * day + 290, outgoing: true, state: .read)
-        addMessage(aliceChat, "Ship it :)", minutesAgo: day + 60, sender: alice)
-        addMessage(aliceChat, "Working on it. Chat list is already rendering.", minutesAgo: day + 55, outgoing: true, state: .read)
-        addMessage(aliceChat, "Nice, send me a build when you can", minutesAgo: 42, sender: alice)
-        addMessage(aliceChat, "Also the avatars look great", minutesAgo: 41, sender: alice)
-        addMessage(aliceChat, "OK I'll stop spamming now", minutesAgo: 3, sender: alice)
+        // Elena — the showcase chat: conversation, quote, reactions, media.
+        let elena = (name: "Elena", color: "#e56555")
+        let elenaChat = makeChat(name: elena.name, color: elena.color, fresh: 2)
+        echoChats.insert(elenaChat)
+        addMessage(elenaChat, "Hey! Did you get the photos from the coast trip?", minutesAgo: 2 * day + 300, sender: elena)
+        addMessage(elenaChat, "Just did — they look amazing! The lighthouse one is my favorite.", minutesAgo: 2 * day + 290, outgoing: true, state: .read)
+        addMessage(elenaChat, "Right? Let's print a few for grandma, she'll love them.", minutesAgo: day + 60, sender: elena)
+        addMessage(elenaChat, "Good idea, I'll order prints tomorrow.", minutesAgo: day + 55, outgoing: true, state: .read)
+        addMessage(elenaChat, "Don't forget the sunset panorama!", minutesAgo: 42, sender: elena)
 
-        // Bob — muted, quiet chat.
-        let bob = (name: "Bob", color: "#3d7bde")
-        let bobChat = makeChat(name: bob.name, color: bob.color, muted: true)
-        echoChats.insert(bobChat)
-        addMessage(bobChat, "lunch tomorrow?", minutesAgo: 3 * day + 30, sender: bob)
-        addMessage(bobChat, "Sure, 12:30 at the usual place.", minutesAgo: 3 * day + 10, outgoing: true, state: .read)
+        // Marco — muted, quiet chat.
+        let marco = (name: "Marco", color: "#3d7bde")
+        let marcoChat = makeChat(name: marco.name, color: marco.color, muted: true)
+        echoChats.insert(marcoChat)
+        addMessage(marcoChat, "Are we still on for football on Saturday?", minutesAgo: 3 * day + 30, sender: marco)
+        addMessage(marcoChat, "Yes! 10am at the usual field.", minutesAgo: 3 * day + 10, outgoing: true, state: .read)
 
-        // Team Chatmail — group with multiple senders and an info message.
-        let carol = (name: "Carol", color: "#9b59b6")
-        let team = makeChat(name: "Team Chatmail", color: "#66a350")
-        addMessage(team, "You added member Carol.", minutesAgo: 5 * day, info: true)
-        addMessage(team, "Welcome Carol!", minutesAgo: 5 * day - 5, sender: alice)
-        addMessage(team, "Hi everyone, happy to be here", minutesAgo: 5 * day - 10, sender: carol)
-        addMessage(team, "Standup moved to 10:00 tomorrow.", minutesAgo: day + 400, sender: bob)
-        addMessage(team, "Works for me.", minutesAgo: day + 390, outgoing: true, state: .read)
-        addMessage(team, "The 2.49 core builds green on arm64, FYI", minutesAgo: 130, sender: carol)
+        // Weekend Hikers — group with multiple senders and an info message.
+        let priya = (name: "Priya", color: "#9b59b6")
+        let hikers = makeChat(name: "Weekend Hikers", color: "#66a350", fresh: 1, group: true)
+        addMessage(hikers, "You added member Priya.", minutesAgo: 5 * day, info: true)
+        addMessage(hikers, "Welcome Priya!", minutesAgo: 5 * day - 5, sender: elena)
+        addMessage(hikers, "Hi everyone, happy to be here", minutesAgo: 5 * day - 10, sender: priya)
+        addMessage(hikers, "Trail plan for Sunday: meet at the falls parking lot, 9am?", minutesAgo: day + 400, sender: marco)
+        addMessage(hikers, "Works for me. Weather forecast looks perfect.", minutesAgo: day + 390, outgoing: true, state: .read)
+        addMessage(hikers, "Can someone give me a ride? My car's in the shop.", minutesAgo: 130, sender: priya)
 
-        // Mallory — contact request.
-        let mallory = makeChat(name: "Mallory", color: "#d33682", request: true, fresh: 1)
-        addMessage(mallory, "Hi! We met at the conference — is this the right address?", minutesAgo: 310, sender: (name: "Mallory", color: "#d33682"))
+        // Sam — contact request.
+        let sam = makeChat(name: "Sam", color: "#d33682", request: true, fresh: 1)
+        addMessage(sam, "Hi! We met at the conference — is this the right address?", minutesAgo: 310, sender: (name: "Sam", color: "#d33682"))
 
-        // Media/quote/reaction samples in the Alice chat.
-        if let last = messagesByChat[aliceChat]?.last {
+        // Media/quote/reaction samples in the Elena chat.
+        if let last = messagesByChat[elenaChat]?.last {
             let id = nextMsgId
             nextMsgId += 1
-            messagesByChat[aliceChat]?.append(MessageItem(
-                id: id, chatId: aliceChat, text: "This! 💯",
-                timestamp: now - 2 * 60,
+            messagesByChat[elenaChat]?.append(MessageItem(
+                id: id, chatId: elenaChat, text: "Printing that one poster-sized!",
+                timestamp: now - 3 * 60,
                 isOutgoing: true, isInfo: false,
                 senderName: "Me", senderColor: Self.selfColor, state: .read,
                 quote: QuoteInfo(
                     text: last.text, senderName: last.senderName,
                     senderColor: last.senderColor),
                 reactions: [
-                    ReactionItem(emoji: "👍", count: 2, isFromSelf: false),
-                    ReactionItem(emoji: "🎉", count: 1, isFromSelf: true),
+                    ReactionItem(emoji: "❤️", count: 2, isFromSelf: false),
+                    ReactionItem(emoji: "🌅", count: 1, isFromSelf: true),
                 ]))
         }
-        if let imagePath = Self.sampleFile(name: "mock-photo.png", png: true) {
+        if let imagePath = Bundle.module.url(
+            forResource: "mock-sunset", withExtension: "jpg")?.path {
             let id = nextMsgId
             nextMsgId += 1
-            messagesByChat[aliceChat]?.append(MessageItem(
-                id: id, chatId: aliceChat, text: "sunset from the pier",
+            messagesByChat[elenaChat]?.append(MessageItem(
+                id: id, chatId: elenaChat, text: "sunset from the pier",
                 timestamp: now - 60,
                 isOutgoing: false, isInfo: false,
-                senderName: alice.name, senderColor: alice.color, state: .noState,
-                kind: .image, file: imagePath, fileName: "photo.png",
-                fileSize: 4096, width: 64, height: 64))
+                senderName: elena.name, senderColor: elena.color, state: .noState,
+                kind: .image, file: imagePath, fileName: "sunset.jpg",
+                fileSize: 638_412, width: 960, height: 720))
         }
-        if let filePath = Self.sampleFile(name: "notes.txt", png: false) {
-            let id = nextMsgId
-            nextMsgId += 1
-            messagesByChat[aliceChat]?.append(MessageItem(
-                id: id, chatId: aliceChat, text: "",
-                timestamp: now - 30,
-                isOutgoing: false, isInfo: false,
-                senderName: alice.name, senderColor: alice.color, state: .noState,
-                kind: .file, file: filePath, fileName: "notes.txt", fileSize: 280))
+        // Manual appends bypass addMessage: sync the sidebar row so the
+        // preview/timestamp match the newest message (screenshot-visible).
+        if let index = chats.firstIndex(where: { $0.id == elenaChat }),
+           let newest = messagesByChat[elenaChat]?.last {
+            chats[index].timestamp = newest.timestamp
+            chats[index].preview = newest.text
         }
 
         // Old thread from last year for timestamp-bucket coverage.
@@ -653,26 +651,4 @@ actor MockChatService: ChatService {
         chatsByAccount[accountId] = chats
     }
 
-    /// Writes a small sample blob (solid-color PNG or text) to the temp dir.
-    private static func sampleFile(name: String, png: Bool) -> String? {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dcnative-mock-\(name)")
-        if !FileManager.default.fileExists(atPath: url.path) {
-            if png {
-                let image = NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
-                    NSColor.systemOrange.setFill()
-                    rect.fill()
-                    return true
-                }
-                guard let tiff = image.tiffRepresentation,
-                      let rep = NSBitmapImageRep(data: tiff),
-                      let data = rep.representation(using: .png, properties: [:])
-                else { return nil }
-                try? data.write(to: url)
-            } else {
-                try? Data("mock file contents\n".utf8).write(to: url)
-            }
-        }
-        return url.path
-    }
 }

@@ -57,10 +57,10 @@ pub fn map_viewtype(viewtype: Viewtype) -> MessageKind {
 pub fn viewtype_for_path(path: &str) -> Viewtype {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "webp" | "heic" | "bmp" => Viewtype::Image,
+        "png" | "jpg" | "jpeg" | "webp" => Viewtype::Image,
         "gif" => Viewtype::Gif,
-        "mp4" | "mov" | "webm" | "mkv" => Viewtype::Video,
-        "mp3" | "m4a" | "ogg" | "opus" | "wav" | "aac" | "flac" => Viewtype::Audio,
+        "mp4" | "mov" => Viewtype::Video,
+        "mp3" | "m4a" | "ogg" | "wav" | "aac" | "flac" => Viewtype::Audio,
         _ => Viewtype::File,
     }
 }
@@ -86,8 +86,9 @@ pub fn map_event(typ: EventType) -> Option<VmEvent> {
         EventType::AccountsChanged | EventType::AccountsItemChanged => {
             Some(VmEvent::AccountsChanged)
         }
-        EventType::ChatlistChanged
-        | EventType::ChatlistItemChanged { chat_id: None } => Some(VmEvent::ChatlistChanged),
+        EventType::ChatlistChanged | EventType::ChatlistItemChanged { chat_id: None } => {
+            Some(VmEvent::ChatlistChanged)
+        }
         EventType::ChatlistItemChanged {
             chat_id: Some(chat_id),
         } => Some(VmEvent::ChatChanged {
@@ -320,6 +321,11 @@ mod tests {
         assert_eq!(viewtype_for_path("/tmp/anim.gif"), Viewtype::Gif);
         assert_eq!(viewtype_for_path("/tmp/song.mp3"), Viewtype::Audio);
         assert_eq!(viewtype_for_path("/tmp/clip.mov"), Viewtype::Video);
+        assert_eq!(viewtype_for_path("/tmp/clip.webm"), Viewtype::File);
+        assert_eq!(viewtype_for_path("/tmp/audio.opus"), Viewtype::File);
+        assert_eq!(viewtype_for_path("/tmp/photo.heic"), Viewtype::File);
+        assert_eq!(viewtype_for_path("/tmp/photo.bmp"), Viewtype::File);
+        assert_eq!(viewtype_for_path("/tmp/clip.mkv"), Viewtype::File);
         assert_eq!(viewtype_for_path("/tmp/doc.pdf"), Viewtype::File);
         assert_eq!(viewtype_for_path("noextension"), Viewtype::File);
     }

@@ -123,12 +123,22 @@ pub enum MessageState {
 pub enum VmEvent {
     AccountsChanged,
     ChatlistChanged,
-    ChatChanged { chat_id: u32 },
-    IncomingMessage { chat_id: u32, msg_id: u32 },
-    ConfigureProgress { permille: u32, comment: Option<String> },
+    ChatChanged {
+        chat_id: u32,
+    },
+    IncomingMessage {
+        chat_id: u32,
+        msg_id: u32,
+    },
+    ConfigureProgress {
+        permille: u32,
+        comment: Option<String>,
+    },
     /// Import/export progress, e.g. receiving a second-device backup
     /// (permille 0 = error/canceled, 1 = started, 1000 = done).
-    ImexProgress { permille: u32 },
+    ImexProgress {
+        permille: u32,
+    },
     ConnectivityChanged,
 }
 

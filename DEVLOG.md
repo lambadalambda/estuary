@@ -1,5 +1,18 @@
 # DEVLOG
 
+## 2026-07-18 — dcvm correctness batch: four fixes green
+
+Red tests caught the search cap selecting old hits in reverse display order,
+WebM/Opus/HEIC being over-classified as inline media, and `i64::MAX` mute
+duration panicking a runtime worker. Search now takes the newest 100 then
+reverses for display, generic attachments follow core's conservative mapping,
+and unrepresentable timed mutes become `Forever`. Overflow recovery snapshots account
+IDs before foreign callbacks, releasing the manager read lock. Rustfmt was
+applied, the stale `mut` warning removed, and strict Clippy is green. Rust: 30
+passed, 2 relay tests ignored. The issue stays open only for the chatlist
+snapshot/deletion race because core v2.53 exposes no optional Chat loader or
+public existence query.
+
 ## 2026-07-18 — Account-scoped drafts and stale action guards
 
 The AppModel harness next reproduced filtered search tearing down the selected

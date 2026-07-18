@@ -199,9 +199,11 @@ hi alice, got a minute?\r\n";
     assert_eq!(row.fresh_count, 1);
 
     app.mark_noticed(id, chat_id).await.expect("mark_noticed");
-    wait_for_event(&collector.events, "ChatChanged after mark_noticed", |acc, ev| {
-        acc == id && *ev == VmEvent::ChatChanged { chat_id }
-    })
+    wait_for_event(
+        &collector.events,
+        "ChatChanged after mark_noticed",
+        |acc, ev| acc == id && *ev == VmEvent::ChatChanged { chat_id },
+    )
     .await;
     let row = app
         .chat_list(id)
@@ -224,7 +226,8 @@ struct GatedCollector {
 impl EventListener for GatedCollector {
     fn on_event(&self, account_id: u32, event: VmEvent) -> Result<(), VmError> {
         if let Some(rx) = self.gate.lock().unwrap().take() {
-            self.blocked.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.blocked
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             let _ = rx.recv_timeout(Duration::from_secs(30));
         }
         self.events.lock().unwrap().push((account_id, event));
@@ -297,9 +300,11 @@ async fn demo_account_seeds_conversations() {
     assert!(info.addr.is_some());
 
     // demo seeding produced incoming messages
-    wait_for_event(&collector.events, "IncomingMessage from demo seed", |acc, ev| {
-        acc == id && matches!(ev, VmEvent::IncomingMessage { .. })
-    })
+    wait_for_event(
+        &collector.events,
+        "IncomingMessage from demo seed",
+        |acc, ev| acc == id && matches!(ev, VmEvent::IncomingMessage { .. }),
+    )
     .await;
 
     let chats = app.chat_list(id).await.unwrap();
@@ -468,9 +473,11 @@ async fn second_device_join_transfers_account_offline() {
     assert!(msgs.len() >= 3, "messages not transferred: {msgs:?}");
 
     // Joiner saw transfer progress up to 1000 (done).
-    wait_for_event(&collector.events, "ImexProgress 1000 on joiner", |id, ev| {
-        id == joiner_id && *ev == VmEvent::ImexProgress { permille: 1000 }
-    })
+    wait_for_event(
+        &collector.events,
+        "ImexProgress 1000 on joiner",
+        |id, ev| id == joiner_id && *ev == VmEvent::ImexProgress { permille: 1000 },
+    )
     .await;
 }
 
@@ -479,8 +486,8 @@ async fn second_device_join_transfers_account_offline() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a running local chatmail relay; set DCVM_TEST_RELAY"]
 async fn instant_account_against_local_relay() {
-    let relay = std::env::var("DCVM_TEST_RELAY")
-        .expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
+    let relay =
+        std::env::var("DCVM_TEST_RELAY").expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
     let (app, collector, _dir) = make_app().await;
     let id = app.add_account().await.unwrap();
 
@@ -489,8 +496,7 @@ async fn instant_account_against_local_relay() {
         .expect("create_instant_account against local relay");
 
     wait_for_event(&collector.events, "ConfigureProgress 1000", |aid, ev| {
-        aid == id
-            && matches!(ev, VmEvent::ConfigureProgress { permille: 1000, .. })
+        aid == id && matches!(ev, VmEvent::ConfigureProgress { permille: 1000, .. })
     })
     .await;
 
@@ -516,8 +522,8 @@ async fn message_roundtrip_on_local_relay() {
     use dcvm::deltachat::securejoin::{get_securejoin_qr, join_securejoin};
     use dcvm::deltachat::EventType as CoreEventType;
 
-    let relay = std::env::var("DCVM_TEST_RELAY")
-        .expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
+    let relay =
+        std::env::var("DCVM_TEST_RELAY").expect("set DCVM_TEST_RELAY, e.g. DCACCOUNT:_cm.example");
     let (app, _collector, _dir) = make_app().await;
 
     let alice = app.add_account().await.unwrap();
@@ -554,7 +560,7 @@ async fn message_roundtrip_on_local_relay() {
     let invite = get_securejoin_qr(&bob_ctx, None).await.expect("invite qr");
     // Subscribe BEFORE joining: the receiver only sees events emitted after
     // its creation, and a fast handshake can finish before join returns.
-    let mut raw_events = alice_ctx.get_event_emitter();
+    let raw_events = alice_ctx.get_event_emitter();
     let chat = join_securejoin(&alice_ctx, &invite)
         .await
         .expect("join_securejoin")
@@ -691,7 +697,9 @@ Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
     .unwrap();
     let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let incoming = msgs.iter().find(|m| !m.is_outgoing && !m.is_info).unwrap();
-    app.send_reaction(id, incoming.id, "👍".into()).await.unwrap();
+    app.send_reaction(id, incoming.id, "👍".into())
+        .await
+        .unwrap();
     let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let reacted = msgs.iter().find(|m| m.id == incoming.id).unwrap();
     assert_eq!(
@@ -704,7 +712,12 @@ Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
     );
     app.send_reaction(id, incoming.id, "".into()).await.unwrap();
     let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
-    assert!(msgs.iter().find(|m| m.id == incoming.id).unwrap().reactions.is_empty());
+    assert!(msgs
+        .iter()
+        .find(|m| m.id == incoming.id)
+        .unwrap()
+        .reactions
+        .is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -721,11 +734,18 @@ async fn delete_forward_and_mark_seen() {
         .await
         .unwrap();
 
-    let msg_id = app.send_text(id, chat_a, "forward me".into()).await.unwrap();
-    app.forward_messages(id, vec![msg_id], chat_b).await.unwrap();
+    let msg_id = app
+        .send_text(id, chat_a, "forward me".into())
+        .await
+        .unwrap();
+    app.forward_messages(id, vec![msg_id], chat_b)
+        .await
+        .unwrap();
     let forwarded = app.messages(id, chat_b, 0, None).await.unwrap();
     assert!(
-        forwarded.iter().any(|m| m.text == "forward me" && m.is_outgoing),
+        forwarded
+            .iter()
+            .any(|m| m.text == "forward me" && m.is_outgoing),
         "not forwarded: {forwarded:?}"
     );
 
@@ -787,18 +807,24 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
         .find(|c| c.is_contact_request)
         .expect("request chat");
     app.accept_chat(id, request.id).await.unwrap();
+    assert!(
+        !app.chat_list(id)
+            .await
+            .unwrap()
+            .iter()
+            .find(|c| c.id == request.id)
+            .unwrap()
+            .is_contact_request
+    );
+
+    // Block it -> gone from the list.
+    app.block_chat(id, request.id).await.unwrap();
     assert!(!app
         .chat_list(id)
         .await
         .unwrap()
         .iter()
-        .find(|c| c.id == request.id)
-        .unwrap()
-        .is_contact_request);
-
-    // Block it -> gone from the list.
-    app.block_chat(id, request.id).await.unwrap();
-    assert!(!app.chat_list(id).await.unwrap().iter().any(|c| c.id == request.id));
+        .any(|c| c.id == request.id));
 
     // Archive / unarchive.
     let bob_chat = app
@@ -807,24 +833,35 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
         .unwrap();
     app.send_text(id, bob_chat, "hello".into()).await.unwrap();
     app.set_chat_archived(id, bob_chat, true).await.unwrap();
-    assert!(!app.chat_list(id).await.unwrap().iter().any(|c| c.id == bob_chat));
+    assert!(!app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .iter()
+        .any(|c| c.id == bob_chat));
     let archived = app.archived_chats(id).await.unwrap();
     assert!(archived.iter().any(|c| c.id == bob_chat && c.is_archived));
     app.set_chat_archived(id, bob_chat, false).await.unwrap();
-    assert!(app.chat_list(id).await.unwrap().iter().any(|c| c.id == bob_chat));
+    assert!(app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .iter()
+        .any(|c| c.id == bob_chat));
 
     // Search.
     let hits = app.search_chats(id, "Bob".into()).await.unwrap();
-    assert!(hits.iter().any(|c| c.id == bob_chat), "chat search: {hits:?}");
+    assert!(
+        hits.iter().any(|c| c.id == bob_chat),
+        "chat search: {hits:?}"
+    );
     let msg_hits = app.search_messages(id, "hello".into()).await.unwrap();
     assert!(msg_hits.iter().any(|m| m.chat_id == bob_chat));
 
     // Encrypted groups accept key-contacts only. Address contacts must not be
     // offered by the member picker, and rejecting one must not leave an
     // orphan group behind.
-    use dcvm::deltachat::contact::{
-        import_vcard, make_vcard, Contact, ContactId, Origin,
-    };
+    use dcvm::deltachat::contact::{import_vcard, make_vcard, Contact, ContactId, Origin};
 
     let ctx = app.context(id).await.unwrap();
     let bob_id = Contact::lookup_id_by_addr(&ctx, "bob@example.net", Origin::ManuallyCreated)
@@ -868,12 +905,10 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
         .create_group(id, "Test Group".into(), vec![key_id.to_u32()])
         .await
         .unwrap();
-    let members = dcvm::deltachat::chat::get_chat_contacts(
-        &ctx,
-        dcvm::deltachat::chat::ChatId::new(group),
-    )
-    .await
-    .unwrap();
+    let members =
+        dcvm::deltachat::chat::get_chat_contacts(&ctx, dcvm::deltachat::chat::ChatId::new(group))
+            .await
+            .unwrap();
     assert!(members.contains(&key_id));
     let row = app
         .chat_list(id)
@@ -887,7 +922,13 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
 
     // Profile settings reflected in accounts().
     app.set_display_name(id, "Alice A.".into()).await.unwrap();
-    let info = app.accounts().await.unwrap().into_iter().find(|a| a.id == id).unwrap();
+    let info = app
+        .accounts()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|a| a.id == id)
+        .unwrap();
     assert_eq!(info.display_name.as_deref(), Some("Alice A."));
 
     // Connectivity: offline account is on the DC scale (no IO -> not connected).
@@ -941,6 +982,44 @@ async fn message_pagination() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn message_search_keeps_newest_hundred_in_display_order() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    for index in 0..105 {
+        app.send_text(id, chat, format!("search-window {index:03}"))
+            .await
+            .unwrap();
+    }
+
+    let hits = app
+        .search_messages(id, "search-window".into())
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), 100);
+    assert_eq!(hits.first().unwrap().text, "search-window 005");
+    assert_eq!(hits.last().unwrap().text, "search-window 104");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn huge_timed_mute_does_not_panic() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+
+    app.set_chat_muted(id, chat, i64::MAX).await.unwrap();
+    assert!(app.chat_by_id(id, chat).await.unwrap().unwrap().is_muted);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn mute_round_trip() {
     let (app, _collector, _dir) = make_app().await;
     let id = app.add_account().await.unwrap();
@@ -991,7 +1070,9 @@ async fn demo_conversation_renders_in_order() {
         directions,
         vec![false, true, false, true, false],
         "conversation order broken: {:?}",
-        msgs.iter().map(|m| (&m.text, m.is_outgoing)).collect::<Vec<_>>()
+        msgs.iter()
+            .map(|m| (&m.text, m.is_outgoing))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1028,7 +1109,9 @@ async fn chat_by_id_returns_fresh_row() {
         .create_chat(id, "bob@example.net".into(), "Bob".into())
         .await
         .unwrap();
-    app.send_text(id, chat, "latest words".into()).await.unwrap();
+    app.send_text(id, chat, "latest words".into())
+        .await
+        .unwrap();
 
     let row = app
         .chat_by_id(id, chat)
@@ -1055,7 +1138,11 @@ async fn demo_account_seeds_rich_showcase() {
     );
     // The flagship group sorts newest so the autoselect hook opens it.
     let first = &chats[0];
-    assert!(first.is_group, "newest chat should be the group, got {:?}", first.name);
+    assert!(
+        first.is_group,
+        "newest chat should be the group, got {:?}",
+        first.name
+    );
     assert_eq!(first.name, "Weekend Hikers");
     let msgs = app.messages(id, first.id, 0, None).await.unwrap();
     let senders: std::collections::HashSet<&str> = msgs
@@ -1063,9 +1150,15 @@ async fn demo_account_seeds_rich_showcase() {
         .filter(|m| !m.is_outgoing && !m.is_info)
         .map(|m| m.sender_name.as_str())
         .collect();
-    assert!(senders.len() >= 3, "group needs >=3 distinct senders, got {senders:?}");
+    assert!(
+        senders.len() >= 3,
+        "group needs >=3 distinct senders, got {senders:?}"
+    );
     // A reaction chip somewhere in the showcase (Elena's chat).
-    let elena = chats.iter().find(|c| c.name == "Elena").expect("Elena chat");
+    let elena = chats
+        .iter()
+        .find(|c| c.name == "Elena")
+        .expect("Elena chat");
     let elena_msgs = app.messages(id, elena.id, 0, None).await.unwrap();
     assert!(
         elena_msgs.iter().any(|m| !m.reactions.is_empty()),
@@ -1073,7 +1166,10 @@ async fn demo_account_seeds_rich_showcase() {
     );
     // Non-ASCII bodies must survive: without a charset header the em dash
     // decoded as mojibake ("â€\u{9d}"-style) in the UI.
-    let priya = chats.iter().find(|c| c.name == "Priya").expect("Priya chat");
+    let priya = chats
+        .iter()
+        .find(|c| c.name == "Priya")
+        .expect("Priya chat");
     let priya_msgs = app.messages(id, priya.id, 0, None).await.unwrap();
     assert!(
         priya_msgs.iter().any(|m| m.text.contains('\u{2014}')),

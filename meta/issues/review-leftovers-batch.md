@@ -54,3 +54,11 @@ single feature issue. Each is a few lines; batch them.
   and `docs/specs/core-api.md` still describes core 2.44/2.49 rather than the
   pinned 2.53 API. CI/release items are tracked in
   `build-ci-reproducibility.md`.
+
+## Progress (2026-07-18)
+
+- Applied rustfmt across dcvm, removed the test warning, and deliberately
+  allowed the eight-argument demo fixture builder. `cargo fmt --check` and
+  strict Clippy are green.
+- Account/chat-keyed drafts now survive send failure and edits made during a
+  pending send; unchanged drafts clear only after success.

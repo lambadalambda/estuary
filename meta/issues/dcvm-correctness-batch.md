@@ -49,3 +49,17 @@ implements newest-last.
   `search_chats("")` errors instead of returning empty; `chat_by_id` preview
   ignores drafts; `ConfigSynced` event unmapped; background `EventType::Error`
   and `ErrorSelfNotInGroup` are dropped with no diagnostic path.
+
+## Progress (2026-07-18)
+
+- TDD now pins the newest 100 search hits in oldest-to-newest display order,
+  conservative attachment classification, and panic-free huge timed mutes.
+- Event overflow snapshots account IDs before foreign callbacks, so the
+  accounts read lock is not held across FFI. The overflow condition is already
+  covered, but reentrant lock ownership is not directly observable in the
+  offline test.
+- Rust formatting and strict Clippy are green as part of the adjacent
+  housekeeping batch. Rust: 30 passed, 2 relay tests ignored.
+- Still open: core v2.53 provides no optional Chat loader or public existence
+  query, so the chatlist snapshot/deletion race needs an upstream API or a
+  deliberate error-classification boundary before it can be fixed safely.

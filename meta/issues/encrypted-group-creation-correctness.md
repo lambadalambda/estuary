@@ -44,3 +44,16 @@ member failure leaves an empty or partially populated group behind.
   unobservable. If prevalidation cannot eliminate all practical member-add
   failures, true cross-device atomicity requires an upstream core API that
   accepts validated members before emitting/syncing creation.
+
+## Progress (2026-07-18)
+
+- Red test proved the picker returned address contacts and a rejected member
+  left an orphan group.
+- `contacts()` now returns key-contacts; all members are validated before core
+  creates/syncs the group; unexpected add failures delete the local group.
+- Offline integration covers address exclusion, pre-creation rejection with
+  no orphan, key-contact discovery via vCard, successful non-empty creation,
+  and membership. Full Rust and Swift suites are green.
+- Still open: core exposes no fault-injection seam between `create_group` and
+  `add_contact_to_chat`, so the unexpected post-creation rollback branch is
+  not directly exercised. True cross-device atomicity also needs a core API.

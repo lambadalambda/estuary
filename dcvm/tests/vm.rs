@@ -819,23 +819,62 @@ Date: Wed, 15 Jul 2026 12:00:00 +0000\r\n\r\nwe met at the conf\r\n",
     let msg_hits = app.search_messages(id, "hello".into()).await.unwrap();
     assert!(msg_hits.iter().any(|m| m.chat_id == bob_chat));
 
-    // Contacts + group creation. v2.49 groups are encrypted: only
-    // key-contacts (established via Autocrypt/securejoin) can be members —
-    // address contacts are rejected with a clear error.
-    let contacts = app.contacts(id).await.unwrap();
-    let bob = contacts.iter().find(|c| c.addr == "bob@example.net").unwrap();
+    // Encrypted groups accept key-contacts only. Address contacts must not be
+    // offered by the member picker, and rejecting one must not leave an
+    // orphan group behind.
+    use dcvm::deltachat::contact::{
+        import_vcard, make_vcard, Contact, ContactId, Origin,
+    };
+
+    let ctx = app.context(id).await.unwrap();
+    let bob_id = Contact::lookup_id_by_addr(&ctx, "bob@example.net", Origin::ManuallyCreated)
+        .await
+        .unwrap()
+        .expect("Bob address contact");
+    assert!(!app
+        .contacts(id)
+        .await
+        .unwrap()
+        .iter()
+        .any(|c| c.id == bob_id.to_u32()));
     let err = app
-        .create_group(id, "Test Group".into(), vec![bob.id])
+        .create_group(id, "Rejected Group".into(), vec![bob_id.to_u32()])
         .await
         .unwrap_err();
     assert!(
         err.to_string().contains("key-contacts"),
         "unexpected error: {err}"
     );
+    assert!(
+        !app.chat_list(id)
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.name == "Rejected Group"),
+        "failed group creation left an orphan"
+    );
+
+    // A vCard carrying another account's public key creates an eligible
+    // key-contact without network IO.
+    let key_account = app.add_account().await.unwrap();
+    pseudo_configure(&app, key_account, "keybob@example.net").await;
+    let key_ctx = app.context(key_account).await.unwrap();
+    let vcard = make_vcard(&key_ctx, &[ContactId::SELF]).await.unwrap();
+    let key_id = import_vcard(&ctx, &vcard).await.unwrap()[0];
+    let contacts = app.contacts(id).await.unwrap();
+    assert!(contacts.iter().any(|c| c.id == key_id.to_u32()));
+
     let group = app
-        .create_group(id, "Test Group".into(), vec![])
+        .create_group(id, "Test Group".into(), vec![key_id.to_u32()])
         .await
         .unwrap();
+    let members = dcvm::deltachat::chat::get_chat_contacts(
+        &ctx,
+        dcvm::deltachat::chat::ChatId::new(group),
+    )
+    .await
+    .unwrap();
+    assert!(members.contains(&key_id));
     let row = app
         .chat_list(id)
         .await

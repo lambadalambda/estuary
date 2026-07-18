@@ -1,5 +1,18 @@
 # DEVLOG
 
+## 2026-07-18 — Encrypted group discovery and safe creation
+
+TDD exposed the group mismatch directly: dcvm listed address contacts while
+core encrypted groups accept only key-contacts, and the existing create-then-
+add loop left a committed orphan after rejection. The member API now lists
+key-contacts, validates every member before core creates/syncs anything, and
+deletes the new local chat if an unexpected add still fails. The offline test
+imports a second account's keyed vCard, creates a non-empty encrypted group,
+and pins both eligible discovery and no-orphan rejection. Rust: 28 passed, 2
+relay tests ignored; Swift: 36 passed. Core has no fault-injection seam after
+group creation, so that defensive rollback branch and true cross-device
+atomicity remain explicitly unverified; the issue stays open.
+
 ## 2026-07-18 — Full-repo review findings filed
 
 Delegated four parallel review passes (dcvm, Swift model/services, SwiftUI

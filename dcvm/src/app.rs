@@ -10,7 +10,7 @@ use deltachat::chat::{
 };
 use deltachat::chatlist::Chatlist;
 use deltachat::config::Config;
-use deltachat::constants::{Chattype, DC_GCL_ADDRESS, DC_GCL_ARCHIVED_ONLY};
+use deltachat::constants::{Chattype, DC_GCL_ARCHIVED_ONLY};
 use deltachat::contact::{Contact, ContactId};
 use deltachat::context::Context;
 use deltachat::login_param::{EnteredImapLoginParam, EnteredLoginParam};
@@ -703,14 +703,12 @@ impl DcApp {
         .await
     }
 
-    /// Address-book contacts (for group creation / new chats).
+    /// Key-contacts eligible for encrypted group creation.
     pub async fn contacts(&self, account_id: u32) -> Result<Vec<ContactItem>, VmError> {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
-            // DC_GCL_ADDRESS: include e-mail (address) contacts, not just
-            // key-contacts — otherwise contacts created by address are hidden.
-            let ids = Contact::get_all(&ctx, DC_GCL_ADDRESS, None).await?;
+            let ids = Contact::get_all(&ctx, 0, None).await?;
             let mut out = Vec::with_capacity(ids.len());
             for contact_id in ids {
                 let contact = Contact::get_by_id(&ctx, contact_id).await?;
@@ -738,9 +736,34 @@ impl DcApp {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
+            let member_ids: Vec<ContactId> = member_contact_ids
+                .into_iter()
+                .map(ContactId::new)
+                .collect();
+
+            // Core syncs group creation immediately, before members are added.
+            // Reject every predictable member error before creating anything.
+            for contact_id in &member_ids {
+                let contact = Contact::get_by_id(&ctx, *contact_id).await?;
+                if !contact.is_key_contact() {
+                    return Err(anyhow::anyhow!(
+                        "Only key-contacts can be added to encrypted chats"
+                    )
+                    .into());
+                }
+            }
+
             let chat_id = chat::create_group(&ctx, &name).await?;
-            for contact_id in member_contact_ids {
-                chat::add_contact_to_chat(&ctx, chat_id, ContactId::new(contact_id)).await?;
+            for contact_id in member_ids {
+                if let Err(add_error) = chat::add_contact_to_chat(&ctx, chat_id, contact_id).await {
+                    if let Err(cleanup_error) = chat_id.delete(&ctx).await {
+                        return Err(anyhow::anyhow!(
+                            "adding group member failed: {add_error:#}; cleanup failed: {cleanup_error:#}"
+                        )
+                        .into());
+                    }
+                    return Err(add_error.into());
+                }
             }
             Ok(chat_id.to_u32())
         })

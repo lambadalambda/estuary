@@ -99,6 +99,8 @@ final class AppModel {
 
     let service: any ChatService
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    private var searchGeneration: UInt64 = 0
 
     nonisolated init(service: any ChatService) {
         self.service = service
@@ -418,10 +420,12 @@ final class AppModel {
 
     // MARK: Main-screen actions
 
-    func reloadChats() async {
+    func reloadChats(searchGeneration expectedSearchGeneration: UInt64? = nil) async {
         guard let accountId = selectedAccountId else { return }
         do {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            let searchSnapshot = expectedSearchGeneration
+                ?? (!query.isEmpty ? searchGeneration : nil)
             let archiveSnapshot = showingArchive
             let list: [ChatItem]
             if !query.isEmpty {
@@ -435,7 +439,8 @@ final class AppModel {
             // changed the filter — never let stale results clobber the view.
             guard accountId == selectedAccountId,
                   query == searchQuery.trimmingCharacters(in: .whitespaces),
-                  archiveSnapshot == showingArchive
+                  archiveSnapshot == showingArchive,
+                  searchSnapshot == nil || searchSnapshot == searchGeneration
             else { return }
 
             let selectedSnapshot = selectedChatId
@@ -455,7 +460,8 @@ final class AppModel {
                 guard accountId == selectedAccountId,
                       selectedSnapshot == selectedChatId,
                       query == searchQuery.trimmingCharacters(in: .whitespaces),
-                      archiveSnapshot == showingArchive
+                      archiveSnapshot == showingArchive,
+                      searchSnapshot == nil || searchSnapshot == searchGeneration
                 else { return }
             }
 
@@ -646,7 +652,22 @@ final class AppModel {
     }
 
     func searchChanged() async {
-        await reloadChats()
+        searchGeneration &+= 1
+        let generation = searchGeneration
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.reloadChats(searchGeneration: generation)
+        }
+    }
+
+    /// Executes the latest debounced search immediately. Also used when a
+    /// caller needs deterministic completion rather than wall-clock waiting.
+    func flushPendingSearch() async {
+        searchTask?.cancel()
+        searchTask = nil
+        await reloadChats(searchGeneration: searchGeneration)
     }
 
     func toggleArchive() async {
@@ -849,6 +870,9 @@ final class AppModel {
     }
 
     private func resetAccountScopedState() {
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration &+= 1
         selectedChatId = nil
         selectedChatCache = nil
         replyTo = nil

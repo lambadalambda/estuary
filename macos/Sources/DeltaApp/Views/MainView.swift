@@ -250,7 +250,7 @@ struct ChatAvatarView: View {
     var size: CGFloat = 36
 
     var body: some View {
-        if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
+        if let avatarPath, let image = ImageCache.load(avatarPath) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

@@ -150,6 +150,7 @@ import Testing
 
         model.searchQuery = "no match"
         await model.searchChanged()
+        await model.flushPendingSearch()
 
         #expect(model.chats.isEmpty)
         #expect(model.selectedChat?.id == 10)
@@ -166,10 +167,55 @@ import Testing
 
         model.searchQuery = "no match"
         await model.searchChanged()
+        await model.flushPendingSearch()
         await service.setChat(testChat(name: "Renamed"), accountId: 1)
         await model.searchChanged()
+        await model.flushPendingSearch()
 
         #expect(model.selectedChat?.name == "Renamed")
+    }
+
+    @Test func sidebarSearchDebouncesRapidEdits() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        for query in ["n", "no", "none"] {
+            model.searchQuery = query
+            await model.searchChanged()
+        }
+        await model.flushPendingSearch()
+
+        #expect(await service.searchCallCount() == 1)
+    }
+
+    @Test func canceledSameQuerySearchCannotOverwriteNewestResults() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        model.searchQuery = "same"
+        await model.searchChanged()
+        await service.enqueueSearch(.suspended("old-same"))
+        let oldSearch = Task { await model.reloadChats() }
+        try await service.waitUntilSearchSuspended("old-same")
+
+        model.searchQuery = "different"
+        await model.searchChanged()
+        model.searchQuery = "same"
+        await model.searchChanged()
+        await service.enqueueSearch(.suspended("new-same"))
+        let newSearch = Task { await model.flushPendingSearch() }
+        try await service.waitUntilSearchSuspended("new-same")
+
+        await service.resumeSearch("new-same", with: [testChat(name: "Newest")])
+        await newSearch.value
+        await service.resumeSearch("old-same", with: [testChat(name: "Stale")])
+        await oldSearch.value
+
+        #expect(model.chats.map(\.name) == ["Newest"])
     }
 
     @Test func rapidAccountSwitchesKeepLatestIntentSelected() async throws {
@@ -434,6 +480,9 @@ private actor ScriptedChatService: ChatService {
     private var sendMessageCalls = 0
     private var blockChatPlans: [String] = []
     private var blockChatWaiters: [String: CheckedContinuation<Void, any Error>] = [:]
+    private var searchCalls = 0
+    private var searchPlans: [ChatListPlan] = []
+    private var searchWaiters: [String: CheckedContinuation<[ChatItem], any Error>] = [:]
 
     func setMessages(_ messages: [MessageItem]) { currentMessages = messages }
     func setChat(_ chat: ChatItem, accountId: UInt32) {
@@ -445,6 +494,8 @@ private actor ScriptedChatService: ChatService {
     func enqueueSendMessage(_ label: String) { sendMessagePlans.append(label) }
     func enqueueBlockChat(_ label: String) { blockChatPlans.append(label) }
     func sendMessageCallCount() -> Int { sendMessageCalls }
+    func searchCallCount() -> Int { searchCalls }
+    func enqueueSearch(_ plan: ChatListPlan) { searchPlans.append(plan) }
 
     func addSwitchingAccounts() {
         accountItems.append(AccountInfo(
@@ -485,6 +536,10 @@ private actor ScriptedChatService: ChatService {
         try await waitFor(label) { blockChatWaiters[$0] != nil }
     }
 
+    func waitUntilSearchSuspended(_ label: String) async throws {
+        try await waitFor(label) { searchWaiters[$0] != nil }
+    }
+
     func resumeMessages(_ label: String, with messages: [MessageItem]) {
         messagesWaiters.removeValue(forKey: label)?.resume(returning: messages)
     }
@@ -518,6 +573,10 @@ private actor ScriptedChatService: ChatService {
 
     func resumeBlockChat(_ label: String) {
         blockChatWaiters.removeValue(forKey: label)?.resume(returning: ())
+    }
+
+    func resumeSearch(_ label: String, with chats: [ChatItem]) {
+        searchWaiters.removeValue(forKey: label)?.resume(returning: chats)
     }
 
     func accounts() -> [AccountInfo] { accountItems }
@@ -621,7 +680,17 @@ private actor ScriptedChatService: ChatService {
     }
     func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool) throws { throw unused() }
     func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64) throws { throw unused() }
-    func searchChats(accountId: UInt32, query: String) -> [ChatItem] { [] }
+    func searchChats(accountId: UInt32, query: String) async throws -> [ChatItem] {
+        searchCalls += 1
+        guard !searchPlans.isEmpty else { return [] }
+        switch searchPlans.removeFirst() {
+        case .immediate(let chats): return chats
+        case .suspended(let label):
+            return try await withCheckedThrowingContinuation {
+                searchWaiters[label] = $0
+            }
+        }
+    }
     func searchMessages(accountId: UInt32, query: String) -> [MessageItem] { [] }
     func contacts(accountId: UInt32) -> [ContactItem] { [] }
     func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32]) throws -> UInt32 { throw unused() }

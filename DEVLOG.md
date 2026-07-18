@@ -1,5 +1,17 @@
 # DEVLOG
 
+## 2026-07-18 — Three cheap rendering wins
+
+A deterministic service-call test first showed three rapid sidebar edits
+issuing three searches; the model now cancels and replaces a 250 ms debounce
+task, producing one query. A search generation also rejects stale in-flight
+results, including identical-text `A→B→A`; continuation gates avoid timing
+sleeps in tests. Link helpers share one immutable NSDataDetector
+instead of constructing it per bubble/render, and sidebar avatars now use the
+existing decoded image cache. Swift: 56 passed. The rendering issue stays open
+for composer/message-list invalidation isolation and memoized entry assembly,
+which need body-count or Instruments verification.
+
 ## 2026-07-18 — SQL chat preview + page sender cache
 
 TDD pinned `chat_by_id` draft semantics, then replaced its all-message Rust ID

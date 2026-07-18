@@ -1,5 +1,11 @@
 import SwiftUI
 
+private enum SharedLinkDetector {
+    // NSDataDetector is immutable and documented safe to use from multiple threads.
+    nonisolated(unsafe) static let value = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+}
+
 // Pure helpers — kept free-standing so they are unit-testable once a test
 // target is allowed in Package.swift.
 
@@ -70,9 +76,7 @@ func dayMarkerLabel(_ epochSeconds: Int64, now: Date = Date()) -> String {
 /// accent bubbles, accent on incoming ones.
 func linkified(_ text: String, linkColor: Color) -> AttributedString {
     var attributed = AttributedString(text)
-    guard let detector = try? NSDataDetector(
-        types: NSTextCheckingResult.CheckingType.link.rawValue)
-    else { return attributed }
+    guard let detector = SharedLinkDetector.value else { return attributed }
     let matches = detector.matches(
         in: text, range: NSRange(text.startIndex..., in: text))
     for match in matches {
@@ -124,10 +128,10 @@ func nsLinkified(
     let attributed = NSMutableAttributedString(
         string: text,
         attributes: [.font: font, .foregroundColor: textColor])
-    guard let detector = try? NSDataDetector(
-        types: NSTextCheckingResult.CheckingType.link.rawValue)
-    else { return attributed }
-    for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+    guard let detector = SharedLinkDetector.value else { return attributed }
+    for match in detector.matches(
+        in: text, range: NSRange(text.startIndex..., in: text)
+    ) {
         guard let url = match.url else { continue }
         attributed.addAttributes([
             .link: url,
@@ -141,9 +145,7 @@ func nsLinkified(
 
 /// Whether the text contains at least one detectable URL.
 func containsLink(_ text: String) -> Bool {
-    guard let detector = try? NSDataDetector(
-        types: NSTextCheckingResult.CheckingType.link.rawValue)
-    else { return false }
+    guard let detector = SharedLinkDetector.value else { return false }
     return detector.firstMatch(
         in: text, range: NSRange(text.startIndex..., in: text)) != nil
 }

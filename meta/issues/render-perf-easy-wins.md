@@ -42,3 +42,14 @@ the model and closures.
 - `MessageBubbleView` cannot synthesize `Equatable` because it stores model and
   closures. Manual equality is useful only if callback/action identity is
   deliberately stable; do not ignore semantically changing closures.
+
+## Progress (2026-07-18)
+
+- One shared immutable `NSDataDetector` now serves all link helpers.
+- Sidebar avatars use the existing decoded image cache.
+- Sidebar search is debounced by 250 ms; explicit flush and suspended-service
+  tests prove a rapid three-character edit performs one query and an old
+  canceled `A→B→A` request cannot overwrite the newest identical query.
+- Swift: 56 passed.
+- Still open: isolate composer invalidation from the message subtree and
+  memoize entry assembly, with body-count/Instruments verification.

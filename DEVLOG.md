@@ -1,5 +1,32 @@
 # DEVLOG
 
+## 2026-07-18 — Full-repo review findings filed
+
+Delegated four parallel review passes (dcvm, Swift model/services, SwiftUI
+views, build/CI), then verified the headline findings by hand against the code
+and the pinned core checkout. Both suites green at review time (28 Rust tests
+passed, 2 relay tests ignored; 36 Swift passed). Findings filed as issues:
+dcvm-correctness-batch (search_messages
+returns the oldest 100 hits newest-first — wrong window AND wrong order vs
+its own doc + the mock; plus three one-line dcvm fixes),
+message-window-race-appmodel-tests (reload/loadOlder interleaving clobbers a
+grown window and wedges hasMoreMessages; AppModel has zero direct tests),
+render-perf-easy-wins (keystroke → full message-list re-render confirmed;
+static NSDataDetector; avatar ImageCache; search debounce),
+review-leftovers-batch (make test missing bindings dep — fresh-clone broken;
+Info.plist min 14.0 vs 15.0 build; window-wide read receipts; silent
+createChat; security-scoped URL lifetime). Also learned: the nightly core pin
+matches upstream v2.53.0 exactly; lockfile pins intact.
+
+A follow-up verification pass added five focused issues that did not fit those
+batches: encrypted-group member discovery + safe creation, cross-account and
+stale-result AppModel isolation, dcvm data-access performance/real pagination,
+notification delivery + event backpressure, and build/CI/release
+reproducibility. It also corrected the chat-deletion-race note: core v2.53 has
+no `Chat::load_from_db_optional`, so the eventual fix must distinguish a
+missing row without suppressing real database/decoding failures. Additional
+small findings were folded into the existing dcvm and review-leftovers batches.
+
 ## 2026-07-16 — Gap closing: media, reactions, chat management (issue: close-ui-gaps)
 
 Built in-session after repeated 529 API overloads killed both delegated build agents

@@ -41,3 +41,12 @@ mock exist precisely to enable them and are unused for it.
   cally or defer: timed mutes never expire (MockChatService.swift:395-397),
   searchChats returns insertion order instead of last-activity-DESC,
   addAccount doesn't auto-select.
+
+## Outcome (2026-07-18)
+
+A scripted actor-backed ChatService deterministically suspended reload and
+history requests. The regression test failed with the grown 100-message window
+replaced by 50 messages and `hasMoreMessages` false. A window generation now
+invalidates every in-flight reload/prepend, including failed requests, when
+another operation mutates or resets the window. Dedicated tests also pin
+reload and load-older behavior across chat switches. All 42 Swift tests pass.

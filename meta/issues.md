@@ -6,7 +6,6 @@
 - [ ] [Windows/Linux shell decision](issues/windows-linux-shell-decision.md)
 - [ ] [Native-feel polish batch](issues/native-feel-polish.md)
 - [ ] [dcvm correctness batch (search window/order + small fixes)](issues/dcvm-correctness-batch.md)
-- [ ] [Message-window mutation race + first AppModel tests](issues/message-window-race-appmodel-tests.md)
 - [ ] [Cheap rendering performance wins](issues/render-perf-easy-wins.md)
 - [ ] [Correctness + housekeeping leftovers from the 2026-07-18 review](issues/review-leftovers-batch.md)
 - [ ] [Encrypted group member discovery and safe creation](issues/encrypted-group-creation-correctness.md)

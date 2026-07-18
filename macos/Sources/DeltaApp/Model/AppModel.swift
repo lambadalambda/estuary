@@ -26,6 +26,9 @@ final class AppModel {
     private var historyExhausted = false
     /// Size of the loaded window; grows as the user scrolls into history.
     private var loadedLimit: UInt32 = AppModel.messagePageSize
+    /// Invalidates in-flight reload/prepend operations whenever the window
+    /// changes under them, including account and chat transitions.
+    private var messageWindowGeneration: UInt64 = 0
     // Eager layout renders the whole window (see ChatDetailView's VStack
     // note) — keep pages small; a viewport shows ~10 messages at most.
     static let messagePageSize: UInt32 = 50
@@ -162,6 +165,7 @@ final class AppModel {
 
     private func finishOnboarding(accountId: UInt32) async throws {
         try await service.selectAccount(id: accountId)
+        resetAccountScopedState()
         selectedAccountId = accountId
         try await service.startIo()
         accounts = try await service.accounts()
@@ -241,6 +245,7 @@ final class AppModel {
         loginError = nil
         do {
             let accountId = try await service.addDemoAccount()
+            resetAccountScopedState()
             selectedAccountId = accountId
             accounts = try await service.accounts()
             await reloadChats()
@@ -271,11 +276,8 @@ final class AppModel {
         guard id != selectedAccountId else { return }
         do {
             try await service.selectAccount(id: id)
+            resetAccountScopedState()
             selectedAccountId = id
-            selectedChatId = nil
-            messages = []
-            searchQuery = ""
-            showingArchive = false
             await reloadChats()
         } catch {
             actionError = error.localizedDescription
@@ -302,9 +304,7 @@ final class AppModel {
         do {
             try await service.removeAccount(id: id)
             accounts = try await service.accounts()
-            selectedChatId = nil
-            messages = []
-            chats = []
+            resetAccountScopedState()
             if let next = await service.selectedAccount(),
                accounts.contains(where: { $0.id == next && $0.isConfigured }) {
                 selectedAccountId = next
@@ -333,17 +333,17 @@ final class AppModel {
         guard let accountId = selectedAccountId else { return }
         do {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            let archiveSnapshot = showingArchive
             let list: [ChatItem]
             if !query.isEmpty {
                 list = try await service.searchChats(accountId: accountId, query: query)
-            } else if showingArchive {
+            } else if archiveSnapshot {
                 list = try await service.archivedChats(accountId: accountId)
             } else {
                 list = try await service.chatList(accountId: accountId)
             }
             // A slow fetch may resume after the user switched accounts or
             // changed the filter — never let stale results clobber the view.
-            let archiveSnapshot = showingArchive
             guard accountId == selectedAccountId,
                   query == searchQuery.trimmingCharacters(in: .whitespaces),
                   archiveSnapshot == showingArchive
@@ -355,7 +355,7 @@ final class AppModel {
             if query.isEmpty, let selected = selectedChatId,
                !chats.contains(where: { $0.id == selected }) {
                 selectedChatId = nil
-                messages = []
+                resetMessageWindow()
             }
             if !showingArchive, query.isEmpty {
                 updateDockBadge()
@@ -372,20 +372,22 @@ final class AppModel {
 
     func reloadMessages() async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else {
-            messages = []
+            resetMessageWindow()
             return
         }
+        let generation = messageWindowGeneration
+        let requestedLimit = loadedLimit
         let previousOldest = messages.first?.id
         do {
             // Refresh the whole loaded window so state/reaction changes on
             // already-visible history are picked up.
             var page = try await service.messages(
                 accountId: accountId, chatId: chatId,
-                limit: loadedLimit, beforeMsgId: nil)
+                limit: requestedLimit, beforeMsgId: nil)
             // New messages slide the newest-N window; grow it so history the
             // user has scrolled to doesn't fall off the top mid-read. The
             // shared loadedLimit is only written after the selection guard.
-            var grownLimit = loadedLimit
+            var grownLimit = requestedLimit
             if windowNeedsGrowth(
                 previousOldest: previousOldest, page: page,
                 viewIsAtBottom: viewIsAtBottom) {
@@ -396,7 +398,9 @@ final class AppModel {
             }
             // Selection may have moved while we awaited — a slow fetch for
             // chat A must never render inside chat B.
-            guard accountId == selectedAccountId, chatId == selectedChatId else { return }
+            guard accountId == selectedAccountId, chatId == selectedChatId,
+                  generation == messageWindowGeneration
+            else { return }
             if grownLimit != loadedLimit {
                 loadedLimit = grownLimit
                 // The window moved under us (new msgs or a deletion) — any
@@ -405,13 +409,15 @@ final class AppModel {
             }
             messages = page
             hasMoreMessages = !historyExhausted && page.count >= Int(loadedLimit)
+            messageWindowGeneration &+= 1
             // Read receipts only for something the user can actually see.
             if NSApplication.shared.isActive {
                 await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
             }
         } catch {
-            if accountId == selectedAccountId, chatId == selectedChatId {
-                messages = []
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               generation == messageWindowGeneration {
+                resetMessageWindow()
             }
         }
     }
@@ -434,6 +440,7 @@ final class AppModel {
         guard let accountId = selectedAccountId, let chatId = selectedChatId,
               hasMoreMessages, let oldest = messages.first
         else { return .nothing }
+        let generation = messageWindowGeneration
         do {
             let older = try await service.messages(
                 accountId: accountId, chatId: chatId,
@@ -441,7 +448,8 @@ final class AppModel {
             // Stale-await guard: the user may have switched chats while the
             // page was in flight; never splice A's history into B.
             guard accountId == selectedAccountId, chatId == selectedChatId,
-                  messages.first?.id == oldest.id
+                  messages.first?.id == oldest.id,
+                  generation == messageWindowGeneration
             else { return .nothing }
             guard !older.isEmpty else {
                 historyExhausted = true
@@ -451,6 +459,7 @@ final class AppModel {
             messages.insert(contentsOf: older, at: 0)
             loadedLimit += UInt32(older.count)
             hasMoreMessages = older.count >= Int(Self.messagePageSize)
+            messageWindowGeneration &+= 1
             let outcome = Self.historyLoadOutcome(
                 previousOldest: oldest.id, viewIsAtBottom: viewIsAtBottom)
             scrollDebug(
@@ -670,18 +679,32 @@ final class AppModel {
     /// Called when the sidebar selection changes.
     func chatSelectionChanged() async {
         replyTo = nil
-        loadedLimit = Self.messagePageSize
-        hasMoreMessages = false
-        historyExhausted = false
-        viewIsAtBottom = true
         // Clear immediately so the stale-window growth check in
         // reloadMessages never compares against the previous chat.
-        messages = []
+        resetMessageWindow()
         await reloadMessages()
         scrollDebug(
             "open chat=\(selectedChatId.map(String.init) ?? "-") "
                 + "msgs=\(messages.count) hasMore=\(hasMoreMessages)")
         await markSelectedChatNoticed()
+    }
+
+    private func resetMessageWindow() {
+        messageWindowGeneration &+= 1
+        messages = []
+        loadedLimit = Self.messagePageSize
+        hasMoreMessages = false
+        historyExhausted = false
+        viewIsAtBottom = true
+    }
+
+    private func resetAccountScopedState() {
+        selectedChatId = nil
+        replyTo = nil
+        chats = []
+        searchQuery = ""
+        showingArchive = false
+        resetMessageWindow()
     }
 
     private func markSelectedChatNoticed() async {

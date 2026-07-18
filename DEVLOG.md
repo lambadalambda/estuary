@@ -1,5 +1,20 @@
 # DEVLOG
 
+## 2026-07-18 — AppModel tests + message-window serialization
+
+The first direct AppModel suite uses a scripted actor service to stop requests
+at exact suspension points. Red reproduced all three reviewed failures:
+loadOlder followed by reload collapsed 100 messages back to 50 and disabled
+history, a stale normal-list response overwrote Archive, and a demo account
+with the same numeric chat id retained the previous profile's messages. Green:
+message-window generations serialize reload/prepend mutations, archive mode is
+snapshotted before fetch, and account transitions share a full scoped reset.
+Additional tests pin reload/loadOlder chat-switch guards and prove a stale
+failed reload cannot erase a newer prepend. Account removal now uses the same
+scoped reset. Swift: 42 passed.
+The message-window issue is archived; broader action/draft/progress isolation
+remains open in `appmodel-state-isolation.md`.
+
 ## 2026-07-18 — Encrypted group discovery and safe creation
 
 TDD exposed the group mismatch directly: dcvm listed address contacts while

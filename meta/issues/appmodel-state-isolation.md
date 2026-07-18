@@ -47,3 +47,18 @@ can expose one profile's stale messages under another profile's chat.
 - `MockChatService` currently allocates chat/message IDs globally, searches
   messages across accounts, and mutates some messages without ownership
   checks, masking the production failure mode.
+
+## Progress (2026-07-18)
+
+- Added the first direct AppModel test harness with controllable suspended
+  service calls.
+- Account onboarding/demo/switch transitions now share one account-scoped
+  reset; a collision test proves old messages and selection do not survive a
+  demo transition to an account with the same numeric chat id.
+- `reloadChats` snapshots archive mode before awaiting; a deterministic stale
+  normal-list test now passes.
+- Account removal now uses the same scoped reset as onboarding, demo, and
+  explicit switching.
+- Remaining requirements: account/chat-keyed drafts and selected-chat storage,
+  stale action completions, activity-aware noticed state, flow-scoped progress,
+  rapid account-switch ordering, and production mock ownership semantics.

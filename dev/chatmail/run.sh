@@ -33,7 +33,7 @@ case "${1:-up}" in
     echo "chatmail relay starting as $DOMAIN (image: $IMAGE)"
     echo "check:  curl -kis --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/new -X POST"
     echo "client: DCNATIVE_INSTANCE=DCACCOUNT:$DOMAIN"
-    echo "tests:  DCVM_TEST_RELAY=DCACCOUNT:$DOMAIN cargo test -- --ignored"
+    echo "tests:  DCVM_TEST_RELAY=DCACCOUNT:$DOMAIN cargo test --locked -- --ignored"
     ;;
   down)
     podman rm -f "$NAME"

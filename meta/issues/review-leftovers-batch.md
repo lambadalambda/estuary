@@ -62,3 +62,5 @@ single feature issue. Each is a few lines; batch them.
   strict Clippy are green.
 - Account/chat-keyed drafts now survive send failure and edits made during a
   pending send; unchanged drafts clear only after success.
+- `make test` now builds Rust and regenerates bindings before Swift; a full run
+  passed. The app plist minimum is 15.0, matching Package.swift and the binary.

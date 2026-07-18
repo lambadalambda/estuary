@@ -28,7 +28,7 @@ podman machine start          # macOS; once
 echo '127.0.0.1 _cm.example' | sudo tee -a /etc/hosts   # once
 ./dev/chatmail/run.sh up      # start relay (first pull is large)
 DCNATIVE_INSTANCE=DCACCOUNT:_cm.example make run        # app against local relay
-DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test -- --ignored  # opt-in network tests
+DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test --locked -- --ignored  # opt-in network tests
 ```
 
 ## Findings from running the tests against it

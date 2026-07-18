@@ -482,7 +482,7 @@ async fn second_device_join_transfers_account_offline() {
 }
 
 /// Opt-in network test against a local chatmail relay (dev/chatmail/run.sh).
-/// Run with: DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test -- --ignored
+/// Run with: DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test --locked -- --ignored
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a running local chatmail relay; set DCVM_TEST_RELAY"]
 async fn instant_account_against_local_relay() {

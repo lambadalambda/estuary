@@ -41,3 +41,10 @@ Developer identity — user decision), dock unread badge, proper
 CFBundleShortVersionString, and a numeric monotonic CFBundleVersion (the
 current git SHA does not match Apple's one-to-three-integer build-number
 format).
+
+Numeric `CFBundleVersion` now uses the git commit count and the short SHA is
+stored separately as `EstuaryGitCommit`. A built app reports minimum macOS 15
+and passes `codesign --verify --deep --strict`. Nightly fetches full history,
+but a history rewrite or old workflow rerun can still republish a lower count,
+so the monotonic-build criterion remains open alongside dock-wide unread count
+and signing/notarization.

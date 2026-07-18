@@ -24,6 +24,10 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          # CFBundleVersion is the reachable commit count, so a shallow clone
+          # would stamp every nightly as build 1.
+          fetch-depth: 0
 
       # Newest Xcode on the image: the Liquid Glass path needs the macOS 26
       # SDK; on older SDKs the code compile-guards down to bar material.
@@ -47,7 +51,7 @@ jobs:
           prefix-key: release
 
       - name: Rust tests
-        run: cd dcvm && cargo test --release
+        run: cd dcvm && cargo test --locked --release
 
       # `make app-release` covers cargo build --release -> uniffi bindings ->
       # swift build -c release -> .app assembly (icon, SPM resource bundle,

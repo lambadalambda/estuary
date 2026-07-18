@@ -35,6 +35,14 @@ func avatarInitial(for name: String) -> String {
     return String(first).uppercased()
 }
 
+func buildDescription(info: [String: Any]) -> String {
+    guard let version = info["CFBundleVersion"] as? String else {
+        return "dev (swift run)"
+    }
+    guard let commit = info["EstuaryGitCommit"] as? String else { return version }
+    return "\(version) (\(commit))"
+}
+
 /// Chat-list relative timestamp, following the desktop `formatRelativeTime`
 /// buckets: now / N min / N h (same day) / weekday (≤ 6 days) / "Jul 2"
 /// (same year) / "Jul 2, 2024" (older).

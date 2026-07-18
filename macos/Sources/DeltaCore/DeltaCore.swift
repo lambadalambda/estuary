@@ -644,7 +644,7 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func connectivity(accountId: UInt32) async throws  -> UInt32
     
     /**
-     * Address-book contacts (for group creation / new chats).
+     * Key-contacts eligible for encrypted group creation.
      */
     func contacts(accountId: UInt32) async throws  -> [ContactItem]
     
@@ -748,7 +748,8 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     
     /**
      * Mutes a chat: `duration_seconds` 0 = unmute, negative = forever,
-     * positive = until now + duration. Synced to other devices.
+     * positive = until now + duration, or forever if that timestamp cannot
+     * be represented. Synced to other devices.
      */
     func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64) async throws 
     
@@ -1038,7 +1039,7 @@ open func connectivity(accountId: UInt32)async throws  -> UInt32  {
 }
     
     /**
-     * Address-book contacts (for group creation / new chats).
+     * Key-contacts eligible for encrypted group creation.
      */
 open func contacts(accountId: UInt32)async throws  -> [ContactItem]  {
     return
@@ -1443,7 +1444,8 @@ open func setChatArchived(accountId: UInt32, chatId: UInt32, archived: Bool)asyn
     
     /**
      * Mutes a chat: `duration_seconds` 0 = unmute, negative = forever,
-     * positive = until now + duration. Synced to other devices.
+     * positive = until now + duration, or forever if that timestamp cannot
+     * be represented. Synced to other devices.
      */
 open func setChatMuted(accountId: UInt32, chatId: UInt32, durationSeconds: Int64)async throws   {
     return
@@ -3228,7 +3230,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_connectivity() != 55851) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_contacts() != 21778) {
+    if (uniffi_dcvm_checksum_method_dcapp_contacts() != 28775) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_create_chat() != 39980) {
@@ -3294,7 +3296,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_set_chat_archived() != 62327) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_set_chat_muted() != 62087) {
+    if (uniffi_dcvm_checksum_method_dcapp_set_chat_muted() != 10309) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_set_display_name() != 55875) {

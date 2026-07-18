@@ -43,3 +43,20 @@ replacement. Toolchain and relay inputs are also mutable.
 - Fresh-clone `make test` and the plist minimum-version mismatch remain in
   `review-leftovers-batch.md` because they are immediate local correctness
   fixes.
+
+## Progress (2026-07-18)
+
+- Cargo build/test/bindgen commands now use `--locked`; Rust 1.97 with rustfmt
+  and Clippy is declared in `rust-toolchain.toml`.
+- Pull-request CI runs `make check`, verifies regenerated bindings are clean,
+  and enforces Rust formatting/strict Clippy.
+- `make test` now depends on Rust build + binding generation, and a full run
+  passed 30 Rust tests (2 relay tests ignored) plus 56 Swift tests.
+- Release-profile `run` uses the profile-aware Swift flags/scratch directory.
+- Bundle build numbers are numeric git commit counts with the SHA stored in a
+  separate plist key; the assembled app advertises macOS 15 and passes strict
+  code-sign verification. Nightly checks out full history so the count is
+  accurate for normal `main` descendants; rewrite/rerun-safe monotonic
+  publication is still open.
+- Still open: immutable nightly publication, pinned action/Xcode/relay image
+  revisions, DMG/architecture/smoke checks, and branch-protection setup.

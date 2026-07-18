@@ -176,6 +176,19 @@ import SwiftUI
     }
 }
 
+@Suite struct BuildDescriptionTests {
+    @Test func includesVersionAndCommit() {
+        #expect(buildDescription(info: [
+            "CFBundleVersion": "128",
+            "EstuaryGitCommit": "8879ee9",
+        ]) == "128 (8879ee9)")
+    }
+
+    @Test func describesUnbundledDevelopmentBuild() {
+        #expect(buildDescription(info: [:]) == "dev (swift run)")
+    }
+}
+
 @Suite struct NSLinkifiedTests {
     @Test func linkRangeGetsLinkAndCursorAttributes() {
         let attributed = nsLinkified(

@@ -83,7 +83,7 @@ Environment switches: `DCNATIVE_MOCK=1` (pure-Swift mock service),
 
 `dev/chatmail/run.sh up` starts a real chatmail relay in podman (self-signed
 `_cm.example` underscore-domain mode). Opt-in network tests:
-`DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test -- --ignored`. See
+`DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test --locked -- --ignored`. See
 `dev/chatmail/README.md`.
 
 ## Development

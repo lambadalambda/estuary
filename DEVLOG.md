@@ -1,5 +1,21 @@
 # DEVLOG
 
+## 2026-07-18 — Reproducible local checks + PR CI
+
+The fresh-link failure reproduced earlier is fixed structurally: `make test`
+depends on locked Rust build and UniFFI generation before Swift. A full run
+passed 30 Rust tests (2 relay ignored) and 56 Swift tests. Regeneration exposed
+that exported Rust doc comments change UniFFI checksums, so the previously
+stale generated Swift binding is included. Cargo is locked throughout, Rust
+1.97/rustfmt/Clippy is declared, and PR CI runs `make check`, lints, and a clean
+binding diff. `make PROFILE=release run` and bindgen now stay entirely in the
+release profile. App assembly uses numeric commit-count `CFBundleVersion`,
+stores and displays the SHA separately, advertises macOS 15, and passes strict
+code-sign verification. Full-history nightly checkout makes the count accurate
+for ordinary `main` descendants, but rewrite/rerun-safe monotonic publication,
+publication atomicity, immutable CI pins, DMG checks, and branch protection
+remain open.
+
 ## 2026-07-18 — Three cheap rendering wins
 
 A deterministic service-call test first showed three rapid sidebar edits

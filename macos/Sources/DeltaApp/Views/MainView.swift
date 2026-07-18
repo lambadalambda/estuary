@@ -373,8 +373,7 @@ struct SettingsSheet: View {
 
             LabeledContent(
                 "Build",
-                value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
-                    as? String ?? "dev (swift run)")
+                value: buildDescription(info: Bundle.main.infoDictionary ?? [:]))
                 .font(.callout)
 
             LabeledContent("Connectivity") {

@@ -22,7 +22,7 @@ endif
 # Package.swift reads this to pick the rust lib dir.
 export DCVM_PROFILE = $(PROFILE)
 
-BINDGEN = cargo run --features cli --bin uniffi-bindgen-swift -- \
+BINDGEN = cargo run --locked $(CARGO_PROFILE_FLAG) --features cli --bin uniffi-bindgen-swift -- \
           target/$(PROFILE)/libdcvm.a
 
 # SPM's manifest sandbox (sandbox-exec) cannot nest inside the restricted dev
@@ -34,7 +34,7 @@ SWIFT_BUILD_FLAGS = $(SWIFT_FLAGS) $(SWIFT_CONFIG_FLAG) --scratch-path $(SWIFT_S
 .PHONY: rust bindings swift-build run app app-release run-app icon tiles test check
 
 rust:
-	cd dcvm && cargo build $(CARGO_PROFILE_FLAG)
+	cd dcvm && cargo build --locked $(CARGO_PROFILE_FLAG)
 
 bindings: rust
 	cd dcvm && $(BINDGEN) ../macos/Sources/DeltaCore --swift-sources
@@ -47,7 +47,7 @@ swift-build: bindings
 	cd macos && swift build $(SWIFT_BUILD_FLAGS)
 
 run: bindings
-	cd macos && swift run $(SWIFT_FLAGS) DeltaApp
+	cd macos && swift run $(SWIFT_BUILD_FLAGS) DeltaApp
 
 # Minimal .app bundle: camera permission (TCC) wants a bundle identifier and
 # NSCameraUsageDescription; a bare `swift run` binary gets the prompt
@@ -58,7 +58,9 @@ app: swift-build
 	cp macos/Info.plist macos/Estuary.app/Contents/
 	# Stamp the build so "which code am I running?" is answerable from the
 	# app itself (Settings sheet) and Finder's Get Info.
-	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-parse --short HEAD)" \
+	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$(git rev-list --count HEAD)" \
+	    macos/Estuary.app/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Add :EstuaryGitCommit string $$(git rev-parse --short HEAD)" \
 	    macos/Estuary.app/Contents/Info.plist
 	cp macos/$(SWIFT_SCRATCH)/$(PROFILE)/DeltaApp macos/Estuary.app/Contents/MacOS/
 	cp assets/brand/Estuary.icns macos/Estuary.app/Contents/Resources/AppIcon.icns
@@ -90,8 +92,8 @@ icon:
 run-app: app
 	open macos/Estuary.app
 
-test:
-	cd dcvm && cargo test $(CARGO_PROFILE_FLAG)
+test: bindings
+	cd dcvm && cargo test --locked $(CARGO_PROFILE_FLAG)
 	cd macos && swift test $(SWIFT_BUILD_FLAGS)
 
 # Full non-interactive verification: Rust tests + Swift compile/link.

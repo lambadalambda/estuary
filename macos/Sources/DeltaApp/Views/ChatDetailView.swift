@@ -10,108 +10,16 @@ struct ChatDetailView: View {
     let accountId: UInt32
     let selectionGeneration: UInt64
     let chat: ChatItem
-    @State private var showAttachPicker = false
-    @State private var forwardingMsgId: UInt32?
-    @State private var loadingOlder = false
-    @State private var quickLookURL: URL?
-    @State private var attachmentCaption = ""
-    @State private var attachmentReplyId: UInt32?
-    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    // Plain VStack on purpose: LazyVStack's height estimates
-                    // under bottom anchoring caused three user-facing bugs in
-                    // one day (jump-to-top, two blank-open variants) — geo
-                    // logs showed estimates 2.2x the real content height,
-                    // parking the viewport in phantom space no scroll API
-                    // could escape. The open window is one small page of
-                    // fixed-size items; exact eager layout makes stranding
-                    // impossible.
-                    VStack(spacing: 6) {
-                        if model.hasMoreMessages {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 6)
-                                // Visibility only (no onAppear): eager
-                                // layout inserts the sentinel on every open,
-                                // which would fire a pointless page load per
-                                // chat. It starts far above the viewport
-                                // (visible=false) and re-arms whenever a
-                                // prepend pushes it off-screen.
-                                .onScrollVisibilityChange { visible in
-                                    if visible { loadOlder(proxy: proxy) }
-                                }
-                        }
-                        ForEach(buildMessageListEntries(model.messages, inGroup: chat.isGroup)) { entry in
-                            switch entry {
-                            case .dayMarker(_, let label):
-                                DayMarkerView(label: label)
-                            case .message(let message, let showAuthor):
-                                MessageBubbleView(
-                                    model: model, message: message, showAuthor: showAuthor,
-                                    inGroup: chat.isGroup,
-                                    onForward: { forwardingMsgId = message.id },
-                                    onPreview: { quickLookURL = $0 })
-                                    .onScrollVisibilityChange(threshold: 0.01) { visible in
-                                        model.messageVisibilityChanged(
-                                            accountId: accountId, chatId: chat.id,
-                                            selectionGeneration: selectionGeneration,
-                                            message: message, visible: visible)
-                                    }
-                            }
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id(bottomAnchorID)
-                            // The model gates reload window growth AND the
-                            // history-restore suppression on this. Actual
-                            // visibility, not onAppear/onDisappear: with the
-                            // eager VStack, onAppear fires exactly once at
-                            // insertion, so an appear-based flag would be
-                            // stuck "at bottom" forever.
-                            .onScrollVisibilityChange { visible in
-                                model.scrollDebug("view: bottom anchor visible=\(visible)")
-                                model.viewIsAtBottom = visible
-                            }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(OverlayScrollers())
-                }
-                // Chat behavior without manual scroll bookkeeping: start at
-                // the bottom (after layout, so it can't land mid-chat), and
-                // stay pinned there through content growth — new messages,
-                // image blobs arriving, bubbles resizing — but only while the
-                // user actually is at the bottom. Scrolled-up positions are
-                // left alone.
-                .defaultScrollAnchor(.bottom)
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .scrollGeometryDebug(model: model)
-                // Fresh scroll state per chat; with the initial anchor this
-                // is the no-animation snap to the newest message.
-                .id(chat.id)
-                .onChange(of: chat.id) {
-                    composerFocused = true
-                }
-            }
-
-            composer
+            MessageListView(
+                model: model, accountId: accountId,
+                selectionGeneration: selectionGeneration, chat: chat)
+            ChatComposerView(model: model, accountId: accountId, chat: chat)
         }
-        .onAppear { composerFocused = true }
-        .quickLookPreview($quickLookURL)
         .navigationTitle(chat.name)
         .navigationSubtitle(chat.isContactRequest ? "Contact request" : "")
-        .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
-            if case .success(let url) = result {
-                sendFile(
-                    url: url, caption: attachmentCaption,
-                    quotedMsgId: attachmentReplyId)
-            }
-        }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             let caption = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
             let quotedMsgId = model.replyTo?.id
@@ -119,7 +27,7 @@ struct ChatDetailView: View {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     if let url, url.isFileURL {
                         Task { @MainActor in
-                            sendFile(
+                            sendDroppedFile(
                                 url: url, caption: caption,
                                 quotedMsgId: quotedMsgId)
                         }
@@ -128,20 +36,90 @@ struct ChatDetailView: View {
             }
             return true
         }
+    }
+
+    private func sendDroppedFile(url: URL, caption: String, quotedMsgId: UInt32?) {
+        Task {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            await model.sendAttachment(
+                accountId: accountId, chatId: chat.id, path: url.path,
+                caption: caption, quotedMsgId: quotedMsgId)
+        }
+    }
+}
+
+private struct MessageListView: View {
+    @Bindable var model: AppModel
+    let accountId: UInt32
+    let selectionGeneration: UInt64
+    let chat: ChatItem
+    @State private var forwardingMsgId: UInt32?
+    @State private var loadingOlder = false
+    @State private var quickLookURL: URL?
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Eager layout avoids LazyVStack's inaccurate height estimates
+                // under bottom anchoring. The model keeps the window bounded.
+                VStack(spacing: 6) {
+                    if model.hasMoreMessages {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .onScrollVisibilityChange { visible in
+                                if visible { loadOlder(proxy: proxy) }
+                            }
+                    }
+                    ForEach(model.messageListEntries) { entry in
+                        switch entry {
+                        case .dayMarker(_, let label):
+                            DayMarkerView(label: label)
+                        case .message(let message, let showAuthor):
+                            MessageBubbleView(
+                                model: model, message: message, showAuthor: showAuthor,
+                                inGroup: chat.isGroup,
+                                onForward: { forwardingMsgId = message.id },
+                                onPreview: { quickLookURL = $0 })
+                                .onScrollVisibilityChange(threshold: 0.01) { visible in
+                                    model.messageVisibilityChanged(
+                                        accountId: accountId, chatId: chat.id,
+                                        selectionGeneration: selectionGeneration,
+                                        message: message, visible: visible)
+                                }
+                        }
+                    }
+                    Color.clear
+                        .frame(height: 1)
+                        .id(bottomAnchorID)
+                        .onScrollVisibilityChange { visible in
+                            model.scrollDebug("view: bottom anchor visible=\(visible)")
+                            model.viewIsAtBottom = visible
+                        }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(OverlayScrollers())
+            }
+            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .scrollGeometryDebug(model: model)
+            .id(chat.id)
+        }
+        .quickLookPreview($quickLookURL)
         .sheet(item: $forwardingMsgId) { msgId in
             ForwardSheet(model: model, msgId: msgId)
         }
     }
 
-    /// Fetches one page of history and keeps the previous top message
-    /// anchored so the viewport doesn't jump when content is prepended.
     private func loadOlder(proxy: ScrollViewProxy) {
         guard !loadingOlder else { return }
         loadingOlder = true
         Task {
             switch await model.loadOlderMessages() {
             case .restore(let anchorId):
-                // MessageListEntry ids are "msg-<id>" strings.
                 model.scrollDebug("view: restore to msg-\(anchorId)")
                 proxy.scrollTo("msg-\(anchorId)", anchor: .top)
             case .pinBottom:
@@ -153,16 +131,28 @@ struct ChatDetailView: View {
             loadingOlder = false
         }
     }
+}
 
-    private func sendFile(url: URL, caption: String, quotedMsgId: UInt32?) {
-        Task {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            // Core copies the file into its blobdir before this call returns.
-            await model.sendAttachment(
-                accountId: accountId, chatId: chat.id, path: url.path,
-                caption: caption, quotedMsgId: quotedMsgId)
-        }
+private struct ChatComposerView: View {
+    @Bindable var model: AppModel
+    let accountId: UInt32
+    let chat: ChatItem
+    @State private var showAttachPicker = false
+    @State private var attachmentCaption = ""
+    @State private var attachmentReplyId: UInt32?
+    @FocusState private var composerFocused: Bool
+
+    var body: some View {
+        composer
+            .onAppear { composerFocused = true }
+            .onChange(of: chat.id) { composerFocused = true }
+            .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
+                if case .success(let url) = result {
+                    sendFile(
+                        url: url, caption: attachmentCaption,
+                        quotedMsgId: attachmentReplyId)
+                }
+            }
     }
 
     @ViewBuilder
@@ -255,6 +245,16 @@ struct ChatDetailView: View {
         guard !text.isEmpty else { return }
         composerFocused = true
         Task { await model.send(text) }
+    }
+
+    private func sendFile(url: URL, caption: String, quotedMsgId: UInt32?) {
+        Task {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            await model.sendAttachment(
+                accountId: accountId, chatId: chat.id, path: url.path,
+                caption: caption, quotedMsgId: quotedMsgId)
+        }
     }
 }
 

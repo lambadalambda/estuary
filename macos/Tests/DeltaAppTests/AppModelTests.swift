@@ -358,6 +358,42 @@ import Testing
         #expect(model.draft == "keep this")
     }
 
+    @Test func composerEditsDoNotReassembleMessageEntries() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 3))
+        await model.chatSelectionChanged()
+        let assemblyCount = model.messageListAssemblyCount
+
+        model.draft = "o"
+        model.draft = "on"
+        model.draft = "one"
+
+        #expect(model.messageListAssemblyCount == assemblyCount)
+        #expect(model.messageListEntries.count == 4) // day marker + 3 messages
+    }
+
+    @Test func selectionChangeSynchronouslyInvalidatesCachedEntries() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 3))
+        await model.chatSelectionChanged()
+        model.replyTo = model.messages.first
+        #expect(!model.messageListEntries.isEmpty)
+
+        model.selectedChatId = 11
+
+        #expect(model.messages.isEmpty)
+        #expect(model.messageListEntries.isEmpty)
+        #expect(model.replyTo == nil)
+    }
+
     @Test func filteredSelectedChatCacheStillRefreshes() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()

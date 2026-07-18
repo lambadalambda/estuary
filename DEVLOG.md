@@ -1,5 +1,18 @@
 # DEVLOG
 
+## 2026-07-18 — Composer/list render isolation
+
+The conversation screen now has separate Observation subtrees for
+`MessageListView` and `ChatComposerView`; forwarding/Quick Look/history state is
+owned by the list child, while draft/reply/file-picker state is owned by the
+composer. AppModel memoizes pure `MessageListEntry` assembly whenever messages
+or selected group metadata changes, replacing the O(window) build previously
+performed in list `body`. A red/green assembly-counter test proves three draft
+keystrokes trigger no additional entry builds; selection changes synchronously
+invalidate the previous message/cache before rendering the new chat. Swift: 90
+passed. The rendering issue remains open for an Instruments/body-signpost trace
+of actual SwiftUI subtree evaluations and the manual grown-window typing check.
+
 ## 2026-07-18 — Visible-only MDNs + action isolation + honest mock IDs
 
 TDD reproduced three remaining shell races: New Chat swallowed failures after

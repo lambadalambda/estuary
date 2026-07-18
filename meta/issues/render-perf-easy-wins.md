@@ -51,5 +51,14 @@ the model and closures.
   tests prove a rapid three-character edit performs one query and an old
   canceled `A→B→A` request cannot overwrite the newest identical query.
 - Swift: 56 passed.
-- Still open: isolate composer invalidation from the message subtree and
-  memoize entry assembly, with body-count/Instruments verification.
+- `ChatDetailView` is now a thin shell around separate `MessageListView` and
+  `ChatComposerView` Observation scopes. Draft/reply/picker reads live only in
+  the composer child; list forwarding/Quick Look/history state lives in the
+  list child.
+- Message-list entries are assembled when AppModel's message/group inputs
+  change, not in `body`. A deterministic assembly counter test proves three
+  composer edits perform zero additional O(window) entry builds. Selection
+  changes synchronously clear the old message window/cache before SwiftUI can
+  pair it with the new chat header. Swift: 90 passed.
+- Still open: a debug body-count signpost or Instruments trace confirming the
+  SwiftUI subtree itself remains stable, plus the grown-window manual trace.

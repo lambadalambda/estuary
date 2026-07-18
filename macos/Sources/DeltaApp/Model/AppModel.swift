@@ -36,13 +36,19 @@ final class AppModel {
                 visibleMessages.removeAll()
                 seenReceiptRequests.removeAll()
                 receiptAttempts.removeAll()
+                replyTo = nil
+                resetMessageWindow()
             }
         }
     }
     private var selectedChatCache: ChatItem?
     private var visibleMessages: [VisibleMessageKey: MessageItem] = [:]
     private var seenReceiptRequests: Set<VisibleMessageKey> = []
-    private(set) var messages: [MessageItem] = []
+    private(set) var messageListEntries: [MessageListEntry] = []
+    private(set) var messageListAssemblyCount = 0
+    private(set) var messages: [MessageItem] = [] {
+        didSet { refreshMessageListEntries() }
+    }
     /// Whether older history exists beyond the currently loaded window.
     private(set) var hasMoreMessages = false
     /// Set once a load-older returned empty: stops the page-boundary flicker
@@ -517,6 +523,7 @@ final class AppModel {
             if let selectedRow {
                 selectedChatCache = selectedRow
             }
+            refreshMessageListEntries()
             // Only drop the selection outside search: a filtered list not
             // containing the open chat is expected and must not destroy the
             // open conversation (and its draft) on every keystroke.
@@ -1042,6 +1049,12 @@ final class AppModel {
         hasMoreMessages = false
         historyExhausted = false
         viewIsAtBottom = true
+    }
+
+    private func refreshMessageListEntries() {
+        messageListEntries = buildMessageListEntries(
+            messages, inGroup: selectedChat?.isGroup == true)
+        messageListAssemblyCount += 1
     }
 
     private func resetAccountScopedState() {

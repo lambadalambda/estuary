@@ -1,5 +1,22 @@
 # DEVLOG
 
+## 2026-07-18 — Nightly DMG trapped on every machine but the builder
+
+First real-world install (lume VM via cua-driver) crashed at first render:
+SwiftPM's generated `Bundle.module` accessor checks only the app-bundle ROOT
+and the absolute build-scratch path baked at compile time
+(`/Users/runner/...`). `make app` correctly puts the bundle in
+Contents/Resources — which the accessor never looks at — and every dev
+machine hid the bug because the local scratch dir satisfied the baked path.
+Diagnosed by running the shipped binary over SSH (the fatalError prints both
+candidates) and confirmed by symlinking the CI path inside the VM, after
+which the same DMG ran fine. Fix: `AppResources.locate` — a pure,
+candidate-ordered bundle search (main resourceURL, then bundleURL, then the
+generated accessor for dev loops) with unit tests over temp-dir fixtures;
+call sites use `AppResources.bundle`. Lesson for release checks: artifact
+verification that runs on the build machine cannot catch baked-path rescues;
+the VM install is the honest gate.
+
 ## 2026-07-18 — Immutable nightly inputs and artifact gates
 
 Release checks are executable locally through `make verify-app` and

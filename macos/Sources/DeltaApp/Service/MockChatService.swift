@@ -724,7 +724,7 @@ actor MockChatService: ChatService {
                     ReactionItem(emoji: "🌅", count: 1, isFromSelf: true),
                 ]))
         }
-        if let imagePath = Bundle.module.url(
+        if let imagePath = AppResources.bundle.url(
             forResource: "mock-sunset", withExtension: "jpg")?.path {
             let id = allocateMessageId(accountId: accountId)
             messagesByChat[elenaKey]?.append(MessageItem(

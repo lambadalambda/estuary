@@ -54,3 +54,14 @@ build machine, so they can't catch it either.
   tiles, mock assets) go through it.
 - Crash report: `~/Library/Logs/DiagnosticReports/DeltaApp-2026-07-18-112305.ips`
   in the VM; fatal message names both candidate paths.
+
+## Progress (2026-07-18)
+
+Fix landed: `AppResources.locate` (pure candidate-order search:
+`Bundle.main.resourceURL`, then `bundleURL`, then the generated accessor for
+dev loops) + unit tests over temp-dir fixtures; all `Bundle.module` call
+sites now go through `AppResources.bundle`. Swift 96/96 green. Verified in
+the lume VM: diagnostic symlink and `/Users/runner` removed, locally built
+release-profile app installed fresh, onboarding renders with logo and themed
+chrome (cua-driver screenshot). Remaining before archive: the first CI-built
+nightly DMG from this fix installs and launches clean in the VM.

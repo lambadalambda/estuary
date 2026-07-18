@@ -73,7 +73,7 @@ enum EstuaryTheme {
     /// The wave-into-speech-bubble logo (transparent PNG, bundled). Optional:
     /// callers fall back to an SF symbol if the resource is missing.
     @MainActor static let logo: NSImage? = {
-        guard let url = Bundle.module.url(
+        guard let url = AppResources.bundle.url(
             forResource: "estuary-logo", withExtension: "png")
         else { return nil }
         return NSImage(contentsOf: url)
@@ -90,7 +90,7 @@ enum EstuaryTheme {
     }
 
     @MainActor private static func loadTile(_ name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+        guard let url = AppResources.bundle.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url)
         else { return nil }
         // 512px bitmap declared at 256pt -> renders @2x on retina.

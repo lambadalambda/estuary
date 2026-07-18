@@ -18,3 +18,4 @@
 - [x] [Empty state: tiled backdrop only covers the placeholder box](issues/empty-state-backdrop-fill.md)
 - [x] [Message-window mutation race + first AppModel tests](issues/message-window-race-appmodel-tests.md)
 - [x] [Notification delivery and event-pipeline backpressure](issues/notification-event-pipeline.md)
+- [x] [Local core builds target the host macOS, not the app's minimum](issues/local-core-deployment-target.md)

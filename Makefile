@@ -22,6 +22,13 @@ endif
 # Package.swift reads this to pick the rust lib dir.
 export DCVM_PROFILE = $(PROFILE)
 
+# Core objects must match the app's macOS minimum (Package.swift .v15 /
+# Info.plist LSMinimumSystemVersion). Without the pin, rustc's cc-built C
+# deps target the HOST OS, and the linked binary still claims minos 15.0 —
+# see meta/issues/local-core-deployment-target.md. Exported so cargo, cc,
+# and swift all see it.
+export MACOSX_DEPLOYMENT_TARGET ?= 15.0
+
 BINDGEN = cargo run --locked $(CARGO_PROFILE_FLAG) --features cli --bin uniffi-bindgen-swift -- \
           target/$(PROFILE)/libdcvm.a
 
@@ -31,7 +38,7 @@ BINDGEN = cargo run --locked $(CARGO_PROFILE_FLAG) --features cli --bin uniffi-b
 SWIFT_FLAGS ?= --disable-sandbox
 SWIFT_BUILD_FLAGS = $(SWIFT_FLAGS) $(SWIFT_CONFIG_FLAG) --scratch-path $(SWIFT_SCRATCH)
 
-.PHONY: rust bindings swift-build run app app-release dmg verify-app verify-dmg release-tests run-app icon tiles test check
+.PHONY: rust bindings swift-build run app app-release dmg verify-app verify-dmg verify-minos release-tests run-app icon tiles test check
 
 rust:
 	cd dcvm && cargo build --locked $(CARGO_PROFILE_FLAG)
@@ -52,7 +59,13 @@ run: bindings
 # Minimal .app bundle: camera permission (TCC) wants a bundle identifier and
 # NSCameraUsageDescription; a bare `swift run` binary gets the prompt
 # attributed to the terminal instead. Ad-hoc signed so TCC grants persist.
-app: swift-build
+# The final binary's minos load command hides archive members that target a
+# newer OS, so the packaging path checks the archive itself.
+verify-minos: rust
+	dev/release/check-object-minos.sh dcvm/target/$(PROFILE)/libdcvm.a \
+	    $(MACOSX_DEPLOYMENT_TARGET)
+
+app: swift-build verify-minos
 	rm -rf macos/Estuary.app macos/DeltaApp.app
 	mkdir -p macos/Estuary.app/Contents/MacOS macos/Estuary.app/Contents/Resources
 	cp macos/Info.plist macos/Estuary.app/Contents/
@@ -109,4 +122,4 @@ test: bindings
 	cd macos && swift test $(SWIFT_BUILD_FLAGS)
 
 # Full non-interactive verification: Rust tests + Swift compile/link.
-check: test swift-build release-tests
+check: test swift-build verify-minos release-tests

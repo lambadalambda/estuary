@@ -1,5 +1,18 @@
 # DEVLOG
 
+## 2026-07-19 — Core objects now pinned to the app's macOS minimum
+
+Local Rust builds compiled cc-crate C deps against the host OS (26.5) while
+the app links and claims minos 15.0 — invisible in `verify-app` because the
+final binary's load command says 15.0 regardless; only the archive members
+tell the truth. Fix: `MACOSX_DEPLOYMENT_TARGET ?= 15.0` exported from the
+Makefile plus `check-object-minos.sh` gating `app` packaging and `make
+check` on every `libdcvm.a` member. Cargo gotcha: the env pin
+re-fingerprints rustc compiles but not cached cc build-script outputs —
+blake3's NEON object kept its 26.5 stamp until `cargo clean -p blake3`, and
+only the new archive gate caught it. Zero ld min-version warnings now; the
+rebuilt release app re-verified in the lume VM.
+
 ## 2026-07-18 — Nightly DMG trapped on every machine but the builder
 
 First real-world install (lume VM via cua-driver) crashed at first render:

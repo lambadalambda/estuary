@@ -1,5 +1,19 @@
 # DEVLOG
 
+## 2026-07-18 — SQL chat preview + page sender cache
+
+TDD pinned `chat_by_id` draft semantics, then replaced its all-message Rust ID
+allocation with core's SQL `get_last_message_for_chat` helper. This makes
+previews agree with Chatlist drafts, but EXPLAIN still shows a temp sort without
+a composite core index, so bounded lookup remains open. Message
+pages/searches now cache each sender and quoted sender's name/color, plus
+avatars only for actual message senders, instead of repeating reads per bubble.
+Rust: 30 passed, 2 relay tests ignored; fmt and strict Clippy green. The data
+performance issue remains open for the composite index, true cursor pagination,
+reaction helper alignment, and missing-chat/error classification. Cache lookup
+counts are not externally instrumentable; existing quote/avatar integration
+coverage pins behavior while the optimization is structural.
+
 ## 2026-07-18 — dcvm correctness batch: four fixes green
 
 Red tests caught the search cap selecting old hits in reverse display order,

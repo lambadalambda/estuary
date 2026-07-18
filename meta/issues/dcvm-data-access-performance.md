@@ -44,3 +44,17 @@ loads the same contacts and avatars within a page.
   the data-access half of deep-history performance.
 - Bounded-concurrent chat/contact row enrichment may help, but should be
   profiled after removing the known whole-history and repeated-contact work.
+
+## Progress (2026-07-18)
+
+- `chat_by_id` now uses core's SQL last-message helper instead of allocating
+  every message ID in Rust. A red test pinned the corrected draft preview
+  semantics and parity with Chatlist before the change. Core's current indexes
+  still require a temp sort, so bounded point lookup remains open.
+- Message pages and search results now share a request-scoped sender cache,
+  including quoted senders and profile-image paths.
+- Rust tests, formatting, and strict Clippy are green.
+- Still open: a composite index/bounded last-message query, distinguish
+  missing-chat from database errors, reaction helper alignment, and real
+  indexed cursor pagination. Core's current public message API still
+  scans/sorts the complete history before dcvm truncates it.

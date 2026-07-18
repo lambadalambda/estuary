@@ -655,6 +655,7 @@ async fn attachments_quotes_and_reactions() {
     // Attachment: a real PNG fixture — core demotes undecodable images to File
     // (chat.rs prepare_msg_blob / check_or_recode_image).
     let png = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/1x1.png");
+    app.set_avatar(id, Some(png.into())).await.unwrap();
     let blob = tempfile::NamedTempFile::with_suffix(".png").unwrap();
     std::fs::copy(png, blob.path()).unwrap();
     let sent_id = app
@@ -673,6 +674,7 @@ async fn attachments_quotes_and_reactions() {
     assert!(sent.file.is_some(), "blob path missing: {sent:?}");
     assert!(sent.file_size > 0);
     assert_eq!(sent.text, "look at this");
+    assert!(sent.sender_avatar.is_some());
 
     // Reply: quote the attachment message.
     let reply_id = app
@@ -683,6 +685,8 @@ async fn attachments_quotes_and_reactions() {
     let reply = msgs.iter().find(|m| m.id == reply_id).unwrap();
     let quote = reply.quote.as_ref().expect("quote present");
     assert!(quote.text.contains("look at this"), "quote: {quote:?}");
+    assert_eq!(quote.sender_name, sent.sender_name);
+    assert_eq!(quote.sender_color, sent.sender_color);
 
     // Reaction on an incoming message; then clear it.
     let ctx = app.context(id).await.unwrap();
@@ -1121,6 +1125,28 @@ async fn chat_by_id_returns_fresh_row() {
     assert_eq!(row.id, chat);
     assert_eq!(row.name, "Bob");
     assert!(row.preview.contains("latest words"), "preview: {row:?}");
+
+    let ctx = app.context(id).await.unwrap();
+    let mut draft =
+        dcvm::deltachat::message::Message::new(dcvm::deltachat::message::Viewtype::Text);
+    draft.set_text("unsent draft".to_string());
+    dcvm::deltachat::chat::ChatId::new(chat)
+        .set_draft(&ctx, Some(&mut draft))
+        .await
+        .unwrap();
+    let draft_row = app.chat_by_id(id, chat).await.unwrap().unwrap();
+    let list_row = app
+        .chat_list(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.id == chat)
+        .unwrap();
+    assert_eq!(draft_row.preview, list_row.preview);
+    assert_eq!(draft_row.timestamp, list_row.timestamp);
+    assert_eq!(draft_row.fresh_count, list_row.fresh_count);
+    assert_eq!(draft_row.is_muted, list_row.is_muted);
+    assert!(draft_row.preview.contains("unsent draft"));
 
     // Unknown chat id -> None, not an error.
     assert!(app.chat_by_id(id, 999_999).await.unwrap().is_none());

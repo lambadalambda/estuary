@@ -1,12 +1,13 @@
 //! The exported `DcApp` object: thin async glue between UniFFI and deltachat core.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use deltachat::accounts::Accounts;
 use deltachat::chat::{self, Chat, ChatId, ChatItem as CoreChatItem, ChatVisibility};
-use deltachat::chatlist::Chatlist;
+use deltachat::chatlist::{self, Chatlist};
 use deltachat::config::Config;
 use deltachat::constants::{Chattype, DC_GCL_ARCHIVED_ONLY};
 use deltachat::contact::{Contact, ContactId};
@@ -130,20 +131,68 @@ async fn chat_items(
 }
 
 /// Full message row incl. media metadata, quote, and aggregated reactions.
-async fn message_item(ctx: &Context, msg: &Message) -> Result<MessageItem, VmError> {
+#[derive(Clone)]
+struct SenderInfo {
+    name: String,
+    color: String,
+}
+
+async fn sender_info(
+    ctx: &Context,
+    contact_id: ContactId,
+    cache: &mut HashMap<ContactId, SenderInfo>,
+) -> Result<SenderInfo, VmError> {
+    if let Some(info) = cache.get(&contact_id) {
+        return Ok(info.clone());
+    }
+    let contact = Contact::get_by_id(ctx, contact_id).await?;
+    let info = SenderInfo {
+        name: contact.get_display_name().to_string(),
+        color: color_to_hex(contact.get_color()),
+    };
+    cache.insert(contact_id, info.clone());
+    Ok(info)
+}
+
+async fn message_sender(
+    ctx: &Context,
+    contact_id: ContactId,
+    senders: &mut HashMap<ContactId, SenderInfo>,
+    avatars: &mut HashMap<ContactId, Option<String>>,
+) -> Result<(SenderInfo, Option<String>), VmError> {
+    if let (Some(sender), Some(avatar)) = (senders.get(&contact_id), avatars.get(&contact_id)) {
+        return Ok((sender.clone(), avatar.clone()));
+    }
+    let contact = Contact::get_by_id(ctx, contact_id).await?;
+    let sender = senders
+        .get(&contact_id)
+        .cloned()
+        .unwrap_or_else(|| SenderInfo {
+            name: contact.get_display_name().to_string(),
+            color: color_to_hex(contact.get_color()),
+        });
+    let avatar = contact.get_profile_image(ctx).await?.map(path_string);
+    senders.insert(contact_id, sender.clone());
+    avatars.insert(contact_id, avatar.clone());
+    Ok((sender, avatar))
+}
+
+async fn message_item(
+    ctx: &Context,
+    msg: &Message,
+    senders: &mut HashMap<ContactId, SenderInfo>,
+    avatars: &mut HashMap<ContactId, Option<String>>,
+) -> Result<MessageItem, VmError> {
     let from_id = msg.get_from_id();
-    let sender = Contact::get_by_id(ctx, from_id).await?;
+    let (sender, sender_avatar) = message_sender(ctx, from_id, senders, avatars).await?;
 
     let quote = match msg.quoted_text() {
         None => None,
         Some(text) => {
             let (sender_name, sender_color) = match msg.quoted_message(ctx).await? {
                 Some(quoted) => {
-                    let contact = Contact::get_by_id(ctx, quoted.get_from_id()).await?;
-                    (
-                        contact.get_display_name().to_string(),
-                        color_to_hex(contact.get_color()),
-                    )
+                    let contact = sender_info(ctx, quoted.get_from_id(), senders).await?;
+                    (contact.name, contact.color)
                 }
                 None => (String::new(), "#999999".to_string()),
             };
@@ -184,9 +233,9 @@ async fn message_item(ctx: &Context, msg: &Message) -> Result<MessageItem, VmErr
         timestamp: msg.get_timestamp(),
         is_outgoing: from_id == ContactId::SELF,
         is_info: msg.is_info(),
-        sender_name: sender.get_display_name().to_string(),
-        sender_color: color_to_hex(sender.get_color()),
-        sender_avatar: sender.get_profile_image(ctx).await?.map(path_string),
+        sender_name: sender.name,
+        sender_color: sender.color,
+        sender_avatar,
         state: map_message_state(msg.get_state()),
         kind: map_viewtype(msg.get_viewtype()),
         file: msg.get_file(ctx).map(path_string),
@@ -391,14 +440,7 @@ impl DcApp {
             let Ok(chat) = Chat::load_from_db(&ctx, chat_id).await else {
                 return Ok(None);
             };
-            let last_msg_id = chat::get_chat_msgs(&ctx, chat_id)
-                .await?
-                .into_iter()
-                .rev()
-                .find_map(|item| match item {
-                    CoreChatItem::Message { msg_id } => Some(msg_id),
-                    _ => None,
-                });
+            let last_msg_id = chatlist::get_last_message_for_chat(&ctx, chat_id).await?;
             let summary = Chatlist::get_summary2(&ctx, chat_id, last_msg_id, Some(&chat)).await?;
             Ok(Some(build_chat_item(&ctx, chat_id, &chat, &summary).await?))
         })
@@ -440,9 +482,11 @@ impl DcApp {
             let ctx = get_ctx(&accounts, account_id).await?;
             let ids = ctx.search_msgs(None, &query).await?;
             let mut out = Vec::new();
+            let mut senders = HashMap::new();
+            let mut avatars = HashMap::new();
             for msg_id in ids.into_iter().take(100).rev() {
                 if let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? {
-                    out.push(message_item(&ctx, &msg).await?);
+                    out.push(message_item(&ctx, &msg, &mut senders, &mut avatars).await?);
                 }
             }
             Ok(out)
@@ -487,11 +531,13 @@ impl DcApp {
                 ids.drain(..ids.len() - limit as usize);
             }
             let mut out = Vec::with_capacity(ids.len());
+            let mut senders = HashMap::new();
+            let mut avatars = HashMap::new();
             for msg_id in ids {
                 let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? else {
                     continue;
                 };
-                out.push(message_item(&ctx, &msg).await?);
+                out.push(message_item(&ctx, &msg, &mut senders, &mut avatars).await?);
             }
             Ok(out)
         })

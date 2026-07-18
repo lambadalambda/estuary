@@ -59,6 +59,20 @@ can expose one profile's stale messages under another profile's chat.
   normal-list test now passes.
 - Account removal now uses the same scoped reset as onboarding, demo, and
   explicit switching.
-- Remaining requirements: account/chat-keyed drafts and selected-chat storage,
-  stale action completions, activity-aware noticed state, flow-scoped progress,
-  rapid account-switch ordering, and production mock ownership semantics.
+- Selected-chat caching and account/chat-keyed drafts keep the detail and
+  composer alive through filtered search. Successful sends clear only an
+  unchanged originating draft; failures and edits made during send survive.
+- Rapid account switches are latest-intent-wins in both the model and core;
+  send/block completion writes revalidate their originating identity.
+- Noticed state now requires the app to still be active, and onboarding
+  progress events are scoped to the active account. Core events carry no flow
+  generation, so delayed progress from a prior flow that reuses the same
+  account remains unresolved.
+- Pending sends are deduplicated per conversation, account switching is driven
+  by one latest-intent reconciliation loop (including 1→2→1 and failure
+  recovery), and filtered selected rows refresh through `chatById`.
+- Selection generations advance synchronously with `selectedChatId`, guarding
+  success and failure writes even before the async selection callback runs.
+- Remaining requirements: deterministic create/group/attachment/mark-noticed
+  completion tests, same-account onboarding flow generations, and production
+  mock account-ownership semantics.

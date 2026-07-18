@@ -8,7 +8,6 @@ private let bottomAnchorID = "bottom-anchor"
 struct ChatDetailView: View {
     @Bindable var model: AppModel
     let chat: ChatItem
-    @State private var draft = ""
     @State private var showAttachPicker = false
     @State private var forwardingMsgId: UInt32?
     @State private var loadingOlder = false
@@ -86,7 +85,6 @@ struct ChatDetailView: View {
                 // is the no-animation snap to the newest message.
                 .id(chat.id)
                 .onChange(of: chat.id) {
-                    draft = ""
                     composerFocused = true
                 }
             }
@@ -143,8 +141,7 @@ struct ChatDetailView: View {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         // Core copies the file into its blobdir, so the path only needs to be
         // readable now.
-        let caption = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        draft = ""
+        let caption = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = url.path
         Task { await model.sendAttachment(path: path, caption: caption) }
     }
@@ -206,7 +203,7 @@ struct ChatDetailView: View {
                     .buttonStyle(.plain)
                     // Grows up to 5 lines; Return sends, Option+Return
                     // inserts a newline.
-                    TextField("Message \(chat.name)…", text: $draft, axis: .vertical)
+                    TextField("Message \(chat.name)…", text: $model.draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.body)
                         .lineLimit(1 ... 5)
@@ -218,7 +215,7 @@ struct ChatDetailView: View {
                             .foregroundStyle(canSend ? EstuaryTheme.accent : Color.secondary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canSend)
+                    .disabled(!canSend || model.isSendingCurrentConversation)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -228,13 +225,12 @@ struct ChatDetailView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        draft = ""
         composerFocused = true
         Task { await model.send(text) }
     }

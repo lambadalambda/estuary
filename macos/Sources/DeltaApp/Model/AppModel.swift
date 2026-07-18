@@ -4,6 +4,11 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    private struct ConversationKey: Hashable {
+        let accountId: UInt32
+        let chatId: UInt32
+    }
+
     enum Screen: Equatable {
         case loading
         case onboarding
@@ -17,7 +22,12 @@ final class AppModel {
     private(set) var selectedAccountId: UInt32?
     private(set) var chats: [ChatItem] = []
     /// Bound to the sidebar List selection.
-    var selectedChatId: UInt32?
+    var selectedChatId: UInt32? {
+        didSet {
+            if selectedChatId != oldValue { selectionGeneration &+= 1 }
+        }
+    }
+    private var selectedChatCache: ChatItem?
     private(set) var messages: [MessageItem] = []
     /// Whether older history exists beyond the currently loaded window.
     private(set) var hasMoreMessages = false
@@ -29,6 +39,12 @@ final class AppModel {
     /// Invalidates in-flight reload/prepend operations whenever the window
     /// changes under them, including account and chat transitions.
     private var messageWindowGeneration: UInt64 = 0
+    private var accountTransitionGeneration: UInt64 = 0
+    private var desiredAccountId: UInt32?
+    private var coreSelectedAccountId: UInt32?
+    private var accountTransitionInFlight = false
+    private var selectionGeneration: UInt64 = 0
+    private var pendingSends: Set<ConversationKey> = []
     // Eager layout renders the whole window (see ChatDetailView's VStack
     // note) — keep pages small; a viewport shows ~10 messages at most.
     static let messagePageSize: UInt32 = 50
@@ -40,6 +56,24 @@ final class AppModel {
     var actionError: String?
     /// Message being replied to (composer banner); sent as quote.
     var replyTo: MessageItem?
+    private var drafts: [ConversationKey: String] = [:]
+    var draft: String {
+        get {
+            guard let key = selectedConversationKey else { return "" }
+            return drafts[key, default: ""]
+        }
+        set {
+            guard let key = selectedConversationKey else { return }
+            if newValue.isEmpty {
+                drafts.removeValue(forKey: key)
+            } else {
+                drafts[key] = newValue
+            }
+        }
+    }
+    var isSendingCurrentConversation: Bool {
+        selectedConversationKey.map(pendingSends.contains) ?? false
+    }
     /// Sidebar shows the archive instead of the normal list.
     var showingArchive = false
     /// Sidebar search field text; non-empty switches the list to search hits.
@@ -73,6 +107,12 @@ final class AppModel {
     var selectedChat: ChatItem? {
         guard let id = selectedChatId else { return nil }
         return chats.first { $0.id == id }
+            ?? selectedChatCache.flatMap { $0.id == id ? $0 : nil }
+    }
+
+    private var selectedConversationKey: ConversationKey? {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId else { return nil }
+        return ConversationKey(accountId: accountId, chatId: chatId)
     }
 
     // MARK: Lifecycle
@@ -86,6 +126,8 @@ final class AppModel {
                 ?? accounts.first { $0.isConfigured }
             if let account = configured {
                 try await service.selectAccount(id: account.id)
+                coreSelectedAccountId = account.id
+                desiredAccountId = account.id
                 selectedAccountId = account.id
                 try await service.startIo()
                 await reloadChats()
@@ -165,7 +207,9 @@ final class AppModel {
 
     private func finishOnboarding(accountId: UInt32) async throws {
         try await service.selectAccount(id: accountId)
+        coreSelectedAccountId = accountId
         resetAccountScopedState()
+        desiredAccountId = accountId
         selectedAccountId = accountId
         try await service.startIo()
         accounts = try await service.accounts()
@@ -245,7 +289,9 @@ final class AppModel {
         loginError = nil
         do {
             let accountId = try await service.addDemoAccount()
+            coreSelectedAccountId = accountId
             resetAccountScopedState()
+            desiredAccountId = accountId
             selectedAccountId = accountId
             accounts = try await service.accounts()
             await reloadChats()
@@ -273,14 +319,50 @@ final class AppModel {
     }
 
     func switchAccount(to id: UInt32) async {
-        guard id != selectedAccountId else { return }
-        do {
-            try await service.selectAccount(id: id)
-            resetAccountScopedState()
-            selectedAccountId = id
-            await reloadChats()
-        } catch {
-            actionError = error.localizedDescription
+        accountTransitionGeneration &+= 1
+        desiredAccountId = id
+        guard !accountTransitionInFlight else { return }
+        accountTransitionInFlight = true
+        defer { accountTransitionInFlight = false }
+
+        while let target = desiredAccountId {
+            if target == selectedAccountId, target == coreSelectedAccountId { return }
+            let generation = accountTransitionGeneration
+            do {
+                try await service.selectAccount(id: target)
+                coreSelectedAccountId = target
+            } catch {
+                guard generation == accountTransitionGeneration,
+                      desiredAccountId == target
+                else { continue }
+
+                actionError = error.localizedDescription
+                desiredAccountId = selectedAccountId
+                if let selectedAccountId {
+                    do {
+                        try await service.selectAccount(id: selectedAccountId)
+                        coreSelectedAccountId = selectedAccountId
+                    } catch {
+                        actionError = error.localizedDescription
+                    }
+                }
+                if generation != accountTransitionGeneration { continue }
+                return
+            }
+
+            guard generation == accountTransitionGeneration,
+                  desiredAccountId == target
+            else { continue }
+
+            if selectedAccountId != target {
+                resetAccountScopedState()
+                selectedAccountId = target
+                await reloadChats()
+            }
+            if generation == accountTransitionGeneration,
+               desiredAccountId == target {
+                return
+            }
         }
     }
 
@@ -304,19 +386,26 @@ final class AppModel {
         do {
             try await service.removeAccount(id: id)
             accounts = try await service.accounts()
+            drafts = drafts.filter { $0.key.accountId != id }
             resetAccountScopedState()
             if let next = await service.selectedAccount(),
                accounts.contains(where: { $0.id == next && $0.isConfigured }) {
+                coreSelectedAccountId = next
                 selectedAccountId = next
+                desiredAccountId = next
                 await reloadChats()
                 screen = .main
             } else if let next = accounts.first(where: \.isConfigured) {
                 try await service.selectAccount(id: next.id)
+                coreSelectedAccountId = next.id
                 selectedAccountId = next.id
+                desiredAccountId = next.id
                 await reloadChats()
                 screen = .main
             } else {
                 selectedAccountId = nil
+                coreSelectedAccountId = nil
+                desiredAccountId = nil
                 searchQuery = ""
                 showingArchive = false
                 NSApp.dockTile.badgeLabel = nil
@@ -348,13 +437,40 @@ final class AppModel {
                   query == searchQuery.trimmingCharacters(in: .whitespaces),
                   archiveSnapshot == showingArchive
             else { return }
+
+            let selectedSnapshot = selectedChatId
+            var selectedRow = selectedSnapshot.flatMap { selected in
+                list.first { $0.id == selected }
+            }
+            var selectedConfirmedMissing = false
+            if let selectedSnapshot, selectedRow == nil, !query.isEmpty {
+                do {
+                    selectedRow = try await service.chatById(
+                        accountId: accountId, chatId: selectedSnapshot)
+                    selectedConfirmedMissing = selectedRow == nil
+                } catch {
+                    // Keep the last selected row on a transient point-lookup
+                    // failure; the next event/search change retries.
+                }
+                guard accountId == selectedAccountId,
+                      selectedSnapshot == selectedChatId,
+                      query == searchQuery.trimmingCharacters(in: .whitespaces),
+                      archiveSnapshot == showingArchive
+                else { return }
+            }
+
             chats = list
+            if let selectedRow {
+                selectedChatCache = selectedRow
+            }
             // Only drop the selection outside search: a filtered list not
             // containing the open chat is expected and must not destroy the
             // open conversation (and its draft) on every keystroke.
-            if query.isEmpty, let selected = selectedChatId,
-               !chats.contains(where: { $0.id == selected }) {
+            if let selected = selectedChatId,
+               (query.isEmpty && !chats.contains(where: { $0.id == selected })
+                   || selectedConfirmedMissing) {
                 selectedChatId = nil
+                selectedChatCache = nil
                 resetMessageWindow()
             }
             if !showingArchive, query.isEmpty {
@@ -573,13 +689,21 @@ final class AppModel {
 
     func blockSelectedChat() async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        let generation = selectionGeneration
         do {
             try await service.blockChat(accountId: accountId, chatId: chatId)
+            guard accountId == selectedAccountId, chatId == selectedChatId,
+                  generation == selectionGeneration
+            else { return }
             selectedChatId = nil
+            selectedChatCache = nil
             messages = []
             await reloadChats()
         } catch {
-            actionError = error.localizedDescription
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               generation == selectionGeneration {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -623,15 +747,30 @@ final class AppModel {
 
     func sendAttachment(path: String, caption: String) async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        let conversationKey = ConversationKey(accountId: accountId, chatId: chatId)
+        guard pendingSends.insert(conversationKey).inserted else { return }
+        defer { pendingSends.remove(conversationKey) }
+        let generation = selectionGeneration
+        let draftAtStart = drafts[conversationKey]
+        let replyId = replyTo?.id
         do {
             _ = try await service.sendMessage(
                 accountId: accountId, chatId: chatId,
                 text: caption.isEmpty ? nil : caption,
                 filePath: path,
-                quotedMsgId: replyTo?.id)
-            replyTo = nil
+                quotedMsgId: replyId)
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               replyTo?.id == replyId, generation == selectionGeneration {
+                replyTo = nil
+            }
+            clearDraft(
+                conversationKey, ifUnchanged: draftAtStart,
+                sentText: caption.trimmingCharacters(in: .whitespacesAndNewlines))
         } catch {
-            actionError = error.localizedDescription
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               generation == selectionGeneration {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -649,7 +788,9 @@ final class AppModel {
         do {
             let chatId = try await service.createGroup(
                 accountId: accountId, name: name, memberContactIds: memberIds)
+            guard accountId == selectedAccountId else { return nil }
             await reloadChats()
+            guard accountId == selectedAccountId else { return nil }
             selectedChatId = chatId
             return nil
         } catch {
@@ -679,6 +820,15 @@ final class AppModel {
     /// Called when the sidebar selection changes.
     func chatSelectionChanged() async {
         replyTo = nil
+        if let selectedChatId {
+            if let row = chats.first(where: { $0.id == selectedChatId }) {
+                selectedChatCache = row
+            } else if selectedChatCache?.id != selectedChatId {
+                selectedChatCache = nil
+            }
+        } else {
+            selectedChatCache = nil
+        }
         // Clear immediately so the stale-window growth check in
         // reloadMessages never compares against the previous chat.
         resetMessageWindow()
@@ -700,15 +850,18 @@ final class AppModel {
 
     private func resetAccountScopedState() {
         selectedChatId = nil
+        selectedChatCache = nil
         replyTo = nil
         chats = []
         searchQuery = ""
         showingArchive = false
+        actionError = nil
         resetMessageWindow()
     }
 
     private func markSelectedChatNoticed() async {
-        guard let accountId = selectedAccountId,
+        guard NSApplication.shared.isActive,
+              let accountId = selectedAccountId,
               let chat = selectedChat,
               chat.freshCount > 0, !chat.isContactRequest
         else { return }
@@ -717,23 +870,47 @@ final class AppModel {
 
     func send(_ text: String) async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        let conversationKey = ConversationKey(accountId: accountId, chatId: chatId)
+        guard pendingSends.insert(conversationKey).inserted else { return }
+        defer { pendingSends.remove(conversationKey) }
+        let generation = selectionGeneration
+        let draftAtStart = drafts[conversationKey]
+        let replyId = replyTo?.id
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
             _ = try await service.sendMessage(
                 accountId: accountId, chatId: chatId,
-                text: trimmed, filePath: nil, quotedMsgId: replyTo?.id)
-            replyTo = nil
+                text: trimmed, filePath: nil, quotedMsgId: replyId)
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               replyTo?.id == replyId, generation == selectionGeneration {
+                replyTo = nil
+            }
+            clearDraft(conversationKey, ifUnchanged: draftAtStart, sentText: trimmed)
         } catch {
-            actionError = error.localizedDescription
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               generation == selectionGeneration {
+                actionError = error.localizedDescription
+            }
         }
+    }
+
+    private func clearDraft(
+        _ key: ConversationKey, ifUnchanged original: String?, sentText: String
+    ) {
+        guard drafts[key] == original,
+              original?.trimmingCharacters(in: .whitespacesAndNewlines) == sentText
+        else { return }
+        drafts.removeValue(forKey: key)
     }
 
     func createChat(email: String, name: String) async {
         guard let accountId = selectedAccountId else { return }
         do {
             let chatId = try await service.createChat(accountId: accountId, email: email, name: name)
+            guard accountId == selectedAccountId else { return }
             await reloadChats()
+            guard accountId == selectedAccountId else { return }
             selectedChatId = chatId
         } catch {
             // Non-fatal; ignore in the prototype.
@@ -745,12 +922,14 @@ final class AppModel {
     private func handle(accountId: UInt32, event: ServiceEvent) async {
         switch event {
         case .configureProgress(let permille, let comment):
+            guard isConfiguring, accountId == onboardingAccountId else { return }
             if permille > 0 {
                 configureProgress = Double(permille) / 1000
             }
             if let comment { configureComment = comment }
 
         case .imexProgress(let permille):
+            guard isConfiguring, accountId == onboardingAccountId else { return }
             // Same progress bar as configure; 0 (error/cancel) is surfaced
             // through the thrown error of joinSecondDevice instead.
             if permille > 0 {

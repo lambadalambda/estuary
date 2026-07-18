@@ -1,5 +1,23 @@
 # DEVLOG
 
+## 2026-07-18 — Account-scoped drafts and stale action guards
+
+The AppModel harness next reproduced filtered search tearing down the selected
+chat, out-of-order account switches selecting the older request in both UI and
+core, and late send/block completions clearing state in a newly selected chat.
+AppModel now caches the selected row independently of sidebar filters, stores
+drafts by account/chat, reconciles stale account selections to the latest user
+intent, and guards completion-side state writes by account/chat/reply identity.
+The composer no longer clears text before send: successful sends clear only an
+unchanged originating draft; failures and edits during suspension survive.
+Progress events are account-scoped and mark-noticed requires the app to remain
+active; core does not carry a same-account flow generation, so that narrower
+progress hole remains open. A single reconciliation driver now handles
+1→2→1, third-intent, and latest-failure account switching; pending sends are
+deduplicated, and filtered selected rows refresh through `chatById`. The
+broader isolation issue remains open for remaining action tests and production
+mock ownership semantics. Swift: 54 passed.
+
 ## 2026-07-18 — AppModel tests + message-window serialization
 
 The first direct AppModel suite uses a scripted actor service to stop requests

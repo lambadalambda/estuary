@@ -12,9 +12,17 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Select Xcode 16.4
+        run: |
+          test -d /Applications/Xcode_16.4.app
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          swift --version
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: dcvm
 

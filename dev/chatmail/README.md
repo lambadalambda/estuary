@@ -6,9 +6,9 @@ against real IMAP/SMTP.
 
 ## How it works
 
-- **Image:** official `ghcr.io/chatmail/docker:main` (github.com/chatmail/docker,
-  experimental but CI-built) — a Debian systemd container running the full relay
-  stack via `cmdeploy run --ssh-host @local`.
+- **Image:** official `ghcr.io/chatmail/docker` pinned by digest in `run.sh`
+  (github.com/chatmail/docker, experimental but CI-built) — a Debian systemd
+  container running the full relay stack via `cmdeploy run --ssh-host @local`.
 - **The `_`-domain trick (officially supported):** deploying with
   `MAIL_DOMAIN=_cm.example` makes the server use self-signed certs and skip DNS
   checks, and deltachat-core skips TLS certificate verification for hostnames
@@ -48,10 +48,8 @@ DCVM_TEST_RELAY=DCACCOUNT:_cm.example cargo test --locked -- --ignored  # opt-in
 ## Caveats (as of 2026-07)
 
 - The image is amd64; on Apple Silicon the podman machine runs it via Rosetta.
-  Untested upstream on arm64/podman (upstream CI uses Docker inside Incus/LXC,
-  see github.com/chatmail/cmlxc). **Status here: unverified** — the podman VM
-  could not boot inside the restricted agent session (Virtualization.framework
-  denied); run from a normal terminal.
+  The relay and encrypted round-trip tests have been verified locally with
+  Podman. Upstream CI uses Docker inside Incus/LXC; see github.com/chatmail/cmlxc.
 - May need higher inotify limits inside the podman VM:
   `podman machine ssh "sudo sysctl fs.inotify.max_user_instances=65536 fs.inotify.max_user_watches=65536"`.
 - Second-device (backup transfer) tests do NOT need this server at all — they

@@ -14,7 +14,7 @@ set -eu
 
 NAME=chatmail-dev
 DOMAIN="${CHATMAIL_DOMAIN:-_cm.example}"
-IMAGE="${CHATMAIL_IMAGE:-ghcr.io/chatmail/docker:main}"
+IMAGE="${CHATMAIL_IMAGE:-ghcr.io/chatmail/docker@sha256:139d23f8374d0fc8209fdb7f1f6ac93e0347719c3ad6fa10de5eeeb6d23e8091}"
 
 case "${1:-up}" in
   up)

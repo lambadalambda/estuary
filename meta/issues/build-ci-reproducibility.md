@@ -58,5 +58,23 @@ replacement. Toolchain and relay inputs are also mutable.
   code-sign verification. Nightly checks out full history so the count is
   accurate for normal `main` descendants; rewrite/rerun-safe monotonic
   publication is still open.
-- Still open: immutable nightly publication, pinned action/Xcode/relay image
-  revisions, DMG/architecture/smoke checks, and branch-protection setup.
+- Checkout and rust-cache actions now use commit SHAs, nightly selects Xcode
+  16.4 explicitly, and the local relay defaults to the verified image digest.
+  The relay README no longer carries the obsolete unverified-Podman caveat.
+- App/DMG verification checks plist/binary minimum-OS agreement, exact numeric
+  build and commit stamps, host architecture, strict deep signing, mounted-DMG
+  integrity/layout, and a three-second mock launch. The app checks pass locally;
+  the restricted agent cannot create or attach images because `hdiutil` cannot
+  start sandboxed `hdiejectd`, so the real DMG path awaits GitHub CI or a normal
+  terminal.
+- Nightly uploads a SHA-named asset without clobbering, downloads and verifies
+  its SHA-256 before updating the release page, retains prior assets, and refuses
+  to move its pointer to a commit older than or unrelated to the published one.
+  Publication is main-only, rejects checkout/event SHA mismatches, and recovers
+  after an interrupted upload by verifying the existing remote image rather
+  than requiring a regenerated DMG to be byte-identical. A fake-CLI state test
+  covers those paths and API failure. Write credentials are only exposed to the
+  publication step. Branch protection is documented in
+  `.github/BRANCH_PROTECTION.md`.
+- Still open: observe the new nightly workflow complete successfully and apply
+  the documented branch-protection rule in repository settings.

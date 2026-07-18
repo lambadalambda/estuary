@@ -1,5 +1,27 @@
 # DEVLOG
 
+## 2026-07-18 — Immutable nightly inputs and artifact gates
+
+Release checks are executable locally through `make verify-app` and
+`make verify-dmg`: they compare plist and Mach-O minimum versions, require exact
+numeric build/current-commit stamps and the host architecture, verify deep
+codesigning and DMG integrity/layout, then hold a mock-mode launch alive for
+three seconds. A stale pre-change app failed first; a fresh app passes all app
+checks. Real DMG creation is not automatable in this restricted agent because
+`hdiutil` reports that sandboxed `hdiejectd` cannot start, so the mount path
+still needs a normal terminal or CI run.
+
+Both workflows pin checkout and rust-cache by commit; nightly pins Xcode 16.4,
+and the local chatmail relay pins its locally verified OCI digest. Nightly no
+longer deletes the public release: it uploads a unique SHA-named asset, verifies
+the downloaded SHA-256, retains previous assets, and advances release notes only
+when the previous published commit is an ancestor. Its extracted state-machine
+test covers non-main and mismatched checkouts, upload-then-fail recovery with a
+non-byte-identical rebuild, API failure, and backward/unrelated publication.
+Checkout does not persist the write token; only the final step receives it.
+Required `main` branch protection is documented, but repository settings and
+the first workflow run remain external verification steps.
+
 ## 2026-07-18 — Composer/list render isolation
 
 The conversation screen now has separate Observation subtrees for

@@ -1,5 +1,6 @@
-# Nightly build: every push to main recreates the `nightly` prerelease with
-# a fresh DMG, built release-profile (Rust + Swift). Rust stays on ONE
+# Nightly build: every push to main publishes an immutable commit-addressed
+# DMG, built release-profile (Rust + Swift), then advances the `nightly`
+# release-page pointer. Rust stays on ONE
 # profile throughout (cargo test --release) so the cache carries a single
 # core build instead of two.
 name: nightly
@@ -12,37 +13,31 @@ on:
 permissions:
   contents: write
 
-# Queue (don't cancel): a cancel between `release delete` and `release
-# create` would leave the stable download URL 404ing until the next run.
+# Queue publication so an older running build cannot race a newer build.
 concurrency:
   group: nightly
   cancel-in-progress: false
 
 jobs:
   nightly:
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # CFBundleVersion is the reachable commit count, so a shallow clone
           # would stamp every nightly as build 1.
           fetch-depth: 0
+          persist-credentials: false
 
-      # Newest Xcode on the image: the Liquid Glass path needs the macOS 26
-      # SDK; on older SDKs the code compile-guards down to bar material.
-      - name: Select newest Xcode
+      - name: Select Xcode 16.4
         run: |
-          # Prefer stable: sort -V ranks "_beta" ABOVE the same stable
-          # version, and a beta may lag the stable next to it.
-          XCODE=$(ls -d /Applications/Xcode*.app \
-            | grep -viE 'beta|release.candidate' | sort -V | tail -1)
-          [ -n "$XCODE" ] || XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          echo "using $XCODE"
-          sudo xcode-select -s "$XCODE"
+          test -d /Applications/Xcode_16.4.app
+          sudo xcode-select -s /Applications/Xcode_16.4.app
           swift --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: dcvm
           # Rotate the key for the release-profile switch: an exact hit on
@@ -53,37 +48,23 @@ jobs:
       - name: Rust tests
         run: cd dcvm && cargo test --locked --release
 
-      # `make app-release` covers cargo build --release -> uniffi bindings ->
+      # `make PROFILE=release dmg` covers cargo build --release -> UniFFI bindings ->
       # swift build -c release -> .app assembly (icon, SPM resource bundle,
-      # git-SHA stamp, ad-hoc sign).
-      - name: Build app bundle
-        run: make app-release
+      # git-SHA stamp, ad-hoc sign) -> DMG packaging.
+      - name: Build app bundle and DMG
+        run: make PROFILE=release dmg
 
       # Debug-config test build, but linked against the release rust lib so
       # the dev-profile core is never built on this runner.
       - name: Swift tests
         run: cd macos && DCVM_PROFILE=release swift test --disable-sandbox
 
-      - name: Package DMG
+      - name: Verify app bundle and DMG
         run: |
-          mkdir dmg-staging
-          cp -R macos/Estuary.app dmg-staging/
-          ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname Estuary -srcfolder dmg-staging \
-            -ov -format UDZO Estuary-nightly.dmg
+          make verify-app
+          make verify-dmg
 
-      # Delete-and-recreate keeps the asset URL stable:
-      # releases/download/nightly/Estuary-nightly.dmg
-      - name: Recreate nightly release
+      - name: Publish immutable nightly asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete nightly --yes --cleanup-tag || true
-          gh release create nightly Estuary-nightly.dmg \
-            --prerelease \
-            --title "Estuary nightly ($(git rev-parse --short HEAD))" \
-            --notes "Automated build of \`main\` @ ${GITHUB_SHA}.
-
-          Ad-hoc signed (no Apple developer certificate): on first launch,
-          right-click the app → Open, or run
-          \`xattr -dr com.apple.quarantine /Applications/Estuary.app\`."
+        run: dev/release/publish-nightly.sh Estuary-nightly.dmg

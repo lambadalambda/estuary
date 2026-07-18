@@ -31,7 +31,7 @@ BINDGEN = cargo run --locked $(CARGO_PROFILE_FLAG) --features cli --bin uniffi-b
 SWIFT_FLAGS ?= --disable-sandbox
 SWIFT_BUILD_FLAGS = $(SWIFT_FLAGS) $(SWIFT_CONFIG_FLAG) --scratch-path $(SWIFT_SCRATCH)
 
-.PHONY: rust bindings swift-build run app app-release run-app icon tiles test check
+.PHONY: rust bindings swift-build run app app-release dmg verify-app verify-dmg release-tests run-app icon tiles test check
 
 rust:
 	cd dcvm && cargo build --locked $(CARGO_PROFILE_FLAG)
@@ -73,6 +73,18 @@ app: swift-build
 app-release:
 	$(MAKE) PROFILE=release app
 
+dmg: app
+	dev/release/package-dmg.sh macos/Estuary.app Estuary-nightly.dmg
+
+verify-app:
+	dev/release/verify-app.sh macos/Estuary.app
+
+verify-dmg:
+	dev/release/verify-dmg.sh Estuary-nightly.dmg
+
+release-tests:
+	dev/release/test-publish-nightly.sh
+
 # Regenerate the chat-background tiles from the brand pattern. Only needed
 # when assets/brand/chat-pattern.png changes.
 tiles:
@@ -97,4 +109,4 @@ test: bindings
 	cd macos && swift test $(SWIFT_BUILD_FLAGS)
 
 # Full non-interactive verification: Rust tests + Swift compile/link.
-check: test swift-build
+check: test swift-build release-tests

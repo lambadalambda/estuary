@@ -701,6 +701,12 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func maybeNetwork() async throws 
     
     /**
+     * Loads one exact message for event-driven notification decisions.
+     * Returns None if it was deleted before the event was consumed.
+     */
+    func messageById(accountId: UInt32, msgId: UInt32) async throws  -> MessageItem?
+    
+    /**
      * Loads messages, newest last. `limit == 0` means all. With
      * `before_msg_id`, returns up to `limit` messages strictly older than
      * that message (for loading history while scrolling up).
@@ -758,6 +764,12 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func startIo() async throws 
     
     func stopIo() async throws 
+    
+    /**
+     * Fresh, unmuted messages across every configured account. This is
+     * independent of the selected account and any shell-side list filter.
+     */
+    func unreadCount() async throws  -> UInt32
     
 }
 open class DcApp: DcAppProtocol, @unchecked Sendable {
@@ -1250,6 +1262,26 @@ open func maybeNetwork()async throws   {
 }
     
     /**
+     * Loads one exact message for event-driven notification decisions.
+     * Returns None if it was deleted before the event was consumed.
+     */
+open func messageById(accountId: UInt32, msgId: UInt32)async throws  -> MessageItem?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_message_by_id(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(msgId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeMessageItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
      * Loads messages, newest last. `limit == 0` means all. With
      * `before_msg_id`, returns up to `limit` messages strictly older than
      * that message (for loading history while scrolling up).
@@ -1511,6 +1543,26 @@ open func stopIo()async throws   {
         )
 }
     
+    /**
+     * Fresh, unmuted messages across every configured account. This is
+     * independent of the selected account and any shell-side list filter.
+     */
+open func unreadCount()async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_unread_count(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_u32,
+            completeFunc: ffi_dcvm_rust_future_complete_u32,
+            freeFunc: ffi_dcvm_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
 
     
 }
@@ -1562,7 +1614,8 @@ public func FfiConverterTypeDcApp_lower(_ value: DcApp) -> UInt64 {
 
 
 /**
- * Implemented by Swift; called from tokio worker threads.
+ * Implemented by Swift; dispatched through Tokio's blocking pool because the
+ * bounded Swift bridge may apply backpressure.
  */
 public protocol EventListener: AnyObject, Sendable {
     
@@ -1570,7 +1623,8 @@ public protocol EventListener: AnyObject, Sendable {
     
 }
 /**
- * Implemented by Swift; called from tokio worker threads.
+ * Implemented by Swift; dispatched through Tokio's blocking pool because the
+ * bounded Swift bridge may apply backpressure.
  */
 open class EventListenerImpl: EventListener, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -2950,6 +3004,30 @@ fileprivate struct FfiConverterOptionTypeChatItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeMessageItem: FfiConverterRustBuffer {
+    typealias SwiftType = MessageItem?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMessageItem.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMessageItem.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeQuoteInfo: FfiConverterRustBuffer {
     typealias SwiftType = QuoteInfo?
 
@@ -3263,6 +3341,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_maybe_network() != 54996) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_message_by_id() != 30113) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_messages() != 46702) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3306,6 +3387,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_stop_io() != 48976) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_unread_count() != 61136) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_eventlistener_on_event() != 27472) {

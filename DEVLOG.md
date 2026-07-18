@@ -1,5 +1,28 @@
 # DEVLOG
 
+## 2026-07-18 — Bounded events + exact notifications + global unread
+
+TDD reproduced duplicate burst notifications: `IncomingMessage` carried a
+`msgId`, but AppModel discarded it and reread the chat's final preview. dcvm now
+exports exact `message_by_id` lookup; AppModel loads that message before a final
+fresh mute/device-chat check, so two rapid messages retain distinct bodies and
+a mute racing the lookup suppresses delivery. Bundled foreground notifications
+install a retained banner+sound delegate for all accounts.
+
+The unbounded Swift `AsyncStream` bridge is replaced by a hybrid channel:
+incoming IDs use a bounded FIFO with callback backpressure, state events
+coalesce by key in a separate bounded queue, state overflow owns an explicit
+full-refresh slot, and dequeue is weighted so refresh cannot starve. Foreign
+callbacks run on Tokio's blocking pool to avoid starving async RPC work. AppModel
+chat/message/badge schedulers are dirty-bit single-flight loops, and transient
+unread failures preserve the last badge. dcvm sums core `get_fresh_msgs()` across
+configured accounts, making the Dock independent of account selection and
+sidebar filters. The upstream core event channel can still overflow before this
+bridge; current-state recovery is possible, but replaying exact dropped
+notifications would need a durable core watermark API. Rust: 10 unit + 23
+offline integration passed (2 relay ignored); Swift: 70 passed; strict
+Clippy/rustfmt green.
+
 ## 2026-07-18 — Reproducible local checks + PR CI
 
 The fresh-link failure reproduced earlier is fixed structurally: `make test`

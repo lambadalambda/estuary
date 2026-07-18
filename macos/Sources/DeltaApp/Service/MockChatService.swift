@@ -43,6 +43,17 @@ actor MockChatService: ChatService {
         accountsById.values.sorted { $0.id < $1.id }
     }
 
+    func unreadCount() -> UInt32 {
+        let configured = Set(accountsById.values.filter(\.isConfigured).map(\.id))
+        return chatsByAccount
+            .filter { configured.contains($0.key) }
+            .values.joined().reduce(0) { count, chat in
+            guard !chat.isMuted else { return count }
+            let (sum, overflow) = count.addingReportingOverflow(chat.freshCount)
+            return overflow ? .max : sum
+        }
+    }
+
     func addAccount() -> UInt32 {
         let id = nextAccountId
         nextAccountId += 1
@@ -115,6 +126,15 @@ actor MockChatService: ChatService {
 
     func chatById(accountId: UInt32, chatId: UInt32) -> ChatItem? {
         chatsByAccount[accountId]?.first { $0.id == chatId }
+    }
+
+    func messageById(accountId: UInt32, msgId: UInt32) -> MessageItem? {
+        let chatIds = Set(chatsByAccount[accountId, default: []].map(\.id))
+        return messagesByChat
+            .filter { chatIds.contains($0.key) }
+            .lazy
+            .flatMap(\.value)
+            .first { $0.id == msgId }
     }
 
     func chatList(accountId: UInt32) throws -> [ChatItem] {

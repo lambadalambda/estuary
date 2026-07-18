@@ -109,6 +109,7 @@ enum MessageState: Equatable, Sendable {
 /// Mirrors Rust `VmEvent`.
 enum ServiceEvent: Equatable, Sendable {
     case accountsChanged
+    case fullRefreshRequired
     case chatlistChanged
     case chatChanged(chatId: UInt32)
     case incomingMessage(chatId: UInt32, msgId: UInt32)
@@ -152,6 +153,8 @@ protocol ChatService: Sendable {
     var events: AsyncStream<(UInt32, ServiceEvent)> { get }
 
     func accounts() async throws -> [AccountInfo]
+    /// Fresh, unmuted messages across all configured accounts.
+    func unreadCount() async throws -> UInt32
     func addAccount() async throws -> UInt32
     /// Removes the account and deletes its local data.
     func removeAccount(id: UInt32) async throws
@@ -165,6 +168,8 @@ protocol ChatService: Sendable {
     /// Fresh single row (nil for unknown/deleted chats) — point lookups for
     /// notifications etc.; never rely on the filtered sidebar list.
     func chatById(accountId: UInt32, chatId: UInt32) async throws -> ChatItem?
+    /// Exact message referenced by an event; nil if it was already deleted.
+    func messageById(accountId: UInt32, msgId: UInt32) async throws -> MessageItem?
     /// Newest last. `limit == 0` means all; `beforeMsgId` pages into history.
     func messages(
         accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?

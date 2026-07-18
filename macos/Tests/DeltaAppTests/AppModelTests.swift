@@ -426,6 +426,153 @@ import Testing
 
         #expect(model.actionError == nil)
     }
+
+    @Test func rapidIncomingMessagesKeepDistinctNotificationPayloads() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let recorder = NotificationRecorder()
+        let model = AppModel(service: service) { title, body in
+            recorder.items.append((title, body))
+        }
+        await model.bootstrap()
+        await service.setMessages(testMessages(1 ... 2, outgoing: false))
+
+        await service.emit(1, .incomingMessage(chatId: 10, msgId: 1))
+        await service.emit(1, .incomingMessage(chatId: 10, msgId: 2))
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while recorder.items.count < 2, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(recorder.items.map(\.0) == ["Chat", "Chat"])
+        #expect(recorder.items.map(\.1) == ["message 1", "message 2"])
+    }
+
+    @Test func backgroundAccountEventUpdatesGlobalDockUnreadCount() async throws {
+        _ = NSApplication.shared
+        NSApp.dockTile.badgeLabel = nil
+        let service = ScriptedChatService()
+        await service.addSwitchingAccounts()
+        await service.setMessages(testMessages(1 ... 1, outgoing: false), accountId: 2)
+        await service.setUnreadCount(4)
+        let recorder = NotificationRecorder()
+        let model = AppModel(service: service) { title, body in
+            recorder.items.append((title, body))
+        }
+        await model.bootstrap()
+
+        await service.emit(2, .incomingMessage(chatId: 10, msgId: 1))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while (recorder.items.isEmpty || model.dockUnreadCount != 4),
+              ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+
+        #expect(recorder.items.count == 1)
+        #expect(recorder.items.first?.0 == "Two")
+        #expect(recorder.items.first?.1 == "message 1")
+        #expect(model.dockUnreadCount == 4)
+    }
+
+    @Test func overflowRecoveryConvergesSelectedChatState() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        await service.setChat(testChat(name: "Recovered"), accountId: 1)
+        await service.setMessages(testMessages(42 ... 42))
+        await service.emit(0, .fullRefreshRequired)
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while (model.chats.first?.name != "Recovered" || model.messages.first?.id != 42),
+              ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(model.chats.first?.name == "Recovered")
+        #expect(model.messages.map(\.id) == [42])
+    }
+
+    @Test func dockRefreshIsSingleFlightAndRetriesDirtyState() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        await service.setUnreadCount(1)
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        try await waitUntil { model.dockUnreadCount == 1 }
+        let baseline = await service.unreadCallCount()
+
+        await service.enqueueUnread(.suspended("old"))
+        await service.enqueueUnread(.immediate(5))
+        await service.emit(1, .chatChanged(chatId: 10))
+        try await service.waitUntilUnreadSuspended("old")
+        for _ in 0 ..< 20 {
+            await service.emit(1, .chatChanged(chatId: 10))
+        }
+
+        #expect(await service.unreadCallCount() == baseline + 1)
+        #expect(await service.maximumUnreadInFlight() == 1)
+        await service.resumeUnread("old", with: 2)
+        try await waitUntil { model.dockUnreadCount == 5 }
+        #expect(await service.unreadCallCount() == baseline + 2)
+        #expect(await service.maximumUnreadInFlight() == 1)
+    }
+
+    @Test func failedUnreadRefreshPreservesLastBadge() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        await service.setUnreadCount(3)
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        try await waitUntil { model.dockUnreadCount == 3 }
+        let baseline = await service.unreadCallCount()
+
+        await service.enqueueUnread(.failure)
+        await service.emit(1, .chatChanged(chatId: 10))
+        try await service.waitUntilUnreadCallCount(baseline + 1)
+
+        #expect(model.dockUnreadCount == 3)
+    }
+
+    @Test func notificationChecksMuteAfterSuspendedMessageLookup() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let recorder = NotificationRecorder()
+        let model = AppModel(service: service) { title, body in
+            recorder.items.append((title, body))
+        }
+        await model.bootstrap()
+        let message = testMessages(1 ... 1, outgoing: false)[0]
+        await service.setMessages([message])
+        await service.enqueueMessageByIdSuspension("notification")
+
+        await service.emit(1, .incomingMessage(chatId: 10, msgId: message.id))
+        try await service.waitUntilMessageByIdSuspended("notification")
+        #expect(await service.chatByIdCallCount() == 0)
+
+        var muted = testChat()
+        muted.isMuted = true
+        await service.setChat(muted, accountId: 1)
+        await service.resumeMessageById("notification", with: message)
+        try await service.waitUntilChatByIdCallCount(1)
+        await Task.yield()
+        #expect(recorder.items.isEmpty)
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !predicate() {
+            guard ContinuousClock.now < deadline else { throw GateError.timedOut("model state") }
+            await Task.yield()
+        }
+    }
+}
+
+@MainActor
+private final class NotificationRecorder {
+    var items: [(String, String)] = []
 }
 
 private func testChat(name: String = "Chat", id: UInt32 = 10) -> ChatItem {
@@ -435,17 +582,25 @@ private func testChat(name: String = "Chat", id: UInt32 = 10) -> ChatItem {
         isContactRequest: false, color: "#123456")
 }
 
-private func testMessages(_ ids: ClosedRange<Int>, chatId: UInt32 = 10) -> [MessageItem] {
+private func testMessages(
+    _ ids: ClosedRange<Int>, chatId: UInt32 = 10, outgoing: Bool = true
+) -> [MessageItem] {
     ids.map { id in
         MessageItem(
             id: UInt32(id), chatId: chatId, text: "message \(id)",
-            timestamp: Int64(id), isOutgoing: true, isInfo: false,
+            timestamp: Int64(id), isOutgoing: outgoing, isInfo: false,
             senderName: "Me", senderColor: "#123456", senderAvatar: nil,
             state: .delivered)
     }
 }
 
 private actor ScriptedChatService: ChatService {
+    enum UnreadPlan: Sendable {
+        case immediate(UInt32)
+        case suspended(String)
+        case failure
+    }
+
     enum MessagesPlan: Sendable {
         case immediate([MessageItem])
         case suspended(String)
@@ -456,7 +611,8 @@ private actor ScriptedChatService: ChatService {
         case suspended(String)
     }
 
-    nonisolated let events: AsyncStream<(UInt32, ServiceEvent)> = AsyncStream { $0.finish() }
+    nonisolated let events: AsyncStream<(UInt32, ServiceEvent)>
+    private let eventSink: AsyncStream<(UInt32, ServiceEvent)>.Continuation
 
     private var accountItems = [
         AccountInfo(
@@ -469,6 +625,17 @@ private actor ScriptedChatService: ChatService {
         1: [testChat(name: "Archived", id: 20)],
     ]
     private var currentMessages: [MessageItem] = []
+    private var messagesByAccount: [UInt32: [MessageItem]] = [:]
+    private var messageByIdSuspensions: [String] = []
+    private var messageByIdWaiters:
+        [String: CheckedContinuation<MessageItem?, any Error>] = [:]
+    private var chatByIdCalls = 0
+    private var unread: UInt32 = 0
+    private var unreadPlans: [UnreadPlan] = []
+    private var unreadWaiters: [String: CheckedContinuation<UInt32, any Error>] = [:]
+    private var unreadCalls = 0
+    private var unreadInFlight = 0
+    private var maxUnreadInFlight = 0
     private var messagesPlans: [MessagesPlan] = []
     private var chatListPlans: [ChatListPlan] = []
     private var messagesWaiters: [String: CheckedContinuation<[MessageItem], any Error>] = [:]
@@ -484,7 +651,28 @@ private actor ScriptedChatService: ChatService {
     private var searchPlans: [ChatListPlan] = []
     private var searchWaiters: [String: CheckedContinuation<[ChatItem], any Error>] = [:]
 
-    func setMessages(_ messages: [MessageItem]) { currentMessages = messages }
+    init() {
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: (UInt32, ServiceEvent).self)
+        events = stream
+        eventSink = continuation
+    }
+
+    func setMessages(_ messages: [MessageItem], accountId: UInt32 = 1) {
+        currentMessages = messages
+        messagesByAccount[accountId] = messages
+    }
+    func enqueueMessageByIdSuspension(_ label: String) {
+        messageByIdSuspensions.append(label)
+    }
+    func chatByIdCallCount() -> Int { chatByIdCalls }
+    func setUnreadCount(_ count: UInt32) { unread = count }
+    func enqueueUnread(_ plan: UnreadPlan) { unreadPlans.append(plan) }
+    func unreadCallCount() -> Int { unreadCalls }
+    func maximumUnreadInFlight() -> Int { maxUnreadInFlight }
+    func emit(_ accountId: UInt32, _ event: ServiceEvent) {
+        eventSink.yield((accountId, event))
+    }
     func setChat(_ chat: ChatItem, accountId: UInt32) {
         chatsByAccount[accountId] = [chat]
     }
@@ -540,6 +728,34 @@ private actor ScriptedChatService: ChatService {
         try await waitFor(label) { searchWaiters[$0] != nil }
     }
 
+    func waitUntilUnreadSuspended(_ label: String) async throws {
+        try await waitFor(label) { unreadWaiters[$0] != nil }
+    }
+
+    func waitUntilMessageByIdSuspended(_ label: String) async throws {
+        try await waitFor(label) { messageByIdWaiters[$0] != nil }
+    }
+
+    func waitUntilChatByIdCallCount(_ expected: Int) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while chatByIdCalls < expected {
+            guard ContinuousClock.now < deadline else {
+                throw GateError.timedOut("chatById call \(expected)")
+            }
+            await Task.yield()
+        }
+    }
+
+    func waitUntilUnreadCallCount(_ expected: Int) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while unreadCalls < expected || unreadInFlight > 0 {
+            guard ContinuousClock.now < deadline else {
+                throw GateError.timedOut("unread call \(expected)")
+            }
+            await Task.yield()
+        }
+    }
+
     func resumeMessages(_ label: String, with messages: [MessageItem]) {
         messagesWaiters.removeValue(forKey: label)?.resume(returning: messages)
     }
@@ -579,7 +795,31 @@ private actor ScriptedChatService: ChatService {
         searchWaiters.removeValue(forKey: label)?.resume(returning: chats)
     }
 
+    func resumeUnread(_ label: String, with count: UInt32) {
+        unreadWaiters.removeValue(forKey: label)?.resume(returning: count)
+    }
+
+    func resumeMessageById(_ label: String, with message: MessageItem?) {
+        messageByIdWaiters.removeValue(forKey: label)?.resume(returning: message)
+    }
+
     func accounts() -> [AccountInfo] { accountItems }
+    func unreadCount() async throws -> UInt32 {
+        unreadCalls += 1
+        unreadInFlight += 1
+        maxUnreadInFlight = max(maxUnreadInFlight, unreadInFlight)
+        defer { unreadInFlight -= 1 }
+        guard !unreadPlans.isEmpty else { return unread }
+        switch unreadPlans.removeFirst() {
+        case .immediate(let count): return count
+        case .suspended(let label):
+            return try await withCheckedThrowingContinuation {
+                unreadWaiters[label] = $0
+            }
+        case .failure:
+            throw ServiceError.core(msg: "scripted unread failure")
+        }
+    }
     func selectedAccount() -> UInt32? { selected }
 
     func addAccount() -> UInt32 {
@@ -646,7 +886,17 @@ private actor ScriptedChatService: ChatService {
 
     func login(accountId: UInt32, addr: String, password: String) throws { throw unused() }
     func chatById(accountId: UInt32, chatId: UInt32) -> ChatItem? {
-        chatsByAccount[accountId]?.first { $0.id == chatId }
+        chatByIdCalls += 1
+        return chatsByAccount[accountId]?.first { $0.id == chatId }
+    }
+    func messageById(accountId: UInt32, msgId: UInt32) async throws -> MessageItem? {
+        if !messageByIdSuspensions.isEmpty {
+            let label = messageByIdSuspensions.removeFirst()
+            return try await withCheckedThrowingContinuation {
+                messageByIdWaiters[label] = $0
+            }
+        }
+        return messagesByAccount[accountId]?.first { $0.id == msgId }
     }
     func sendText(accountId: UInt32, chatId: UInt32, text: String) throws -> UInt32 { throw unused() }
     func markNoticed(accountId: UInt32, chatId: UInt32) {}

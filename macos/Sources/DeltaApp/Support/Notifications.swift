@@ -1,6 +1,15 @@
 import Foundation
 import UserNotifications
 
+private final class ForegroundNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        await NotificationManager.foregroundPresentationOptions
+    }
+}
+
 /// Incoming-message notifications. Only functional in a bundle build
 /// (`make run-app`): UNUserNotificationCenter requires a bundle identifier,
 /// so under bare `swift run` this is a silent no-op.
@@ -8,10 +17,25 @@ import UserNotifications
 enum NotificationManager {
     private enum AuthState { case unknown, requesting, granted, denied }
 
-    private static let available = Bundle.main.bundleIdentifier != nil
+    private static let available = Bundle.main.bundleURL.pathExtension == "app"
+    private static let delegate = ForegroundNotificationDelegate()
     private static var auth = AuthState.unknown
     /// Messages arriving while the permission prompt is up; flushed on grant.
     private static var pending: [(chatName: String, preview: String)] = []
+
+    static let foregroundPresentationOptions: UNNotificationPresentationOptions = [
+        .banner, .sound,
+    ]
+
+    static func install(
+        available: Bool = NotificationManager.available,
+        setDelegate: (any UNUserNotificationCenterDelegate) -> Void = {
+            UNUserNotificationCenter.current().delegate = $0
+        }
+    ) {
+        guard available else { return }
+        setDelegate(delegate)
+    }
 
     static func postIncoming(chatName: String, preview: String) {
         guard available else { return }

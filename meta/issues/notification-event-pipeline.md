@@ -39,3 +39,26 @@ background account can therefore be silent while the app is active.
   event-pipeline acceptance criteria.
 - This issue owns the unread-summary implementation. `app-bundle-polish.md`
   depends on this result for its dock-badge requirement.
+
+## Completed (2026-07-18)
+
+- The Swift bridge now has a bounded incoming FIFO plus a separately bounded,
+  keyed state queue. Incoming callbacks backpressure rather than evict message
+  IDs; state keys coalesce, overflow schedules one explicit full refresh, and
+  weighted dequeue prevents recovery starvation. Rust dispatches foreign
+  callbacks through Tokio's blocking pool so this backpressure cannot stall the
+  async workers needed by AppModel RPCs.
+- Notifications load the exact event `msgId`, then check the freshest chat mute
+  state. Foreground `.app` builds install a retained notification-center
+  delegate that presents banners with sound for every account.
+- dcvm exposes the core-backed fresh, unmuted count across all configured
+  accounts. AppModel serializes dirty badge refreshes and drives the Dock from
+  this global value, independent of selected account, search, or archive.
+- Tests cover exact rapid-message attribution, a mute race, background-account
+  foreground routing, bounded synthetic bursts and recovery convergence,
+  incoming backpressure/close, single-flight refreshes, transient unread
+  failures, and multi-account unread state.
+- Core's upstream 10,000-event channel can still overflow before the Swift
+  bridge. Its existing recovery reconstructs current state, but exact
+  notifications for upstream-dropped incoming events would require a durable
+  notification watermark/replay API in core.

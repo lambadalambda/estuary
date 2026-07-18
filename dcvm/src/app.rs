@@ -58,10 +58,15 @@ where
     })?
 }
 
-/// Implemented by Swift; called from tokio worker threads.
+/// Implemented by Swift; dispatched through Tokio's blocking pool because the
+/// bounded Swift bridge may apply backpressure.
 #[uniffi::export(foreign)]
 pub trait EventListener: Send + Sync {
     fn on_event(&self, account_id: u32, event: VmEvent) -> Result<(), VmError>;
+}
+
+async fn dispatch_listener(listener: Arc<dyn EventListener>, account_id: u32, event: VmEvent) {
+    let _ = tokio::task::spawn_blocking(move || listener.on_event(account_id, event)).await;
 }
 
 #[derive(uniffi::Object)]
@@ -69,6 +74,59 @@ pub struct DcApp {
     accounts: Arc<RwLock<Accounts>>,
     /// Cache so `selected_account()` can stay sync (contract: "sync ok").
     selected: Arc<Mutex<Option<u32>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::Duration;
+
+    use super::{dispatch_listener, EventListener};
+    use crate::types::{VmError, VmEvent};
+
+    struct BlockingListener {
+        started: AtomicBool,
+        released: Mutex<bool>,
+        release: Condvar,
+    }
+
+    impl EventListener for BlockingListener {
+        fn on_event(&self, _account_id: u32, _event: VmEvent) -> Result<(), VmError> {
+            self.started.store(true, Ordering::Release);
+            let released = self.released.lock().unwrap();
+            drop(
+                self.release
+                    .wait_while(released, |released| !*released)
+                    .unwrap(),
+            );
+            Ok(())
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn dispatch_listener_uses_blocking_pool() {
+        let listener = Arc::new(BlockingListener {
+            started: AtomicBool::new(false),
+            released: Mutex::new(false),
+            release: Condvar::new(),
+        });
+        let dispatched = tokio::spawn(dispatch_listener(
+            listener.clone(),
+            7,
+            VmEvent::ConnectivityChanged,
+        ));
+        while !listener.started.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+
+        tokio::time::timeout(Duration::from_millis(100), tokio::task::yield_now())
+            .await
+            .expect("blocked listener stalled the async runtime");
+        *listener.released.lock().unwrap() = true;
+        listener.release.notify_one();
+        dispatched.await.unwrap();
+    }
 }
 
 async fn get_ctx(accounts: &RwLock<Accounts>, account_id: u32) -> Result<Context, VmError> {
@@ -281,17 +339,18 @@ impl DcApp {
                             let Some(accounts) = pump_accounts.upgrade() else {
                                 break;
                             };
-                            let _ = listener.on_event(0, VmEvent::AccountsChanged);
+                            dispatch_listener(listener.clone(), 0, VmEvent::AccountsChanged).await;
                             let ids = accounts.read().await.get_all();
                             for id in ids {
-                                let _ = listener.on_event(id, VmEvent::ChatlistChanged);
+                                dispatch_listener(listener.clone(), id, VmEvent::ChatlistChanged)
+                                    .await;
                             }
                         }
                         typ => {
                             if let Some(vm_event) = map_event(typ) {
                                 // Listener errors are ignored by design; only a
                                 // closed channel (None above) stops the pump.
-                                let _ = listener.on_event(event.id, vm_event);
+                                dispatch_listener(listener.clone(), event.id, vm_event).await;
                             }
                         }
                     }
@@ -325,6 +384,26 @@ impl DcApp {
                 });
             }
             Ok(out)
+        })
+        .await
+    }
+
+    /// Fresh, unmuted messages across every configured account. This is
+    /// independent of the selected account and any shell-side list filter.
+    pub async fn unread_count(&self) -> Result<u32, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ids = accounts.read().await.get_all();
+            let mut total = 0usize;
+            for id in ids {
+                let Ok(ctx) = get_ctx(&accounts, id).await else {
+                    continue;
+                };
+                if ctx.is_configured().await? {
+                    total = total.saturating_add(ctx.get_fresh_msgs().await?.len());
+                }
+            }
+            Ok(u32::try_from(total).unwrap_or(u32::MAX))
         })
         .await
     }
@@ -490,6 +569,28 @@ impl DcApp {
                 }
             }
             Ok(out)
+        })
+        .await
+    }
+
+    /// Loads one exact message for event-driven notification decisions.
+    /// Returns None if it was deleted before the event was consumed.
+    pub async fn message_by_id(
+        &self,
+        account_id: u32,
+        msg_id: u32,
+    ) -> Result<Option<MessageItem>, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let Some(msg) = Message::load_from_db_optional(&ctx, MsgId::new(msg_id)).await? else {
+                return Ok(None);
+            };
+            let mut senders = HashMap::new();
+            let mut avatars = HashMap::new();
+            Ok(Some(
+                message_item(&ctx, &msg, &mut senders, &mut avatars).await?,
+            ))
         })
         .await
     }

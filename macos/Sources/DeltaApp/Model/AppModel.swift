@@ -51,7 +51,11 @@ final class AppModel {
     /// Reported by the chat view's bottom sentinel; gates window growth.
     var viewIsAtBottom = true
     private var reloadChatsScheduled = false
+    private var reloadChatsRequested = false
     private var reloadMessagesScheduled = false
+    private var reloadMessagesRequested = false
+    private var dockBadgeReloadScheduled = false
+    private var dockBadgeReloadRequested = false
     /// Main-screen action failures (send/accept/block/…), shown as an alert.
     var actionError: String?
     /// Message being replied to (composer banner); sent as quote.
@@ -82,6 +86,7 @@ final class AppModel {
     var showNewChat = false
     var showNewGroup = false
     private(set) var connectivityValue: UInt32 = 0
+    private(set) var dockUnreadCount: UInt32 = 0
 
     // Login / onboarding state.
     var profileName = ""
@@ -98,12 +103,26 @@ final class AppModel {
     private var onboardingAccountId: UInt32?
 
     let service: any ChatService
+    @ObservationIgnored private let postIncomingNotification:
+        @MainActor @Sendable (String, String) -> Void
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     private var searchGeneration: UInt64 = 0
 
-    nonisolated init(service: any ChatService) {
+    nonisolated init(
+        service: any ChatService,
+        postIncomingNotification: @escaping @MainActor @Sendable (String, String) -> Void = {
+            chatName, preview in
+            NotificationManager.postIncoming(chatName: chatName, preview: preview)
+        }
+    ) {
         self.service = service
+        self.postIncomingNotification = postIncomingNotification
+    }
+
+    deinit {
+        eventTask?.cancel()
+        searchTask?.cancel()
     }
 
     var selectedChat: ChatItem? {
@@ -167,8 +186,9 @@ final class AppModel {
 
     private func startEventLoop() {
         guard eventTask == nil else { return }
-        eventTask = Task { [service] in
+        eventTask = Task { [weak self, service] in
             for await (accountId, event) in service.events {
+                guard let self else { return }
                 await handle(accountId: accountId, event: event)
             }
         }
@@ -410,6 +430,7 @@ final class AppModel {
                 desiredAccountId = nil
                 searchQuery = ""
                 showingArchive = false
+                dockUnreadCount = 0
                 NSApp.dockTile.badgeLabel = nil
                 screen = .onboarding
             }
@@ -479,16 +500,15 @@ final class AppModel {
                 selectedChatCache = nil
                 resetMessageWindow()
             }
-            if !showingArchive, query.isEmpty {
-                updateDockBadge()
-            }
+            scheduleUpdateDockBadge()
         } catch {
             // Keep the last known list; a follow-up event will retry.
         }
     }
 
-    private func updateDockBadge() {
-        let unread = chats.filter { !$0.isMuted }.reduce(0) { $0 + Int($1.freshCount) }
+    private func updateDockBadge() async {
+        guard let unread = try? await service.unreadCount() else { return }
+        dockUnreadCount = unread
         NSApp.dockTile.badgeLabel = unread > 0 ? "\(unread)" : nil
     }
 
@@ -615,22 +635,44 @@ final class AppModel {
     /// Coalesced reloads: core bursts events during sync; one pending reload
     /// absorbs the whole burst instead of a full RPC round-trip per event.
     private func scheduleReloadChats() {
+        reloadChatsRequested = true
         guard !reloadChatsScheduled else { return }
         reloadChatsScheduled = true
         Task {
-            try? await Task.sleep(for: .milliseconds(80))
+            repeat {
+                try? await Task.sleep(for: .milliseconds(80))
+                reloadChatsRequested = false
+                await reloadChats()
+            } while reloadChatsRequested
             reloadChatsScheduled = false
-            await reloadChats()
         }
     }
 
     private func scheduleReloadMessages() {
+        reloadMessagesRequested = true
         guard !reloadMessagesScheduled else { return }
         reloadMessagesScheduled = true
         Task {
-            try? await Task.sleep(for: .milliseconds(80))
+            repeat {
+                try? await Task.sleep(for: .milliseconds(80))
+                reloadMessagesRequested = false
+                await reloadMessages()
+            } while reloadMessagesRequested
             reloadMessagesScheduled = false
-            await reloadMessages()
+        }
+    }
+
+    private func scheduleUpdateDockBadge() {
+        dockBadgeReloadRequested = true
+        guard !dockBadgeReloadScheduled else { return }
+        dockBadgeReloadScheduled = true
+        Task {
+            repeat {
+                try? await Task.sleep(for: .milliseconds(80))
+                dockBadgeReloadRequested = false
+                await updateDockBadge()
+            } while dockBadgeReloadRequested
+            dockBadgeReloadScheduled = false
         }
     }
 
@@ -963,8 +1005,21 @@ final class AppModel {
 
         case .accountsChanged:
             accounts = (try? await service.accounts()) ?? accounts
+            scheduleUpdateDockBadge()
+
+        case .fullRefreshRequired:
+            accounts = (try? await service.accounts()) ?? accounts
+            scheduleUpdateDockBadge()
+            if screen == .main {
+                scheduleReloadChats()
+                scheduleReloadMessages()
+            }
+            if showSettings {
+                await refreshConnectivity()
+            }
 
         case .chatlistChanged:
+            scheduleUpdateDockBadge()
             if screen == .main, accountId == selectedAccountId {
                 scheduleReloadChats()
                 // Overflow recovery maps to ChatlistChanged; per-chat events
@@ -973,6 +1028,7 @@ final class AppModel {
             }
 
         case .chatChanged(let chatId):
+            scheduleUpdateDockBadge()
             // Core often signals sidebar-row updates *only* via events that
             // map to chatChanged (e.g. marknoticed_chat -> MsgsNoticed +
             // ChatlistItemChanged, send_msg -> MsgsChanged, without any
@@ -985,7 +1041,8 @@ final class AppModel {
                 }
             }
 
-        case .incomingMessage(let chatId, _):
+        case .incomingMessage(let chatId, let msgId):
+            scheduleUpdateDockBadge()
             if accountId == selectedAccountId {
                 scheduleReloadChats()
                 if chatId == selectedChatId {
@@ -996,7 +1053,7 @@ final class AppModel {
                 }
             }
             // Notifications work for EVERY account, not just the selected one.
-            await notifyIncoming(accountId: accountId, chatId: chatId)
+            await notifyIncoming(accountId: accountId, chatId: chatId, msgId: msgId)
 
         case .connectivityChanged:
             if showSettings {
@@ -1009,23 +1066,18 @@ final class AppModel {
     /// filtered sidebar list: a muted chat missing from search/archive
     /// results must still be recognized as muted (bundle builds only; bare
     /// `swift run` has no notification identity).
-    private func notifyIncoming(accountId: UInt32, chatId: UInt32) async {
+    private func notifyIncoming(accountId: UInt32, chatId: UInt32, msgId: UInt32) async {
         // Always a fresh point lookup: the sidebar list may be filtered
-        // (hiding muted chats) or one event stale (showing the previous
-        // message as the preview).
-        guard let chat = try? await service.chatById(accountId: accountId, chatId: chatId),
+        // (hiding muted chats). Load the event's exact message separately:
+        // the chat preview may already point at a later message in a burst.
+        guard let message = try? await service.messageById(accountId: accountId, msgId: msgId),
+              let chat = try? await service.chatById(accountId: accountId, chatId: chatId),
               !chat.isMuted, !chat.isDeviceTalk
         else { return }
 
         let isCurrentChat = accountId == selectedAccountId && chatId == selectedChatId
         if !isCurrentChat || !NSApplication.shared.isActive {
-            NotificationManager.postIncoming(chatName: chat.name, preview: chat.preview)
-        }
-        // Subtle in-app ping for messages landing outside the open chat
-        // (notifications already sound when the app is inactive).
-        if NSApplication.shared.isActive, !isCurrentChat,
-           accountId == selectedAccountId {
-            NSSound(named: "Pop")?.play()
+            postIncomingNotification(chat.name, message.text)
         }
     }
 }

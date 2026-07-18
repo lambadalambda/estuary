@@ -17,3 +17,4 @@
 - [x] [Scroll regressions: jump-to-top on select/post, sidebar scroller flash](issues/scroll-regressions.md)
 - [x] [Empty state: tiled backdrop only covers the placeholder box](issues/empty-state-backdrop-fill.md)
 - [x] [Message-window mutation race + first AppModel tests](issues/message-window-race-appmodel-tests.md)
+- [x] [Notification delivery and event-pipeline backpressure](issues/notification-event-pipeline.md)

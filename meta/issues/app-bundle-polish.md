@@ -46,5 +46,6 @@ Numeric `CFBundleVersion` now uses the git commit count and the short SHA is
 stored separately as `EstuaryGitCommit`. A built app reports minimum macOS 15
 and passes `codesign --verify --deep --strict`. Nightly fetches full history,
 but a history rewrite or old workflow rerun can still republish a lower count,
-so the monotonic-build criterion remains open alongside dock-wide unread count
-and signing/notarization.
+so the monotonic-build criterion remains open alongside signing/notarization.
+The Dock badge now uses dcvm's fresh-message count across every configured
+account and is independent of sidebar search/archive state.

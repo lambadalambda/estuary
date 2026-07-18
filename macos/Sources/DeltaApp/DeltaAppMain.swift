@@ -10,6 +10,7 @@ struct DeltaAppMain: App {
         // Running via `swift run` (no .app bundle): become a regular,
         // focusable app with a Dock icon.
         NSApplication.shared.setActivationPolicy(.regular)
+        NotificationManager.install()
         // Screenshot hook: force an appearance regardless of the system
         // setting ("light"/"dark"), so both variants can be captured.
         if let forced = ProcessInfo.processInfo.environment["DCNATIVE_APPEARANCE"] {

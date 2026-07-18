@@ -11,5 +11,4 @@
 - [ ] [Encrypted group member discovery and safe creation](issues/encrypted-group-creation-correctness.md)
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
-- [ ] [Notification delivery and event-pipeline backpressure](issues/notification-event-pipeline.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)

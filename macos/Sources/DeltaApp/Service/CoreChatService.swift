@@ -23,9 +23,9 @@ actor CoreChatService: ChatService {
 
     init(dataDir: String) {
         self.dataDir = dataDir
-        let (stream, continuation) = AsyncStream.makeStream(of: (UInt32, ServiceEvent).self)
-        self.events = stream
-        self.listener = CoreEventListener(continuation: continuation)
+        let eventBuffer = ServiceEventBuffer()
+        self.events = eventBuffer.stream()
+        self.listener = CoreEventListener(buffer: eventBuffer)
     }
 
     private func app() async throws -> DcApp {
@@ -59,6 +59,11 @@ actor CoreChatService: ChatService {
 
     func accounts() async throws -> [AccountInfo] {
         do { return try await app().accounts().map(mapAccount) }
+        catch { throw mapError(error) }
+    }
+
+    func unreadCount() async throws -> UInt32 {
+        do { return try await app().unreadCount() }
         catch { throw mapError(error) }
     }
 
@@ -110,6 +115,11 @@ actor CoreChatService: ChatService {
 
     func chatById(accountId: UInt32, chatId: UInt32) async throws -> ChatItem? {
         do { return try await app().chatById(accountId: accountId, chatId: chatId).map(mapChat) }
+        catch { throw mapError(error) }
+    }
+
+    func messageById(accountId: UInt32, msgId: UInt32) async throws -> MessageItem? {
+        do { return try await app().messageById(accountId: accountId, msgId: msgId).map(mapMessage) }
         catch { throw mapError(error) }
     }
 
@@ -283,20 +293,19 @@ actor CoreChatService: ChatService {
 
 // MARK: - Event listener bridge
 //
-// Called by Rust on tokio worker threads. Yielding into an AsyncStream is the
-// thread hop: the continuation is thread-safe, and the single consumer
-// (AppModel's event loop) processes each event on the MainActor. No UI state
-// is ever touched on the tokio thread.
+// Called by Rust on its blocking callback pool. The bounded buffer is the
+// thread hop; AppModel remains the only consumer and touches UI state on the
+// MainActor.
 
 private final class CoreEventListener: EventListener, @unchecked Sendable {
-    private let continuation: AsyncStream<(UInt32, ServiceEvent)>.Continuation
+    private let buffer: ServiceEventBuffer
 
-    init(continuation: AsyncStream<(UInt32, ServiceEvent)>.Continuation) {
-        self.continuation = continuation
+    init(buffer: ServiceEventBuffer) {
+        self.buffer = buffer
     }
 
     func onEvent(accountId: UInt32, event: VmEvent) throws {
-        continuation.yield((accountId, mapEvent(event)))
+        buffer.offer(accountId: accountId, event: mapEvent(event))
     }
 }
 

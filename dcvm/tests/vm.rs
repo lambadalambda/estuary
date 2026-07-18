@@ -215,6 +215,55 @@ hi alice, got a minute?\r\n";
     assert_eq!(row.fresh_count, 0);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn unread_count_covers_every_account() {
+    let (app, _collector, _dir) = make_app().await;
+    let first = app.add_account().await.unwrap();
+    let second = app.add_account().await.unwrap();
+    pseudo_configure(&app, first, "one@example.org").await;
+    pseudo_configure(&app, second, "two@example.org").await;
+    let first_chat = app
+        .create_chat(first, "alice@example.net".into(), "Alice".into())
+        .await
+        .unwrap();
+    app.create_chat(second, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+
+    let first_mail = b"From: Alice <alice@example.net>\r\n\
+To: one@example.org\r\n\
+Message-ID: <unread.one@example.net>\r\n\
+Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\
+Chat-Version: 1.0\r\n\
+\r\n\
+first unread\r\n";
+    let second_mail = b"From: Bob <bob@example.net>\r\n\
+To: two@example.org\r\n\
+Message-ID: <unread.two@example.net>\r\n\
+Date: Wed, 15 Jul 2026 10:01:00 +0000\r\n\
+Chat-Version: 1.0\r\n\
+\r\n\
+second unread\r\n";
+    dcvm::deltachat::receive_imf::receive_imf(
+        &app.context(first).await.unwrap(),
+        first_mail,
+        false,
+    )
+    .await
+    .unwrap();
+    dcvm::deltachat::receive_imf::receive_imf(
+        &app.context(second).await.unwrap(),
+        second_mail,
+        false,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(app.unread_count().await.unwrap(), 2);
+    app.mark_noticed(first, first_chat).await.unwrap();
+    assert_eq!(app.unread_count().await.unwrap(), 1);
+}
+
 /// Listener that blocks the event pump on its first callback until released,
 /// so the test can deterministically overflow core's 10_000-event channel.
 struct GatedCollector {
@@ -983,6 +1032,24 @@ async fn message_pagination() {
 
     // limit 0 = everything.
     assert_eq!(app.messages(id, chat, 0, None).await.unwrap().len(), 25);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_by_id_returns_the_exact_message() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    let first = app.send_text(id, chat, "first".into()).await.unwrap();
+    app.send_text(id, chat, "second".into()).await.unwrap();
+
+    let message = app.message_by_id(id, first).await.unwrap().unwrap();
+    assert_eq!(message.id, first);
+    assert_eq!(message.text, "first");
+    assert!(app.message_by_id(id, 999_999).await.unwrap().is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]

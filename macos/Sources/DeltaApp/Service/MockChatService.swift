@@ -7,18 +7,31 @@ import Foundation
 /// steps, sendText appends a pending message and emits ChatChanged (then walks
 /// it to delivered/read), 1:1 chats echo a reply via IncomingMessage.
 actor MockChatService: ChatService {
+    private struct ChatKey: Hashable {
+        let accountId: UInt32
+        let chatId: UInt32
+    }
+
+    private struct MessageKey: Hashable {
+        let accountId: UInt32
+        let chatId: UInt32
+        let msgId: UInt32
+    }
+
     nonisolated let events: AsyncStream<(UInt32, ServiceEvent)>
     private let eventSink: AsyncStream<(UInt32, ServiceEvent)>.Continuation
 
     private var accountsById: [UInt32: AccountInfo] = [:]
     private var selected: UInt32?
     private var chatsByAccount: [UInt32: [ChatItem]] = [:]
-    private var messagesByChat: [UInt32: [MessageItem]] = [:]
+    private var messagesByChat: [ChatKey: [MessageItem]] = [:]
     /// 1:1 chats that auto-reply to outgoing messages.
-    private var echoChats: Set<UInt32> = []
+    private var echoChats: Set<ChatKey> = []
+    private var seenMessages: Set<MessageKey> = []
+    private var freshMessages: Set<MessageKey> = []
     private var nextAccountId: UInt32 = 1
-    private var nextChatId: UInt32 = 10
-    private var nextMsgId: UInt32 = 1000
+    private var nextChatIdByAccount: [UInt32: UInt32] = [:]
+    private var nextMsgIdByAccount: [UInt32: UInt32] = [:]
     private var ioRunning = false
 
     private static let selfColor = "#2f9e44"
@@ -59,6 +72,8 @@ actor MockChatService: ChatService {
         nextAccountId += 1
         accountsById[id] = AccountInfo(id: id, addr: nil, displayName: nil, isConfigured: false)
         chatsByAccount[id] = []
+        nextChatIdByAccount[id] = 10
+        nextMsgIdByAccount[id] = 1000
         emit(0, .accountsChanged)
         return id
     }
@@ -69,9 +84,14 @@ actor MockChatService: ChatService {
         }
         _ = account
         for chat in chatsByAccount.removeValue(forKey: id) ?? [] {
-            messagesByChat.removeValue(forKey: chat.id)
-            echoChats.remove(chat.id)
+            let key = ChatKey(accountId: id, chatId: chat.id)
+            messagesByChat.removeValue(forKey: key)
+            echoChats.remove(key)
         }
+        seenMessages = seenMessages.filter { $0.accountId != id }
+        freshMessages = freshMessages.filter { $0.accountId != id }
+        nextChatIdByAccount.removeValue(forKey: id)
+        nextMsgIdByAccount.removeValue(forKey: id)
         if selected == id {
             selected = accountsById.keys.sorted().first
         }
@@ -129,9 +149,8 @@ actor MockChatService: ChatService {
     }
 
     func messageById(accountId: UInt32, msgId: UInt32) -> MessageItem? {
-        let chatIds = Set(chatsByAccount[accountId, default: []].map(\.id))
         return messagesByChat
-            .filter { chatIds.contains($0.key) }
+            .filter { $0.key.accountId == accountId }
             .lazy
             .flatMap(\.value)
             .first { $0.id == msgId }
@@ -153,7 +172,7 @@ actor MockChatService: ChatService {
         guard chatsByAccount[accountId]?.contains(where: { $0.id == chatId }) == true else {
             throw ServiceError.core(msg: "no such chat: \(chatId)")
         }
-        var all = messagesByChat[chatId] ?? []
+        var all = messagesByChat[ChatKey(accountId: accountId, chatId: chatId)] ?? []
         if let beforeMsgId {
             guard let pos = all.firstIndex(where: { $0.id == beforeMsgId }) else {
                 return [] // anchor gone: match dcvm, never the newest page
@@ -172,21 +191,21 @@ actor MockChatService: ChatService {
         else {
             throw ServiceError.core(msg: "no such chat: \(chatId)")
         }
-        let msgId = nextMsgId
-        nextMsgId += 1
+        let msgId = allocateMessageId(accountId: accountId)
         let now = Int64(Date().timeIntervalSince1970)
         let message = MessageItem(
             id: msgId, chatId: chatId, text: text, timestamp: now,
             isOutgoing: true, isInfo: false,
             senderName: "Me", senderColor: Self.selfColor, state: .pending)
-        messagesByChat[chatId, default: []].append(message)
+        let key = ChatKey(accountId: accountId, chatId: chatId)
+        messagesByChat[key, default: []].append(message)
         chats[index].preview = "Me: \(text)"
         chats[index].timestamp = now
         chatsByAccount[accountId] = chats
         emit(accountId, .chatChanged(chatId: chatId))
         emit(accountId, .chatlistChanged)
 
-        let echo = echoChats.contains(chatId)
+        let echo = echoChats.contains(key)
         let echoSender = (name: chats[index].name, color: chats[index].color)
         Task {
             await self.simulateDelivery(
@@ -203,6 +222,9 @@ actor MockChatService: ChatService {
         else { return }
         chats[index].freshCount = 0
         chatsByAccount[accountId] = chats
+        freshMessages = freshMessages.filter {
+            !($0.accountId == accountId && $0.chatId == chatId)
+        }
         emit(accountId, .chatlistChanged)
     }
 
@@ -210,8 +232,7 @@ actor MockChatService: ChatService {
         guard chatsByAccount[accountId] != nil else {
             throw ServiceError.core(msg: "no such account: \(accountId)")
         }
-        let id = nextChatId
-        nextChatId += 1
+        let id = allocateChatId(accountId: accountId)
         let chat = ChatItem(
             id: id,
             name: name.isEmpty ? email : name,
@@ -219,8 +240,9 @@ actor MockChatService: ChatService {
             isSelfTalk: false, isPinned: false, isMuted: false, isContactRequest: false,
             color: Self.palette[Int(id) % Self.palette.count])
         chatsByAccount[accountId]?.append(chat)
-        messagesByChat[id] = []
-        echoChats.insert(id)
+        let key = ChatKey(accountId: accountId, chatId: id)
+        messagesByChat[key] = []
+        echoChats.insert(key)
         emit(accountId, .chatlistChanged)
         return id
     }
@@ -323,15 +345,16 @@ actor MockChatService: ChatService {
         accountId: UInt32, chatId: UInt32,
         text: String?, filePath: String?, quotedMsgId: UInt32?
     ) async throws -> UInt32 {
+        let key = ChatKey(accountId: accountId, chatId: chatId)
         var quote: QuoteInfo?
         if let quotedMsgId,
-           let quoted = messagesByChat[chatId]?.first(where: { $0.id == quotedMsgId }) {
+           let quoted = messagesByChat[key]?.first(where: { $0.id == quotedMsgId }) {
             quote = QuoteInfo(
                 text: quoted.text, senderName: quoted.senderName,
                 senderColor: quoted.senderColor)
         }
         let msgId = try sendText(accountId: accountId, chatId: chatId, text: text ?? "")
-        if var messages = messagesByChat[chatId],
+        if var messages = messagesByChat[key],
            let index = messages.firstIndex(where: { $0.id == msgId }) {
             messages[index].quote = quote
             if let filePath {
@@ -342,14 +365,14 @@ actor MockChatService: ChatService {
                 messages[index].kind = ["png", "jpg", "jpeg", "webp"]
                     .contains(url.pathExtension.lowercased()) ? .image : .file
             }
-            messagesByChat[chatId] = messages
+            messagesByChat[key] = messages
         }
         emit(accountId, .chatChanged(chatId: chatId))
         return msgId
     }
 
     func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) {
-        for (chatId, var messages) in messagesByChat {
+        for (key, var messages) in messagesByChat where key.accountId == accountId {
             guard let index = messages.firstIndex(where: { $0.id == msgId }) else { continue }
             var reactions = messages[index].reactions.filter { !$0.isFromSelf || $0.count > 1 }
             // Drop the own share of any previous reaction.
@@ -367,23 +390,33 @@ actor MockChatService: ChatService {
                 }
             }
             messages[index].reactions = reactions
-            messagesByChat[chatId] = messages
-            emit(accountId, .chatChanged(chatId: chatId))
+            messagesByChat[key] = messages
+            emit(accountId, .chatChanged(chatId: key.chatId))
             return
         }
     }
 
     func deleteMessages(accountId: UInt32, msgIds: [UInt32]) {
-        for (chatId, messages) in messagesByChat {
+        for (key, messages) in messagesByChat where key.accountId == accountId {
             let remaining = messages.filter { !msgIds.contains($0.id) }
             guard remaining.count != messages.count else { continue }
-            messagesByChat[chatId] = remaining
-            emit(accountId, .chatChanged(chatId: chatId))
+            messagesByChat[key] = remaining
+            seenMessages = seenMessages.filter {
+                !($0.accountId == accountId && $0.chatId == key.chatId
+                    && msgIds.contains($0.msgId))
+            }
+            freshMessages = freshMessages.filter {
+                !($0.accountId == accountId && $0.chatId == key.chatId
+                    && msgIds.contains($0.msgId))
+            }
+            emit(accountId, .chatChanged(chatId: key.chatId))
         }
     }
 
     func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) throws {
-        let all = messagesByChat.values.flatMap { $0 }
+        let all = messagesByChat
+            .filter { $0.key.accountId == accountId }
+            .values.flatMap { $0 }
         for msgId in msgIds {
             guard let original = all.first(where: { $0.id == msgId }) else { continue }
             _ = try sendText(accountId: accountId, chatId: chatId, text: original.text)
@@ -391,8 +424,30 @@ actor MockChatService: ChatService {
     }
 
     func markSeen(accountId: UInt32, msgIds: [UInt32]) {
-        for (chatId, _) in messagesByChat where messagesByChat[chatId]!.contains(where: { msgIds.contains($0.id) }) {
-            markNoticed(accountId: accountId, chatId: chatId)
+        for (key, messages) in messagesByChat
+        where key.accountId == accountId && messages.contains(where: { msgIds.contains($0.id) }) {
+            let newlySeen = messages.filter {
+                !$0.isOutgoing && !$0.isInfo && msgIds.contains($0.id)
+                    && !seenMessages.contains(MessageKey(
+                        accountId: accountId, chatId: key.chatId, msgId: $0.id))
+            }
+            guard !newlySeen.isEmpty else { continue }
+            var newlyFresh = 0
+            for message in newlySeen {
+                let messageKey = MessageKey(
+                    accountId: accountId, chatId: key.chatId, msgId: message.id)
+                seenMessages.insert(messageKey)
+                if freshMessages.remove(messageKey) != nil { newlyFresh += 1 }
+            }
+            if var chats = chatsByAccount[accountId],
+               let index = chats.firstIndex(where: { $0.id == key.chatId }) {
+                let seenCount = UInt32(clamping: newlyFresh)
+                chats[index].freshCount = chats[index].freshCount > seenCount
+                    ? chats[index].freshCount - seenCount : 0
+                chatsByAccount[accountId] = chats
+                if newlyFresh > 0 { emit(accountId, .chatlistChanged) }
+                emit(accountId, .chatChanged(chatId: key.chatId))
+            }
         }
     }
 
@@ -404,7 +459,15 @@ actor MockChatService: ChatService {
 
     func blockChat(accountId: UInt32, chatId: UInt32) {
         chatsByAccount[accountId]?.removeAll { $0.id == chatId }
-        messagesByChat.removeValue(forKey: chatId)
+        let key = ChatKey(accountId: accountId, chatId: chatId)
+        messagesByChat.removeValue(forKey: key)
+        echoChats.remove(key)
+        seenMessages = seenMessages.filter {
+            !($0.accountId == accountId && $0.chatId == chatId)
+        }
+        freshMessages = freshMessages.filter {
+            !($0.accountId == accountId && $0.chatId == chatId)
+        }
         emit(accountId, .chatlistChanged)
     }
 
@@ -427,7 +490,9 @@ actor MockChatService: ChatService {
     }
 
     func searchMessages(accountId: UInt32, query: String) -> [MessageItem] {
-        messagesByChat.values.flatMap { $0 }
+        messagesByChat
+            .filter { $0.key.accountId == accountId }
+            .values.flatMap { $0 }
             .filter { $0.text.localizedCaseInsensitiveContains(query) }
             .sorted { $0.timestamp < $1.timestamp }
     }
@@ -444,14 +509,16 @@ actor MockChatService: ChatService {
     }
 
     func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32]) throws -> UInt32 {
-        let id = nextChatId
-        nextChatId += 1
+        guard chatsByAccount[accountId] != nil else {
+            throw ServiceError.core(msg: "no such account: \(accountId)")
+        }
+        let id = allocateChatId(accountId: accountId)
         chatsByAccount[accountId, default: []].append(ChatItem(
             id: id, name: name, preview: "", timestamp: Int64(Date().timeIntervalSince1970),
             freshCount: 0, isSelfTalk: false, isPinned: false, isMuted: false,
             isContactRequest: false, color: Self.palette[Int(id) % Self.palette.count],
             isGroup: true))
-        messagesByChat[id] = []
+        messagesByChat[ChatKey(accountId: accountId, chatId: id)] = []
         emit(accountId, .chatlistChanged)
         return id
     }
@@ -489,6 +556,18 @@ actor MockChatService: ChatService {
         return chats
     }
 
+    private func allocateChatId(accountId: UInt32) -> UInt32 {
+        let id = nextChatIdByAccount[accountId, default: 10]
+        nextChatIdByAccount[accountId] = id + 1
+        return id
+    }
+
+    private func allocateMessageId(accountId: UInt32) -> UInt32 {
+        let id = nextMsgIdByAccount[accountId, default: 1000]
+        nextMsgIdByAccount[accountId] = id + 1
+        return id
+    }
+
     // MARK: Simulation helpers
 
     private func simulateDelivery(
@@ -496,11 +575,11 @@ actor MockChatService: ChatService {
         echo: Bool, echoSender: (name: String, color: String), originalText: String
     ) async {
         try? await Task.sleep(for: .milliseconds(500))
-        setMessageState(chatId: chatId, msgId: msgId, state: .delivered)
+        setMessageState(accountId: accountId, chatId: chatId, msgId: msgId, state: .delivered)
         emit(accountId, .chatChanged(chatId: chatId))
 
         try? await Task.sleep(for: .milliseconds(800))
-        setMessageState(chatId: chatId, msgId: msgId, state: .read)
+        setMessageState(accountId: accountId, chatId: chatId, msgId: msgId, state: .read)
         emit(accountId, .chatChanged(chatId: chatId))
 
         guard echo else { return }
@@ -510,14 +589,16 @@ actor MockChatService: ChatService {
         guard chatsByAccount[accountId]?.contains(where: { $0.id == chatId }) == true else {
             return
         }
-        let replyId = nextMsgId
-        nextMsgId += 1
+        let replyId = allocateMessageId(accountId: accountId)
         let now = Int64(Date().timeIntervalSince1970)
         let replyText = "Echo: \(originalText)"
-        messagesByChat[chatId, default: []].append(MessageItem(
+        let key = ChatKey(accountId: accountId, chatId: chatId)
+        messagesByChat[key, default: []].append(MessageItem(
             id: replyId, chatId: chatId, text: replyText, timestamp: now,
             isOutgoing: false, isInfo: false,
             senderName: echoSender.name, senderColor: echoSender.color, state: .noState))
+        freshMessages.insert(MessageKey(
+            accountId: accountId, chatId: chatId, msgId: replyId))
         if var chats = chatsByAccount[accountId],
            let index = chats.firstIndex(where: { $0.id == chatId }) {
             chats[index].preview = replyText
@@ -529,12 +610,15 @@ actor MockChatService: ChatService {
         emit(accountId, .chatlistChanged)
     }
 
-    private func setMessageState(chatId: UInt32, msgId: UInt32, state: MessageState) {
-        guard var messages = messagesByChat[chatId],
+    private func setMessageState(
+        accountId: UInt32, chatId: UInt32, msgId: UInt32, state: MessageState
+    ) {
+        let key = ChatKey(accountId: accountId, chatId: chatId)
+        guard var messages = messagesByChat[key],
               let index = messages.firstIndex(where: { $0.id == msgId })
         else { return }
         messages[index].state = state
-        messagesByChat[chatId] = messages
+        messagesByChat[key] = messages
     }
 
     // MARK: Seed data
@@ -549,13 +633,12 @@ actor MockChatService: ChatService {
             request: Bool = false, selfTalk: Bool = false, fresh: UInt32 = 0,
             group: Bool = false
         ) -> UInt32 {
-            let id = nextChatId
-            nextChatId += 1
+            let id = allocateChatId(accountId: accountId)
             chats.append(ChatItem(
                 id: id, name: name, preview: "", timestamp: 0, freshCount: fresh,
                 isSelfTalk: selfTalk, isPinned: pinned, isMuted: muted,
                 isContactRequest: request, color: color, isGroup: group))
-            messagesByChat[id] = []
+            messagesByChat[ChatKey(accountId: accountId, chatId: id)] = []
             return id
         }
 
@@ -564,12 +647,12 @@ actor MockChatService: ChatService {
             outgoing: Bool = false, sender: (name: String, color: String)? = nil,
             info: Bool = false, state: MessageState = .noState
         ) {
-            let id = nextMsgId
-            nextMsgId += 1
+            let id = allocateMessageId(accountId: accountId)
             let timestamp = now - minutesAgo * 60
             let senderName = outgoing ? "Me" : (sender?.name ?? "")
             let senderColor = outgoing ? Self.selfColor : (sender?.color ?? "#999999")
-            messagesByChat[chatId, default: []].append(MessageItem(
+            messagesByChat[ChatKey(accountId: accountId, chatId: chatId), default: []]
+                .append(MessageItem(
                 id: id, chatId: chatId, text: text, timestamp: timestamp,
                 isOutgoing: outgoing, isInfo: info,
                 senderName: senderName, senderColor: senderColor, state: state))
@@ -596,7 +679,7 @@ actor MockChatService: ChatService {
         // Elena — the showcase chat: conversation, quote, reactions, media.
         let elena = (name: "Elena", color: "#e56555")
         let elenaChat = makeChat(name: elena.name, color: elena.color, fresh: 2)
-        echoChats.insert(elenaChat)
+        echoChats.insert(ChatKey(accountId: accountId, chatId: elenaChat))
         addMessage(elenaChat, "Hey! Did you get the photos from the coast trip?", minutesAgo: 2 * day + 300, sender: elena)
         addMessage(elenaChat, "Just did — they look amazing! The lighthouse one is my favorite.", minutesAgo: 2 * day + 290, outgoing: true, state: .read)
         addMessage(elenaChat, "Right? Let's print a few for grandma, she'll love them.", minutesAgo: day + 60, sender: elena)
@@ -606,7 +689,7 @@ actor MockChatService: ChatService {
         // Marco — muted, quiet chat.
         let marco = (name: "Marco", color: "#3d7bde")
         let marcoChat = makeChat(name: marco.name, color: marco.color, muted: true)
-        echoChats.insert(marcoChat)
+        echoChats.insert(ChatKey(accountId: accountId, chatId: marcoChat))
         addMessage(marcoChat, "Are we still on for football on Saturday?", minutesAgo: 3 * day + 30, sender: marco)
         addMessage(marcoChat, "Yes! 10am at the usual field.", minutesAgo: 3 * day + 10, outgoing: true, state: .read)
 
@@ -625,10 +708,10 @@ actor MockChatService: ChatService {
         addMessage(sam, "Hi! We met at the conference — is this the right address?", minutesAgo: 310, sender: (name: "Sam", color: "#d33682"))
 
         // Media/quote/reaction samples in the Elena chat.
-        if let last = messagesByChat[elenaChat]?.last {
-            let id = nextMsgId
-            nextMsgId += 1
-            messagesByChat[elenaChat]?.append(MessageItem(
+        let elenaKey = ChatKey(accountId: accountId, chatId: elenaChat)
+        if let last = messagesByChat[elenaKey]?.last {
+            let id = allocateMessageId(accountId: accountId)
+            messagesByChat[elenaKey]?.append(MessageItem(
                 id: id, chatId: elenaChat, text: "Printing that one poster-sized!",
                 timestamp: now - 3 * 60,
                 isOutgoing: true, isInfo: false,
@@ -643,9 +726,8 @@ actor MockChatService: ChatService {
         }
         if let imagePath = Bundle.module.url(
             forResource: "mock-sunset", withExtension: "jpg")?.path {
-            let id = nextMsgId
-            nextMsgId += 1
-            messagesByChat[elenaChat]?.append(MessageItem(
+            let id = allocateMessageId(accountId: accountId)
+            messagesByChat[elenaKey]?.append(MessageItem(
                 id: id, chatId: elenaChat, text: "sunset from the pier",
                 timestamp: now - 60,
                 isOutgoing: false, isInfo: false,
@@ -656,7 +738,7 @@ actor MockChatService: ChatService {
         // Manual appends bypass addMessage: sync the sidebar row so the
         // preview/timestamp match the newest message (screenshot-visible).
         if let index = chats.firstIndex(where: { $0.id == elenaChat }),
-           let newest = messagesByChat[elenaChat]?.last {
+           let newest = messagesByChat[elenaKey]?.last {
             chats[index].timestamp = newest.timestamp
             chats[index].preview = newest.text
         }
@@ -664,11 +746,21 @@ actor MockChatService: ChatService {
         // Old thread from last year for timestamp-bucket coverage.
         let dave = (name: "Dave", color: "#2aa198")
         let daveChat = makeChat(name: dave.name, color: dave.color)
-        echoChats.insert(daveChat)
+        echoChats.insert(ChatKey(accountId: accountId, chatId: daveChat))
         addMessage(daveChat, "Happy new year!", minutesAgo: 220 * day, sender: dave)
         addMessage(daveChat, "Happy new year to you too!", minutesAgo: 220 * day - 15, outgoing: true, state: .read)
 
         chatsByAccount[accountId] = chats
+        for chat in chats where chat.freshCount > 0 {
+            let key = ChatKey(accountId: accountId, chatId: chat.id)
+            let fresh = messagesByChat[key, default: []]
+                .filter { !$0.isOutgoing && !$0.isInfo }
+                .suffix(Int(chat.freshCount))
+            for message in fresh {
+                freshMessages.insert(MessageKey(
+                    accountId: accountId, chatId: chat.id, msgId: message.id))
+            }
+        }
     }
 
 }

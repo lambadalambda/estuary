@@ -61,6 +61,8 @@ import Testing
         model.selectedChatId = 10
         await service.setMessages(testMessages(51 ... 100))
         await model.chatSelectionChanged()
+        model.draft = "account-one draft"
+        model.replyTo = model.messages.first
         #expect(!model.messages.isEmpty)
 
         await model.tryDemo()
@@ -71,6 +73,8 @@ import Testing
         #expect(model.replyTo == nil)
         #expect(model.searchQuery.isEmpty)
         #expect(!model.showingArchive)
+        model.selectedChatId = 10
+        #expect(model.draft.isEmpty)
     }
 
     @Test func reloadCannotWriteAfterChatSwitch() async throws {
@@ -137,6 +141,203 @@ import Testing
         await service.failMessages("failed-reload")
         await reloadTask.value
         #expect(model.messages.map(\.id) == Array(1 ... 100).map(UInt32.init))
+    }
+
+    @Test func transientReloadFailureKeepsRenderedMessages() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 3))
+        await model.chatSelectionChanged()
+
+        await service.enqueueMessages(.suspended("transient-reload"))
+        let reload = Task { await model.reloadMessages() }
+        try await service.waitUntilMessagesSuspended("transient-reload")
+        await service.failMessages("transient-reload")
+        await reload.value
+
+        #expect(model.messages.map(\.id) == [1, 2, 3])
+    }
+
+    @Test func readReceiptsOnlyCoverVisibleBubbles() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service, isAppActive: { true })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let incoming = testMessages(1 ... 2, outgoing: false)
+        await service.setMessages(incoming)
+        await model.chatSelectionChanged()
+
+        #expect(await service.markSeenMessageIds().isEmpty)
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10,
+            selectionGeneration: model.currentSelectionGeneration,
+            message: incoming[0], visible: true)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await service.markSeenMessageIds() != [1], ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(await service.markSeenRecords() == [SeenRecord(accountId: 1, msgId: 1)])
+    }
+
+    @Test func visibleReceiptRetriesWhenAppBecomesActive() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let activity = ActivityState(isActive: false)
+        let model = AppModel(service: service, isAppActive: { activity.isActive })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let incoming = testMessages(1 ... 1, outgoing: false)[0]
+        await service.setMessages([incoming])
+        await model.chatSelectionChanged()
+
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10,
+            selectionGeneration: model.currentSelectionGeneration,
+            message: incoming, visible: true)
+        #expect(await service.markSeenRecords().isEmpty)
+        activity.isActive = true
+        await model.appDidBecomeActive()
+
+        #expect(await service.markSeenRecords() == [SeenRecord(accountId: 1, msgId: 1)])
+    }
+
+    @Test func staleVisibleMessageCannotMarkCollidingAccountId() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        await service.addSwitchingAccounts()
+        let activity = ActivityState(isActive: false)
+        let model = AppModel(service: service, isAppActive: { activity.isActive })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let incoming = testMessages(1 ... 1, outgoing: false)[0]
+        await service.setMessages([incoming])
+        await model.chatSelectionChanged()
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10,
+            selectionGeneration: model.currentSelectionGeneration,
+            message: incoming, visible: true)
+
+        await model.switchAccount(to: 2)
+        model.selectedChatId = 10
+        activity.isActive = true
+        await model.appDidBecomeActive()
+
+        #expect(await service.markSeenRecords().isEmpty)
+    }
+
+    @Test func staleInvisibleCallbackCannotRemoveNewVisibilityEpoch() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let activity = ActivityState(isActive: false)
+        let model = AppModel(service: service, isAppActive: { activity.isActive })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let incoming = testMessages(1 ... 1, outgoing: false)[0]
+        await service.setMessages([incoming])
+        await model.chatSelectionChanged()
+        let oldGeneration = model.currentSelectionGeneration
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10, selectionGeneration: oldGeneration,
+            message: incoming, visible: true)
+
+        model.selectedChatId = 11
+        model.selectedChatId = 10
+        let newGeneration = model.currentSelectionGeneration
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10, selectionGeneration: newGeneration,
+            message: incoming, visible: true)
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10, selectionGeneration: oldGeneration,
+            message: incoming, visible: false)
+
+        activity.isActive = true
+        await model.appDidBecomeActive()
+        #expect(await service.markSeenRecords() == [SeenRecord(accountId: 1, msgId: 1)])
+    }
+
+    @Test func attachmentFailureKeepsCaptionForRetry() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        model.draft = "caption"
+        await service.enqueueSendMessage("attachment")
+
+        let send = Task {
+            await model.sendAttachment(
+                accountId: 1, chatId: 10, path: "/tmp/photo.jpg",
+                caption: "caption", quotedMsgId: nil)
+        }
+        try await service.waitUntilSendMessageSuspended("attachment")
+        await service.failSendMessage("attachment")
+        await send.value
+
+        #expect(model.draft == "caption")
+        #expect(model.actionError == "scripted failure")
+    }
+
+    @Test func staleAttachmentCompletionCannotClearNewConversationState() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        model.draft = "caption"
+        await service.enqueueSendMessage("attachment-switch")
+
+        let send = Task {
+            await model.sendAttachment(
+                accountId: 1, chatId: 10, path: "/tmp/photo.jpg",
+                caption: "caption", quotedMsgId: nil)
+        }
+        try await service.waitUntilSendMessageSuspended("attachment-switch")
+        model.selectedChatId = 11
+        model.draft = "new conversation"
+        await service.resumeSendMessage("attachment-switch", result: 1)
+        await send.value
+
+        #expect(model.selectedChatId == 11)
+        #expect(model.draft == "new conversation")
+    }
+
+    @Test func delayedAttachmentForOldChatIsRejected() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 11
+
+        await model.sendAttachment(
+            accountId: 1, chatId: 10, path: "/tmp/private.jpg",
+            caption: "private", quotedMsgId: nil)
+
+        #expect(await service.sendMessageCallCount() == 0)
+        #expect(model.selectedChatId == 11)
+    }
+
+    @Test func suspendedMarkNoticedCannotChangeNewSelection() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        var unreadChat = testChat()
+        unreadChat.freshCount = 1
+        await service.setChat(unreadChat, accountId: 1)
+        let model = AppModel(service: service, isAppActive: { true })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.enqueueMarkNoticedSuspension("noticed")
+
+        let selection = Task { await model.chatSelectionChanged() }
+        try await service.waitUntilMarkNoticedSuspended("noticed")
+        model.selectedChatId = 11
+        await service.resumeMarkNoticed("noticed")
+        await selection.value
+
+        #expect(model.selectedChatId == 11)
     }
 
     @Test func sidebarSearchPreservesSelectedChatAndDraft() async throws {
@@ -431,9 +632,9 @@ import Testing
         _ = NSApplication.shared
         let service = ScriptedChatService()
         let recorder = NotificationRecorder()
-        let model = AppModel(service: service) { title, body in
+        let model = AppModel(service: service, postIncomingNotification: { title, body in
             recorder.items.append((title, body))
-        }
+        })
         await model.bootstrap()
         await service.setMessages(testMessages(1 ... 2, outgoing: false))
 
@@ -456,9 +657,9 @@ import Testing
         await service.setMessages(testMessages(1 ... 1, outgoing: false), accountId: 2)
         await service.setUnreadCount(4)
         let recorder = NotificationRecorder()
-        let model = AppModel(service: service) { title, body in
+        let model = AppModel(service: service, postIncomingNotification: { title, body in
             recorder.items.append((title, body))
-        }
+        })
         await model.bootstrap()
 
         await service.emit(2, .incomingMessage(chatId: 10, msgId: 1))
@@ -540,9 +741,9 @@ import Testing
         _ = NSApplication.shared
         let service = ScriptedChatService()
         let recorder = NotificationRecorder()
-        let model = AppModel(service: service) { title, body in
+        let model = AppModel(service: service, postIncomingNotification: { title, body in
             recorder.items.append((title, body))
-        }
+        })
         await model.bootstrap()
         let message = testMessages(1 ... 1, outgoing: false)[0]
         await service.setMessages([message])
@@ -561,6 +762,143 @@ import Testing
         #expect(recorder.items.isEmpty)
     }
 
+    @Test func createChatFailureReturnsErrorAndKeepsSheetOpen() async {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.showNewChat = true
+        await service.failNextCreateChat()
+
+        let error = await model.createChat(email: "bad@example.org", name: "Bad")
+
+        #expect(error == "scripted create failure")
+        #expect(model.showNewChat)
+        #expect(model.selectedChatId == nil)
+    }
+
+    @Test func staleCreateChatCompletionCannotStealNewSelection() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.enqueueCreateChatSuspension("create")
+
+        let create = Task {
+            await model.createChat(email: "new@example.org", name: "New")
+        }
+        try await service.waitUntilCreateChatSuspended("create")
+        model.selectedChatId = 11
+        await service.resumeCreateChat("create", with: 99)
+        _ = await create.value
+
+        #expect(model.selectedChatId == 11)
+    }
+
+    @Test func staleCreateChatFailureStillReturnsError() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.enqueueCreateChatSuspension("create-failure")
+
+        let create = Task {
+            await model.createChat(email: "new@example.org", name: "New")
+        }
+        try await service.waitUntilCreateChatSuspended("create-failure")
+        model.selectedChatId = 11
+        await service.failCreateChat("create-failure")
+
+        #expect(await create.value == "scripted create failure")
+        #expect(model.selectedChatId == 11)
+    }
+
+    @Test func createdChatRemainsRenderableWhenSearchExcludedIt() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.searchQuery = "does-not-match"
+        await model.reloadChats()
+        await service.setChat(testChat(name: "Created", id: 99), accountId: 1)
+        await service.enqueueCreateChatSuspension("filtered-create")
+
+        let create = Task {
+            await model.createChat(email: "created@example.org", name: "Created")
+        }
+        try await service.waitUntilCreateChatSuspended("filtered-create")
+        await service.resumeCreateChat("filtered-create", with: 99)
+
+        #expect(await create.value == nil)
+        #expect(model.searchQuery.isEmpty)
+        #expect(model.selectedChatId == 99)
+        #expect(model.selectedChat?.name == "Created")
+    }
+
+    @Test func olderChatListCannotUndoSuccessfulCreation() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        await service.enqueueChatList(.suspended("old-list"))
+        let oldReload = Task { await model.reloadChats() }
+        try await service.waitUntilChatListSuspended("old-list")
+
+        await service.setChat(testChat(name: "Created", id: 99), accountId: 1)
+        await service.enqueueCreateChatSuspension("create-over-old-list")
+        let create = Task {
+            await model.createChat(email: "created@example.org", name: "Created")
+        }
+        try await service.waitUntilCreateChatSuspended("create-over-old-list")
+        await service.resumeCreateChat("create-over-old-list", with: 99)
+        #expect(await create.value == nil)
+        #expect(model.selectedChatId == 99)
+
+        await service.resumeChatList("old-list", with: [testChat(name: "Old")])
+        await oldReload.value
+        #expect(model.selectedChatId == 99)
+        #expect(model.selectedChat?.name == "Created")
+    }
+
+    @Test func visibleReceiptRetriesAfterTransientFailure() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service, isAppActive: { true })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let incoming = testMessages(1 ... 1, outgoing: false)[0]
+        await service.setMessages([incoming])
+        await model.chatSelectionChanged()
+        await service.failNextMarkSeen()
+
+        model.messageVisibilityChanged(
+            accountId: 1, chatId: 10,
+            selectionGeneration: model.currentSelectionGeneration,
+            message: incoming, visible: true)
+        try await service.waitUntilMarkSeenCallCount(2)
+
+        #expect(await service.markSeenRecords() == [SeenRecord(accountId: 1, msgId: 1)])
+    }
+
+    @Test func staleCreateGroupCompletionCannotStealNewSelection() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.enqueueCreateGroupSuspension("group")
+
+        let create = Task { await model.createGroup(name: "Group", memberIds: [2]) }
+        try await service.waitUntilCreateGroupSuspended("group")
+        model.selectedChatId = 11
+        await service.resumeCreateGroup("group", with: 99)
+        _ = await create.value
+
+        #expect(model.selectedChatId == 11)
+    }
+
     private func waitUntil(_ predicate: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(2)
         while !predicate() {
@@ -573,6 +911,20 @@ import Testing
 @MainActor
 private final class NotificationRecorder {
     var items: [(String, String)] = []
+}
+
+@MainActor
+private final class ActivityState {
+    var isActive: Bool
+
+    init(isActive: Bool) {
+        self.isActive = isActive
+    }
+}
+
+private struct SeenRecord: Equatable, Sendable {
+    let accountId: UInt32
+    let msgId: UInt32
 }
 
 private func testChat(name: String = "Chat", id: UInt32 = 10) -> ChatItem {
@@ -630,12 +982,24 @@ private actor ScriptedChatService: ChatService {
     private var messageByIdWaiters:
         [String: CheckedContinuation<MessageItem?, any Error>] = [:]
     private var chatByIdCalls = 0
+    private var createChatShouldFail = false
+    private var createChatSuspensions: [String] = []
+    private var createChatWaiters:
+        [String: CheckedContinuation<UInt32, any Error>] = [:]
+    private var createGroupSuspensions: [String] = []
+    private var createGroupWaiters:
+        [String: CheckedContinuation<UInt32, any Error>] = [:]
     private var unread: UInt32 = 0
     private var unreadPlans: [UnreadPlan] = []
     private var unreadWaiters: [String: CheckedContinuation<UInt32, any Error>] = [:]
     private var unreadCalls = 0
     private var unreadInFlight = 0
     private var maxUnreadInFlight = 0
+    private var markedSeenRecords: [SeenRecord] = []
+    private var markNoticedSuspensions: [String] = []
+    private var markNoticedWaiters: [String: CheckedContinuation<Void, any Error>] = [:]
+    private var markSeenFailuresRemaining = 0
+    private var markSeenCalls = 0
     private var messagesPlans: [MessagesPlan] = []
     private var chatListPlans: [ChatListPlan] = []
     private var messagesWaiters: [String: CheckedContinuation<[MessageItem], any Error>] = [:]
@@ -666,10 +1030,23 @@ private actor ScriptedChatService: ChatService {
         messageByIdSuspensions.append(label)
     }
     func chatByIdCallCount() -> Int { chatByIdCalls }
+    func failNextCreateChat() { createChatShouldFail = true }
+    func enqueueCreateChatSuspension(_ label: String) {
+        createChatSuspensions.append(label)
+    }
+    func enqueueCreateGroupSuspension(_ label: String) {
+        createGroupSuspensions.append(label)
+    }
     func setUnreadCount(_ count: UInt32) { unread = count }
     func enqueueUnread(_ plan: UnreadPlan) { unreadPlans.append(plan) }
     func unreadCallCount() -> Int { unreadCalls }
     func maximumUnreadInFlight() -> Int { maxUnreadInFlight }
+    func markSeenMessageIds() -> [UInt32] { markedSeenRecords.map(\.msgId) }
+    func markSeenRecords() -> [SeenRecord] { markedSeenRecords }
+    func enqueueMarkNoticedSuspension(_ label: String) {
+        markNoticedSuspensions.append(label)
+    }
+    func failNextMarkSeen() { markSeenFailuresRemaining += 1 }
     func emit(_ accountId: UInt32, _ event: ServiceEvent) {
         eventSink.yield((accountId, event))
     }
@@ -734,6 +1111,25 @@ private actor ScriptedChatService: ChatService {
 
     func waitUntilMessageByIdSuspended(_ label: String) async throws {
         try await waitFor(label) { messageByIdWaiters[$0] != nil }
+    }
+
+    func waitUntilCreateChatSuspended(_ label: String) async throws {
+        try await waitFor(label) { createChatWaiters[$0] != nil }
+    }
+    func waitUntilCreateGroupSuspended(_ label: String) async throws {
+        try await waitFor(label) { createGroupWaiters[$0] != nil }
+    }
+    func waitUntilMarkNoticedSuspended(_ label: String) async throws {
+        try await waitFor(label) { markNoticedWaiters[$0] != nil }
+    }
+    func waitUntilMarkSeenCallCount(_ expected: Int) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while markSeenCalls < expected {
+            guard ContinuousClock.now < deadline else {
+                throw GateError.timedOut("markSeen call \(expected)")
+            }
+            await Task.yield()
+        }
     }
 
     func waitUntilChatByIdCallCount(_ expected: Int) async throws {
@@ -801,6 +1197,20 @@ private actor ScriptedChatService: ChatService {
 
     func resumeMessageById(_ label: String, with message: MessageItem?) {
         messageByIdWaiters.removeValue(forKey: label)?.resume(returning: message)
+    }
+
+    func resumeCreateChat(_ label: String, with chatId: UInt32) {
+        createChatWaiters.removeValue(forKey: label)?.resume(returning: chatId)
+    }
+    func failCreateChat(_ label: String) {
+        createChatWaiters.removeValue(forKey: label)?.resume(
+            throwing: ServiceError.core(msg: "scripted create failure"))
+    }
+    func resumeCreateGroup(_ label: String, with chatId: UInt32) {
+        createGroupWaiters.removeValue(forKey: label)?.resume(returning: chatId)
+    }
+    func resumeMarkNoticed(_ label: String) {
+        markNoticedWaiters.removeValue(forKey: label)?.resume(returning: ())
     }
 
     func accounts() -> [AccountInfo] { accountItems }
@@ -899,8 +1309,26 @@ private actor ScriptedChatService: ChatService {
         return messagesByAccount[accountId]?.first { $0.id == msgId }
     }
     func sendText(accountId: UInt32, chatId: UInt32, text: String) throws -> UInt32 { throw unused() }
-    func markNoticed(accountId: UInt32, chatId: UInt32) {}
-    func createChat(accountId: UInt32, email: String, name: String) throws -> UInt32 { throw unused() }
+    func markNoticed(accountId: UInt32, chatId: UInt32) async throws {
+        guard !markNoticedSuspensions.isEmpty else { return }
+        let label = markNoticedSuspensions.removeFirst()
+        try await withCheckedThrowingContinuation {
+            markNoticedWaiters[label] = $0
+        }
+    }
+    func createChat(accountId: UInt32, email: String, name: String) async throws -> UInt32 {
+        if createChatShouldFail {
+            createChatShouldFail = false
+            throw ServiceError.core(msg: "scripted create failure")
+        }
+        if !createChatSuspensions.isEmpty {
+            let label = createChatSuspensions.removeFirst()
+            return try await withCheckedThrowingContinuation {
+                createChatWaiters[label] = $0
+            }
+        }
+        throw unused()
+    }
     func checkQr(accountId: UInt32, qr: String) throws -> QrKind { throw unused() }
     func createInstantAccount(accountId: UInt32, displayName: String, instance: String?) throws { throw unused() }
     func joinSecondDevice(accountId: UInt32, qr: String) throws { throw unused() }
@@ -919,7 +1347,16 @@ private actor ScriptedChatService: ChatService {
     func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) throws { throw unused() }
     func deleteMessages(accountId: UInt32, msgIds: [UInt32]) throws { throw unused() }
     func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) throws { throw unused() }
-    func markSeen(accountId: UInt32, msgIds: [UInt32]) {}
+    func markSeen(accountId: UInt32, msgIds: [UInt32]) throws {
+        markSeenCalls += 1
+        if markSeenFailuresRemaining > 0 {
+            markSeenFailuresRemaining -= 1
+            throw ServiceError.core(msg: "scripted markSeen failure")
+        }
+        markedSeenRecords.append(contentsOf: msgIds.map {
+            SeenRecord(accountId: accountId, msgId: $0)
+        })
+    }
     func acceptChat(accountId: UInt32, chatId: UInt32) throws { throw unused() }
     func blockChat(accountId: UInt32, chatId: UInt32) async throws {
         guard !blockChatPlans.isEmpty else { throw unused() }
@@ -943,7 +1380,15 @@ private actor ScriptedChatService: ChatService {
     }
     func searchMessages(accountId: UInt32, query: String) -> [MessageItem] { [] }
     func contacts(accountId: UInt32) -> [ContactItem] { [] }
-    func createGroup(accountId: UInt32, name: String, memberContactIds: [UInt32]) throws -> UInt32 { throw unused() }
+    func createGroup(
+        accountId: UInt32, name: String, memberContactIds: [UInt32]
+    ) async throws -> UInt32 {
+        guard !createGroupSuspensions.isEmpty else { throw unused() }
+        let label = createGroupSuspensions.removeFirst()
+        return try await withCheckedThrowingContinuation {
+            createGroupWaiters[label] = $0
+        }
+    }
     func setDisplayName(accountId: UInt32, name: String) throws { throw unused() }
     func setAvatar(accountId: UInt32, path: String?) throws { throw unused() }
     func connectivity(accountId: UInt32) -> UInt32 { 0 }

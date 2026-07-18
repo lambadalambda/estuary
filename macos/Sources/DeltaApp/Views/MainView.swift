@@ -84,7 +84,10 @@ struct MainView: View {
         } detail: {
             Group {
                 if let chat = model.selectedChat {
-                    ChatDetailView(model: model, chat: chat)
+                    ChatDetailView(
+                        model: model, accountId: model.selectedAccountId ?? 0,
+                        selectionGeneration: model.currentSelectionGeneration,
+                        chat: chat)
                 } else {
                     ContentUnavailableView(
                         "No Chat Selected",
@@ -271,6 +274,7 @@ struct NewGroupSheet: View {
     @State private var contacts: [ContactItem] = []
     @State private var selection = Set<UInt32>()
     @State private var error: String?
+    @State private var isCreating = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -311,8 +315,13 @@ struct NewGroupSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isCreating)
                 Button("Create") {
                     Task {
+                        guard !isCreating else { return }
+                        isCreating = true
+                        error = nil
+                        defer { isCreating = false }
                         if let failure = await model.createGroup(
                             name: name.trimmingCharacters(in: .whitespaces),
                             memberIds: Array(selection)
@@ -325,7 +334,7 @@ struct NewGroupSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(isCreating || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)
@@ -406,10 +415,11 @@ struct SettingsSheet: View {
         }
         .fileImporter(isPresented: $showAvatarPicker, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                let path = url.path
-                Task { await model.updateAvatar(path: path) }
+                Task {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    await model.updateAvatar(path: url.path)
+                }
             }
         }
     }
@@ -432,6 +442,8 @@ struct NewChatSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var name = ""
+    @State private var error: String?
+    @State private var isCreating = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -441,19 +453,34 @@ struct NewChatSheet: View {
                 TextField("E-mail address", text: $email)
                 TextField("Name (optional)", text: $name)
             }
+            if let error {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isCreating)
                 Button("Create") {
                     let email = email.trimmingCharacters(in: .whitespaces)
                     let name = name.trimmingCharacters(in: .whitespaces)
-                    dismiss()
-                    Task { await model.createChat(email: email, name: name) }
+                    Task {
+                        guard !isCreating else { return }
+                        isCreating = true
+                        error = nil
+                        defer { isCreating = false }
+                        if let failure = await model.createChat(email: email, name: name) {
+                            error = failure
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(!email.contains("@"))
+                .disabled(isCreating || !email.contains("@"))
             }
         }
         .padding(20)

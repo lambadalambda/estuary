@@ -7,11 +7,15 @@ private let bottomAnchorID = "bottom-anchor"
 
 struct ChatDetailView: View {
     @Bindable var model: AppModel
+    let accountId: UInt32
+    let selectionGeneration: UInt64
     let chat: ChatItem
     @State private var showAttachPicker = false
     @State private var forwardingMsgId: UInt32?
     @State private var loadingOlder = false
     @State private var quickLookURL: URL?
+    @State private var attachmentCaption = ""
+    @State private var attachmentReplyId: UInt32?
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -52,6 +56,12 @@ struct ChatDetailView: View {
                                     inGroup: chat.isGroup,
                                     onForward: { forwardingMsgId = message.id },
                                     onPreview: { quickLookURL = $0 })
+                                    .onScrollVisibilityChange(threshold: 0.01) { visible in
+                                        model.messageVisibilityChanged(
+                                            accountId: accountId, chatId: chat.id,
+                                            selectionGeneration: selectionGeneration,
+                                            message: message, visible: visible)
+                                    }
                             }
                         }
                         Color.clear
@@ -97,14 +107,22 @@ struct ChatDetailView: View {
         .navigationSubtitle(chat.isContactRequest ? "Contact request" : "")
         .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result {
-                sendFile(url: url)
+                sendFile(
+                    url: url, caption: attachmentCaption,
+                    quotedMsgId: attachmentReplyId)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            let caption = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let quotedMsgId = model.replyTo?.id
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     if let url, url.isFileURL {
-                        Task { @MainActor in sendFile(url: url) }
+                        Task { @MainActor in
+                            sendFile(
+                                url: url, caption: caption,
+                                quotedMsgId: quotedMsgId)
+                        }
                     }
                 }
             }
@@ -136,14 +154,15 @@ struct ChatDetailView: View {
         }
     }
 
-    private func sendFile(url: URL) {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        // Core copies the file into its blobdir, so the path only needs to be
-        // readable now.
-        let caption = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let path = url.path
-        Task { await model.sendAttachment(path: path, caption: caption) }
+    private func sendFile(url: URL, caption: String, quotedMsgId: UInt32?) {
+        Task {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            // Core copies the file into its blobdir before this call returns.
+            await model.sendAttachment(
+                accountId: accountId, chatId: chat.id, path: url.path,
+                caption: caption, quotedMsgId: quotedMsgId)
+        }
     }
 
     @ViewBuilder
@@ -194,6 +213,9 @@ struct ChatDetailView: View {
                 // grows — no hand-tuned paddings.
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Button {
+                        attachmentCaption = model.draft.trimmingCharacters(
+                            in: .whitespacesAndNewlines)
+                        attachmentReplyId = model.replyTo?.id
                         showAttachPicker = true
                     } label: {
                         Image(systemName: "paperclip")

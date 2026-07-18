@@ -9,6 +9,13 @@ final class AppModel {
         let chatId: UInt32
     }
 
+    private struct VisibleMessageKey: Hashable {
+        let accountId: UInt32
+        let chatId: UInt32
+        let msgId: UInt32
+        let selectionGeneration: UInt64
+    }
+
     enum Screen: Equatable {
         case loading
         case onboarding
@@ -24,10 +31,17 @@ final class AppModel {
     /// Bound to the sidebar List selection.
     var selectedChatId: UInt32? {
         didSet {
-            if selectedChatId != oldValue { selectionGeneration &+= 1 }
+            if selectedChatId != oldValue {
+                selectionGeneration &+= 1
+                visibleMessages.removeAll()
+                seenReceiptRequests.removeAll()
+                receiptAttempts.removeAll()
+            }
         }
     }
     private var selectedChatCache: ChatItem?
+    private var visibleMessages: [VisibleMessageKey: MessageItem] = [:]
+    private var seenReceiptRequests: Set<VisibleMessageKey> = []
     private(set) var messages: [MessageItem] = []
     /// Whether older history exists beyond the currently loaded window.
     private(set) var hasMoreMessages = false
@@ -105,12 +119,18 @@ final class AppModel {
     let service: any ChatService
     @ObservationIgnored private let postIncomingNotification:
         @MainActor @Sendable (String, String) -> Void
+    @ObservationIgnored private let isAppActive: @MainActor @Sendable () -> Bool
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     private var searchGeneration: UInt64 = 0
+    private var chatListRequestGeneration: UInt64 = 0
+    private var receiptAttempts: [VisibleMessageKey: Int] = [:]
 
     nonisolated init(
         service: any ChatService,
+        isAppActive: @escaping @MainActor @Sendable () -> Bool = {
+            NSApplication.shared.isActive
+        },
         postIncomingNotification: @escaping @MainActor @Sendable (String, String) -> Void = {
             chatName, preview in
             NotificationManager.postIncoming(chatName: chatName, preview: preview)
@@ -118,6 +138,7 @@ final class AppModel {
     ) {
         self.service = service
         self.postIncomingNotification = postIncomingNotification
+        self.isAppActive = isAppActive
     }
 
     deinit {
@@ -135,6 +156,8 @@ final class AppModel {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return nil }
         return ConversationKey(accountId: accountId, chatId: chatId)
     }
+
+    var currentSelectionGeneration: UInt64 { selectionGeneration }
 
     // MARK: Lifecycle
 
@@ -443,6 +466,8 @@ final class AppModel {
 
     func reloadChats(searchGeneration expectedSearchGeneration: UInt64? = nil) async {
         guard let accountId = selectedAccountId else { return }
+        chatListRequestGeneration &+= 1
+        let requestGeneration = chatListRequestGeneration
         do {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
             let searchSnapshot = expectedSearchGeneration
@@ -459,6 +484,7 @@ final class AppModel {
             // A slow fetch may resume after the user switched accounts or
             // changed the filter — never let stale results clobber the view.
             guard accountId == selectedAccountId,
+                  requestGeneration == chatListRequestGeneration,
                   query == searchQuery.trimmingCharacters(in: .whitespaces),
                   archiveSnapshot == showingArchive,
                   searchSnapshot == nil || searchSnapshot == searchGeneration
@@ -479,6 +505,7 @@ final class AppModel {
                     // failure; the next event/search change retries.
                 }
                 guard accountId == selectedAccountId,
+                      requestGeneration == chatListRequestGeneration,
                       selectedSnapshot == selectedChatId,
                       query == searchQuery.trimmingCharacters(in: .whitespaces),
                       archiveSnapshot == showingArchive,
@@ -552,15 +579,8 @@ final class AppModel {
             messages = page
             hasMoreMessages = !historyExhausted && page.count >= Int(loadedLimit)
             messageWindowGeneration &+= 1
-            // Read receipts only for something the user can actually see.
-            if NSApplication.shared.isActive {
-                await markVisibleMessagesSeen(accountId: accountId, chatId: chatId)
-            }
         } catch {
-            if accountId == selectedAccountId, chatId == selectedChatId,
-               generation == messageWindowGeneration {
-                resetMessageWindow()
-            }
+            // Preserve the last valid window; a later event retries.
         }
     }
 
@@ -682,15 +702,71 @@ final class AppModel {
         guard screen == .main else { return }
         await reloadChats()
         await reloadMessages()
+        await markCurrentlyVisibleMessagesSeen()
+        await markSelectedChatNoticed()
     }
 
-    /// The chat is on screen: mark incoming messages seen. This sends MDN
-    /// read receipts and syncs the read state to other devices.
-    private func markVisibleMessagesSeen(accountId: UInt32, chatId: UInt32) async {
-        guard let chat = selectedChat, !chat.isContactRequest else { return }
-        let incoming = messages.filter { !$0.isOutgoing && !$0.isInfo }.map(\.id)
-        guard !incoming.isEmpty else { return }
-        try? await service.markSeen(accountId: accountId, msgIds: incoming)
+    /// Called synchronously from scroll visibility so account-local identity is
+    /// captured before an asynchronous receipt task can run.
+    func messageVisibilityChanged(
+        accountId: UInt32, chatId: UInt32, selectionGeneration: UInt64,
+        message: MessageItem, visible: Bool
+    ) {
+        let key = VisibleMessageKey(
+            accountId: accountId, chatId: chatId, msgId: message.id,
+            selectionGeneration: selectionGeneration)
+        guard accountId == selectedAccountId, chatId == selectedChatId,
+              selectionGeneration == self.selectionGeneration,
+              message.chatId == chatId
+        else { return }
+        if visible {
+            visibleMessages[key] = message
+            Task { [weak self] in await self?.markVisibleMessageSeen(key) }
+        } else {
+            visibleMessages.removeValue(forKey: key)
+        }
+    }
+
+    private func markVisibleMessageSeen(_ key: VisibleMessageKey) async {
+        guard isAppActive(), key.accountId == selectedAccountId,
+              key.chatId == selectedChatId,
+              key.selectionGeneration == selectionGeneration,
+              let message = visibleMessages[key],
+              !message.isOutgoing, !message.isInfo,
+              selectedChat?.isContactRequest == false,
+              receiptAttempts[key, default: 0] < 3,
+              seenReceiptRequests.insert(key).inserted
+        else { return }
+        receiptAttempts[key, default: 0] += 1
+        do {
+            try await service.markSeen(accountId: key.accountId, msgIds: [key.msgId])
+        } catch {
+            seenReceiptRequests.remove(key)
+            guard visibleMessages[key] != nil,
+                  key.accountId == selectedAccountId,
+                  key.chatId == selectedChatId,
+                  key.selectionGeneration == selectionGeneration
+            else { return }
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(100))
+                await self?.markVisibleMessageSeen(key)
+            }
+        }
+    }
+
+    private func markCurrentlyVisibleMessagesSeen() async {
+        guard isAppActive(), let accountId = selectedAccountId,
+              let chatId = selectedChatId,
+              selectedChat?.isContactRequest == false
+        else { return }
+        let keys = visibleMessages.compactMap { key, message in
+            key.accountId == accountId && key.chatId == chatId
+                && key.selectionGeneration == selectionGeneration
+                && !message.isOutgoing && !message.isInfo ? key : nil
+        }
+        for key in keys {
+            await markVisibleMessageSeen(key)
+        }
     }
 
     func searchChanged() async {
@@ -741,12 +817,24 @@ final class AppModel {
 
     func acceptSelectedChat() async {
         guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+        let generation = selectionGeneration
         do {
             try await service.acceptChat(accountId: accountId, chatId: chatId)
+            guard accountId == selectedAccountId, chatId == selectedChatId,
+                  generation == selectionGeneration
+            else { return }
             await reloadChats()
+            guard accountId == selectedAccountId, chatId == selectedChatId,
+                  generation == selectionGeneration
+            else { return }
             await reloadMessages()
+            await markCurrentlyVisibleMessagesSeen()
+            await markSelectedChatNoticed()
         } catch {
-            actionError = error.localizedDescription
+            if accountId == selectedAccountId, chatId == selectedChatId,
+               generation == selectionGeneration {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -808,14 +896,17 @@ final class AppModel {
             accountId: accountId, msgIds: [msgId], chatId: chatId)
     }
 
-    func sendAttachment(path: String, caption: String) async {
-        guard let accountId = selectedAccountId, let chatId = selectedChatId else { return }
+    func sendAttachment(
+        accountId: UInt32, chatId: UInt32, path: String,
+        caption: String, quotedMsgId: UInt32?
+    ) async {
+        guard accountId == selectedAccountId, chatId == selectedChatId else { return }
         let conversationKey = ConversationKey(accountId: accountId, chatId: chatId)
         guard pendingSends.insert(conversationKey).inserted else { return }
         defer { pendingSends.remove(conversationKey) }
         let generation = selectionGeneration
         let draftAtStart = drafts[conversationKey]
-        let replyId = replyTo?.id
+        let replyId = quotedMsgId
         do {
             _ = try await service.sendMessage(
                 accountId: accountId, chatId: chatId,
@@ -848,17 +939,59 @@ final class AppModel {
     /// non-key-contacts in encrypted groups).
     func createGroup(name: String, memberIds: [UInt32]) async -> String? {
         guard let accountId = selectedAccountId else { return nil }
+        let generation = selectionGeneration
         do {
             let chatId = try await service.createGroup(
                 accountId: accountId, name: name, memberContactIds: memberIds)
-            guard accountId == selectedAccountId else { return nil }
-            await reloadChats()
-            guard accountId == selectedAccountId else { return nil }
-            selectedChatId = chatId
-            return nil
+            guard accountId == selectedAccountId, generation == selectionGeneration else {
+                return nil
+            }
+            return await selectCreatedChat(
+                accountId: accountId, chatId: chatId,
+                originatingGeneration: generation)
         } catch {
             return error.localizedDescription
         }
+    }
+
+    private func selectCreatedChat(
+        accountId: UInt32, chatId: UInt32, originatingGeneration: UInt64
+    ) async -> String? {
+        guard accountId == selectedAccountId,
+              originatingGeneration == selectionGeneration
+        else { return nil }
+        searchTask?.cancel()
+        searchGeneration &+= 1
+        searchQuery = ""
+        showingArchive = false
+        selectedChatId = nil
+        selectedChatCache = nil
+        let loadingGeneration = selectionGeneration
+        await reloadChats()
+        guard accountId == selectedAccountId,
+              loadingGeneration == selectionGeneration
+        else { return nil }
+
+        let row: ChatItem?
+        if let listed = chats.first(where: { $0.id == chatId }) {
+            row = listed
+        } else {
+            do {
+                row = try await service.chatById(accountId: accountId, chatId: chatId)
+            } catch {
+                guard accountId == selectedAccountId,
+                      loadingGeneration == selectionGeneration
+                else { return nil }
+                return "Chat was created but could not be loaded: \(error.localizedDescription)"
+            }
+            guard accountId == selectedAccountId,
+                  loadingGeneration == selectionGeneration
+            else { return nil }
+        }
+        guard let row else { return "Chat was created but could not be loaded." }
+        selectedChatCache = row
+        selectedChatId = chatId
+        return nil
     }
 
     // MARK: Settings
@@ -917,6 +1050,9 @@ final class AppModel {
         searchGeneration &+= 1
         selectedChatId = nil
         selectedChatCache = nil
+        visibleMessages.removeAll()
+        seenReceiptRequests.removeAll()
+        receiptAttempts.removeAll()
         replyTo = nil
         chats = []
         searchQuery = ""
@@ -926,7 +1062,7 @@ final class AppModel {
     }
 
     private func markSelectedChatNoticed() async {
-        guard NSApplication.shared.isActive,
+        guard isAppActive(),
               let accountId = selectedAccountId,
               let chat = selectedChat,
               chat.freshCount > 0, !chat.isContactRequest
@@ -970,16 +1106,19 @@ final class AppModel {
         drafts.removeValue(forKey: key)
     }
 
-    func createChat(email: String, name: String) async {
-        guard let accountId = selectedAccountId else { return }
+    func createChat(email: String, name: String) async -> String? {
+        guard let accountId = selectedAccountId else { return nil }
+        let generation = selectionGeneration
         do {
             let chatId = try await service.createChat(accountId: accountId, email: email, name: name)
-            guard accountId == selectedAccountId else { return }
-            await reloadChats()
-            guard accountId == selectedAccountId else { return }
-            selectedChatId = chatId
+            guard accountId == selectedAccountId, generation == selectionGeneration else {
+                return nil
+            }
+            return await selectCreatedChat(
+                accountId: accountId, chatId: chatId,
+                originatingGeneration: generation)
         } catch {
-            // Non-fatal; ignore in the prototype.
+            return error.localizedDescription
         }
     }
 
@@ -1047,7 +1186,7 @@ final class AppModel {
                 scheduleReloadChats()
                 if chatId == selectedChatId {
                     scheduleReloadMessages()
-                    if NSApplication.shared.isActive {
+                    if isAppActive() {
                         await markSelectedChatNoticed()
                     }
                 }
@@ -1076,7 +1215,7 @@ final class AppModel {
         else { return }
 
         let isCurrentChat = accountId == selectedAccountId && chatId == selectedChatId
-        if !isCurrentChat || !NSApplication.shared.isActive {
+        if !isCurrentChat || !isAppActive() {
             postIncomingNotification(chat.name, message.text)
         }
     }

@@ -73,6 +73,19 @@ can expose one profile's stale messages under another profile's chat.
   recovery), and filtered selected rows refresh through `chatById`.
 - Selection generations advance synchronously with `selectedChatId`, guarding
   success and failure writes even before the async selection callback runs.
-- Remaining requirements: deterministic create/group/attachment/mark-noticed
-  completion tests, same-account onboarding flow generations, and production
-  mock account-ownership semantics.
+- Create-chat/group, attachment, and mark-noticed completions now have
+  deterministic suspension tests and revalidate selection generations before
+  completion writes. New Chat failures stay in the sheet with an error; success
+  leaves sidebar filters and point-caches the created row before selection.
+  Request generations prevent older list reloads from undoing that selection.
+- Attachment file-provider callbacks retain their initiating account/chat,
+  caption, and reply identity; delayed callbacks are rejected after selection
+  changes rather than retargeting another conversation.
+- `MockChatService` now allocates chat/message IDs per account and keys message,
+  reaction, deletion, forwarding, search, and delivery state by account + chat;
+  a collision test uses chat 10/message 1000 in two accounts and proves no
+  cross-account mutation.
+- Remaining requirement: same-account onboarding flow generations. Core events
+  expose account ID and progress only, so a delayed event from an earlier flow
+  that reuses the same account cannot be distinguished without a contract
+  change.

@@ -64,3 +64,15 @@ single feature issue. Each is a few lines; batch them.
   pending send; unchanged drafts clear only after success.
 - `make test` now builds Rust and regenerates bindings before Swift; a full run
   passed. The app plist minimum is 15.0, matching Package.swift and the binary.
+- New Chat now dismisses only after success and renders core failures in the
+  sheet. Failed text/attachment sends preserve account/chat-keyed composer
+  content, and transient message reload failures preserve the rendered window.
+- Security-scoped attachment/avatar access now remains open through the async
+  core copy/update call instead of ending before the Task runs. Delayed drop
+  providers retain and revalidate their originating conversation.
+- MDN calls moved from whole-window reloads to an account/chat/message-keyed
+  visible-bubble registry with a selection epoch. Loading history marks nothing,
+  delayed callbacks cannot cross colliding account IDs or erase a newer A→B→A
+  registration, transient failures retry with a three-attempt bound, and visible
+  messages skipped while inactive retry on activation. The second-device/manual
+  MDN check remains.

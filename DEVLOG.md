@@ -1,5 +1,37 @@
 # DEVLOG
 
+## 2026-07-18 — Visible-only MDNs + action isolation + honest mock IDs
+
+TDD reproduced three remaining shell races: New Chat swallowed failures after
+dismissing its sheet, stale group creation selected its result over a newer
+chat, and a transient message reload blanked the valid window. New Chat now
+matches New Group's result contract, both create paths use selection generations,
+exit excluding search/archive filters, and point-cache the created row before
+selection. Stale failures remain errors while stale successes cannot steal a
+new selection. A chat-list request generation also prevents an older normal
+reload from erasing a newly created/selected row. Reload failure preserves
+rendered content. Suspended create/group,
+attachment, and mark-noticed tests pin completion isolation; failed attachment
+sends retain captions. Security-scoped file/avatar access now stays active for
+the entire async core call (structural verification only; sandbox/TCC prompts
+are not automatable here). File-provider callbacks also carry their initiating
+account/chat/caption/reply identity, so a delayed drop cannot retarget another
+conversation.
+
+Read receipts no longer mark the whole eager message window. Each bubble reports
+actual scroll visibility with a captured account/chat/message key; AppModel
+tracks the current visible set and selection epoch, rejects delayed cross-account
+and stale-view callbacks, deduplicates successful requests, retries transient
+failures with up to three attempts, and retries visible MDNs on activation. Finally,
+MockChatService now
+uses per-account chat/message counters and account+chat storage keys throughout;
+two accounts deliberately share chat 10/message 1000 without delete/search
+cross-talk; noticed and seen/fresh state remain distinct. Swift: 88 passed. The
+AppModel issue remains open only because core
+progress events have no flow generation to distinguish two onboarding attempts
+that reuse one account; the leftovers issue remains open for the manual
+second-device MDN confirmation.
+
 ## 2026-07-18 — Bounded events + exact notifications + global unread
 
 TDD reproduced duplicate burst notifications: `IncomingMessage` carried a

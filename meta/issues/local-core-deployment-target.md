@@ -54,3 +54,17 @@ blake3's NEON object stayed at 26.5 until `cargo clean -p blake3`; the new
 gate is what caught it. Zero "built for newer" ld warnings on
 `make app-release`, full `make check` green (Rust + 96 Swift), rebuilt
 release app verified launching in the lume VM.
+
+## Reopened (2026-07-19)
+
+The first nightly with the gate failed (run 29662809033): the runner's
+rust-cache restored blake3's cc object built pre-pin against the 15.5 SDK
+default — the same never-re-fingerprinted class the gate exists to catch,
+now in CI. Two holes closed: (1) CI steps that bypass make (nightly
+`cargo test`, check `cargo clippy`) built without the pin and their cc
+outputs would poison the subsequent pinned make build every run — the pin
+is now job-level `env` in both workflows, with a must-match-Makefile
+comment; (2) `MACOSX_DEPLOYMENT_TARGET` participates in the rust-cache key
+(`env-vars`) so a pin change busts stale caches instead of trusting
+re-fingerprinting that never happens. Untestable in-repo (workflow-level
+config); verification is the next nightly run publishing green.

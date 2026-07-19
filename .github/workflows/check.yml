@@ -11,6 +11,11 @@ jobs:
   check:
     runs-on: macos-15
     timeout-minutes: 90
+    env:
+      # Must match the Makefile pin — the clippy step bypasses make, and cc
+      # outputs built without the pin poison later pinned builds (see
+      # nightly.yml and meta/issues/local-core-deployment-target.md).
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -25,6 +30,9 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: dcvm
+          # Pin participates in the key: cached cc objects built under a
+          # different pin never re-fingerprint (see nightly.yml).
+          env-vars: MACOSX_DEPLOYMENT_TARGET
 
       - name: Test and build
         run: make check

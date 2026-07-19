@@ -23,6 +23,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 90
+    env:
+      # Must match the Makefile pin (and Package.swift .v15). Job-level on
+      # purpose: the direct cargo/swift steps below bypass make, and cc
+      # build-script outputs compiled without the pin (runner SDK default
+      # 15.5) are NOT re-fingerprinted by a later pinned build — they'd be
+      # reused, and verify-minos rejects the archive. See
+      # meta/issues/local-core-deployment-target.md.
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -44,6 +52,10 @@ jobs:
           # the old debug-artifact cache would skip saving, cold-building
           # release core on EVERY run instead of once.
           prefix-key: release
+          # Deployment-target pin participates in the key: cached cc objects
+          # built under a different pin never re-fingerprint (the blake3
+          # 15.5 incident, run 29662809033).
+          env-vars: MACOSX_DEPLOYMENT_TARGET
 
       - name: Rust tests
         run: cd dcvm && cargo test --locked --release

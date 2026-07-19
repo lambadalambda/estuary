@@ -65,3 +65,10 @@ the lume VM: diagnostic symlink and `/Users/runner` removed, locally built
 release-profile app installed fresh, onboarding renders with logo and themed
 chrome (cua-driver screenshot). Remaining before archive: the first CI-built
 nightly DMG from this fix installs and launches clean in the VM.
+
+## Outcome (2026-07-19)
+
+CI-built `Estuary-ebe3425….dmg` (nightly run 29675168311) downloaded inside
+the VM, installed to /Applications with no `/Users/runner` path present,
+launches to a fully rendered onboarding screen (cua-driver screenshot).
+All acceptance criteria met.

@@ -12,5 +12,3 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
-- [ ] [Nightly DMG crashes on launch on any machine except the build machine](issues/nightly-dmg-bundle-module-crash.md)
-- [ ] [Local core builds target the host macOS, not the app's minimum](issues/local-core-deployment-target.md)

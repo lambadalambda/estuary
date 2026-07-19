@@ -68,3 +68,8 @@ comment; (2) `MACOSX_DEPLOYMENT_TARGET` participates in the rust-cache key
 (`env-vars`) so a pin change busts stale caches instead of trusting
 re-fingerprinting that never happens. Untestable in-repo (workflow-level
 config); verification is the next nightly run publishing green.
+
+## Outcome (2026-07-19)
+
+Nightly run 29675168311 green with the job-level pin and rotated cache key;
+its DMG verified launching in the lume VM. Closed.

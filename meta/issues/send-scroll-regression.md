@@ -83,3 +83,16 @@ logs a follow, offset tracks the content bottom, probe ends atBottom=true.
 Remaining before archive: user confirms send-scroll in a real chat (and
 scrolled-up reading positions still not yanked); VM re-verification once
 the lume VM is back up.
+
+## Follow-up (2026-07-20, same day)
+
+User confirmed send-scroll works, but the first fix regressed chat-open
+positioning (viewport stranded mid-timeline): the generation also bumped
+on fresh opens (entries nil → loaded, sentinel still true from the reset),
+and the resulting scrollTo races the initial eager-VStack layout. Guarded
+with `previousLast != nil` — open positioning belongs solely to
+`defaultScrollAnchor(.bottom)`. Unit test pins open == no bump; probe log
+re-verified: open lands at the bottom with no follow fired, appends still
+follow, probe ends atBottom=true. Remaining unchanged: user confirms both
+select-position and send-follow together; VM pass still blocked on Remote
+Login being re-enabled in the guest (ssh column in `lume ls` reads "no").

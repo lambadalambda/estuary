@@ -1088,8 +1088,12 @@ final class AppModel {
         // New newest entry (append or full-window slide — count can stay
         // constant, so compare ids) while at the bottom: follow it. Prepends
         // keep the last entry, scrolled-up readers report !atBottom; neither
-        // fires.
-        if viewIsAtBottom, let newLast = messageListEntries.last?.id,
+        // fires. previousLast nil means a fresh chat open — positioning
+        // there belongs to defaultScrollAnchor(.bottom); an explicit
+        // scrollTo would race the initial layout and strand the viewport
+        // mid-timeline (user-reported 2026-07-20).
+        if viewIsAtBottom, previousLast != nil,
+           let newLast = messageListEntries.last?.id,
            newLast != previousLast {
             followBottomGeneration &+= 1
         }

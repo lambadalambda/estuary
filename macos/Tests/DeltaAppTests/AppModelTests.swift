@@ -73,6 +73,11 @@ import Testing
         model.selectedChatId = 10
         await service.setMessages(testMessages(1 ... 50))
         await model.chatSelectionChanged()
+        // Opening a chat must NOT fire the follow: an explicit scrollTo
+        // races the initial eager-VStack layout and strands the viewport
+        // mid-timeline (user-reported 2026-07-20). The initial
+        // defaultScrollAnchor(.bottom) owns open positioning.
+        #expect(model.followBottomGeneration == 0)
         let afterOpen = model.followBottomGeneration
 
         // Append while at bottom: follow.

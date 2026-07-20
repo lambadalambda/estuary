@@ -1,5 +1,23 @@
 # DEVLOG
 
+## 2026-07-20 — Send-scroll regression: sizeChanges anchor inert under eager VStack
+
+User report: posting no longer follows to the bottom. Since 880af5f the ONLY
+follow mechanism was `defaultScrollAnchor(.bottom, for: .sizeChanges)`; the
+eager-VStack swap (de596ad) silently killed it — geo logs (new
+DCNATIVE_AUTOSEND probe + DCNATIVE_DEBUG_SCROLL) show the offset frozen
+through every append. First fix attempt (view-side onChange gated on
+viewIsAtBottom) failed for a second, subtler reason: visibility callbacks
+are post-layout, so the sentinel already reads "not at bottom" by decision
+time. Landed fix: model-side `followBottomGeneration` captures the
+pre-append sentinel state in `refreshMessageListEntries` (keyed on last
+entry id — full-window slides keep the count constant); the view just
+scrolls on the bump. Two new AppModel tests pin the trigger semantics;
+98/98 green. Probe evidence before (offset 153 while content 800→6736) and
+after (offset tracks bottom, probe ends atBottom=true). Lesson: every
+scroll behavior riding on a SwiftUI default needs a probe-able invariant —
+the pin died two days before anyone noticed.
+
 ## 2026-07-19 — Core objects now pinned to the app's macOS minimum
 
 Local Rust builds compiled cc-crate C deps against the host OS (26.5) while

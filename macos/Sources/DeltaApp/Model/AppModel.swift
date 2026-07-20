@@ -46,6 +46,13 @@ final class AppModel {
     private var seenReceiptRequests: Set<VisibleMessageKey> = []
     private(set) var messageListEntries: [MessageListEntry] = []
     private(set) var messageListAssemblyCount = 0
+    /// Bumped when the entry list gains a new LAST message while the view
+    /// reports at-bottom; the view answers by scrolling to the bottom
+    /// anchor. Decided here because the model sees the PRE-append sentinel
+    /// state — by the time view-side callbacks run, the grown content has
+    /// already pushed the sentinel out of the viewport (see
+    /// meta/issues/send-scroll-regression.md).
+    private(set) var followBottomGeneration: UInt64 = 0
     private(set) var messages: [MessageItem] = [] {
         didSet { refreshMessageListEntries() }
     }
@@ -202,6 +209,28 @@ final class AppModel {
            let first = chats.first {
             selectedChatId = first.id
             await chatSelectionChanged()
+        }
+        // Send-scroll probe (issue: send-scroll-regression): seed past one
+        // window so the probe exercises the full-window slide, then send a
+        // probe message. Pair with DCNATIVE_DEBUG_SCROLL=1 and read whether
+        // the bottom anchor stays visible through the probe append.
+        if screen == .main, env["DCNATIVE_AUTOSEND"] == "1", selectedChatId != nil {
+            Task {
+                for i in 1 ... Int(Self.messagePageSize) + 5 {
+                    draft = "autosend seed \(i)"
+                    await send(draft)
+                }
+                try? await Task.sleep(for: .seconds(3))
+                scrollDebug("model: AUTOSEND probe (messages=\(messages.count))")
+                await send("autosend probe")
+                try? await Task.sleep(for: .seconds(2))
+                scrollDebug(
+                    "model: AUTOSEND done (messages=\(messages.count), "
+                        + "atBottom=\(viewIsAtBottom))")
+                // Probe runs are disposable: exit so stdio flushes and no
+                // stray windows accumulate on unattended reruns.
+                exit(0)
+            }
         }
         if screen == .onboarding, env["DCNATIVE_AUTOCREATE"] == "1" {
             profileName = "Autocreate Test"
@@ -1052,9 +1081,18 @@ final class AppModel {
     }
 
     private func refreshMessageListEntries() {
+        let previousLast = messageListEntries.last?.id
         messageListEntries = buildMessageListEntries(
             messages, inGroup: selectedChat?.isGroup == true)
         messageListAssemblyCount += 1
+        // New newest entry (append or full-window slide — count can stay
+        // constant, so compare ids) while at the bottom: follow it. Prepends
+        // keep the last entry, scrolled-up readers report !atBottom; neither
+        // fires.
+        if viewIsAtBottom, let newLast = messageListEntries.last?.id,
+           newLast != previousLast {
+            followBottomGeneration &+= 1
+        }
     }
 
     private func resetAccountScopedState() {

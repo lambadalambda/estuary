@@ -105,6 +105,15 @@ private struct MessageListView: View {
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            // The sizeChanges anchor stopped engaging under the eager VStack
+            // (geo logs: offset frozen through every append), and view-side
+            // at-bottom checks race layout. The model decides from the
+            // pre-append sentinel state; this just obeys. Issue:
+            // send-scroll-regression.
+            .onChange(of: model.followBottomGeneration) {
+                model.scrollDebug("view: follow appended entry")
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+            }
             .scrollGeometryDebug(model: model)
             .id(chat.id)
         }

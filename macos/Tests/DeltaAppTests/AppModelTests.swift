@@ -34,6 +34,69 @@ import Testing
         #expect(model.hasMoreMessages)
     }
 
+    /// The send-scroll follow (issue: send-scroll-regression) triggers on the
+    /// LAST entry's id, not the entry count: a full-window slide (new message
+    /// in, oldest out) keeps the count constant, so a count-based trigger
+    /// would silently skip exactly the common ≥1-window chat.
+    @Test func fullWindowSlideChangesLastEntryNotCount() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 50))
+        await model.chatSelectionChanged()
+        #expect(model.messages.count == 50)
+        #expect(model.viewIsAtBottom)
+        let countBefore = model.messageListEntries.count
+        let lastBefore = model.messageListEntries.last?.id
+
+        await service.setMessages(testMessages(2 ... 51))
+        await model.reloadMessages()
+
+        #expect(model.messages.count == 50, "at bottom, the window slides — no growth")
+        #expect(model.messageListEntries.count == countBefore)
+        #expect(model.messageListEntries.last?.id == "msg-51")
+        #expect(model.messageListEntries.last?.id != lastBefore)
+        #expect(model.viewIsAtBottom, "reload must not clobber the sentinel state")
+    }
+
+    /// The follow decision must use the PRE-append at-bottom state, captured
+    /// model-side: view-side visibility callbacks report post-layout
+    /// geometry, where the grown content has already pushed the sentinel out
+    /// (the 2026-07-20 send-scroll regression's second failure mode).
+    @Test func followBottomFiresOnAppendAtBottomOnly() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 50))
+        await model.chatSelectionChanged()
+        let afterOpen = model.followBottomGeneration
+
+        // Append while at bottom: follow.
+        await service.setMessages(testMessages(2 ... 51))
+        await model.reloadMessages()
+        #expect(model.followBottomGeneration == afterOpen + 1)
+
+        // Reload with an unchanged newest message (state refresh): no follow.
+        await model.reloadMessages()
+        #expect(model.followBottomGeneration == afterOpen + 1)
+
+        // Append while scrolled up: never yank the reader down.
+        model.viewIsAtBottom = false
+        await service.setMessages(testMessages(2 ... 52))
+        await model.reloadMessages()
+        #expect(model.followBottomGeneration == afterOpen + 1)
+
+        // Back at bottom, next append follows again.
+        model.viewIsAtBottom = true
+        await service.setMessages(testMessages(2 ... 53))
+        await model.reloadMessages()
+        #expect(model.followBottomGeneration == afterOpen + 2)
+    }
+
     @Test func staleNormalListCannotOverwriteArchive() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()

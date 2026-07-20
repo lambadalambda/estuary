@@ -20,3 +20,4 @@
 - [x] [Notification delivery and event-pipeline backpressure](issues/notification-event-pipeline.md)
 - [x] [Nightly DMG crashes on launch on any machine except the build machine](issues/nightly-dmg-bundle-module-crash.md)
 - [x] [Local core builds target the host macOS, not the app's minimum](issues/local-core-deployment-target.md)
+- [x] [Posting a message no longer scrolls to the bottom](issues/send-scroll-regression.md)

@@ -96,3 +96,13 @@ re-verified: open lands at the bottom with no follow fired, appends still
 follow, probe ends atBottom=true. Remaining unchanged: user confirms both
 select-position and send-follow together; VM pass still blocked on Remote
 Login being re-enabled in the guest (ssh column in `lume ls` reads "no").
+
+## Outcome (2026-07-20)
+
+User confirmed the send-follow fix ("okay, the scroll on post works now")
+and, after the open-guard, "seems to work". VM pass done via cua-driver
+(Remote Login restored): debug build deployed, Weekend Hikers selected via
+click — viewport opens at the newest message; probe message typed via AX
+insert + return — message appears at the bottom with the viewport
+following (screenshots in session). Both acceptance behaviors verified in
+the VM on top of the local probe-log evidence. Archived.

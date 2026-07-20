@@ -12,4 +12,3 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
-- [ ] [Posting a message no longer scrolls to the bottom](issues/send-scroll-regression.md)

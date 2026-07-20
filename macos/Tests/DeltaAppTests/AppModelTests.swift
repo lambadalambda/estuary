@@ -102,6 +102,60 @@ import Testing
         #expect(model.followBottomGeneration == afterOpen + 2)
     }
 
+    /// Revisiting a chat must render its last window synchronously — the
+    /// empty-flash fix (issue: chat-switch-window-cache). The reload is
+    /// suspended, so anything visible can only come from the cache.
+    @Test func revisitedChatRendersCachedWindowWhileReloadInFlight() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 50))
+        await model.chatSelectionChanged()
+        #expect(model.messages.count == 50)
+
+        model.selectedChatId = 11
+        await service.setMessages(testMessages(201 ... 210, chatId: 11))
+        await model.chatSelectionChanged()
+        #expect(model.messages.map(\.id) == (201 ... 210).map(UInt32.init))
+
+        // Back to chat 10 with the fetch stuck: the window must already be
+        // there, and the follow must NOT fire for a cache restore.
+        await service.enqueueMessages(.suspended("revisit"))
+        let followBefore = model.followBottomGeneration
+        model.selectedChatId = 10
+        #expect(model.messages.map(\.id) == (1 ... 50).map(UInt32.init))
+        #expect(model.followBottomGeneration == followBefore)
+
+        let task = Task { await model.chatSelectionChanged() }
+        try await service.waitUntilMessagesSuspended("revisit")
+        #expect(model.messages.count == 50, "cached window survives until the refresh lands")
+        await service.resumeMessages("revisit", with: testMessages(2 ... 51))
+        await task.value
+        #expect(model.messages.map(\.id) == (2 ... 51).map(UInt32.init))
+    }
+
+    /// Cache keys are account + chat: colliding chat ids across accounts
+    /// must not leak windows (the appmodel-state-isolation invariant).
+    @Test func windowCacheIsAccountScoped() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 5))
+        await model.chatSelectionChanged()
+        #expect(model.messages.count == 5)
+
+        // Account transition clears account-scoped state including the cache.
+        await model.switchAccount(to: 2)
+        model.selectedChatId = 10
+        #expect(model.messages.isEmpty, "chat 10 on account 2 must not show account 1's window")
+    }
+
     @Test func staleNormalListCannotOverwriteArchive() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()

@@ -1,5 +1,24 @@
 # DEVLOG
 
+## 2026-07-20 — Chat-switch empty flash: per-conversation window cache
+
+Side-by-side with Telegram-macOS (cloned, read): their switch never renders
+an unready chat — navigation gates the swap on the ChatController's `ready`
+promise (TGUIKit NavigationViewController.push) and Postbox serves the
+initial window from an indexed store, so fetch-then-swap is imperceptible.
+Estuary did the opposite: selection clears the window synchronously (the
+anti-bleed guard) and awaits an FFI fetch that core serves by scanning the
+whole history — a guaranteed, fetch-length empty frame. Fix: cache the last
+loaded window per (account, chat) — a sibling of the drafts dict — and
+restore it synchronously on selection (both in the didSet AND after
+chatSelectionChanged's second reset, which was silently wiping the first
+restore; the suspended-fetch test caught that). Cache writes on reload and
+loadOlder, LRU-bounded at 16, cleared on account-scoped resets. Restored
+data is same-conversation, so the stale-window growth check stays valid and
+a restore cannot fire the bottom-follow (previousLast guard). 100/100
+tests; AUTOSEND probe unchanged. First-ever opens still fetch — that tail
+belongs to dcvm indexed pagination.
+
 ## 2026-07-20 — Send-scroll regression: sizeChanges anchor inert under eager VStack
 
 User report: posting no longer follows to the bottom. Since 880af5f the ONLY

@@ -12,3 +12,4 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
+- [ ] [Chat switching flashes an empty timeline](issues/chat-switch-window-cache.md)

@@ -38,10 +38,27 @@ final class AppModel {
                 receiptAttempts.removeAll()
                 replyTo = nil
                 resetMessageWindow()
+                // Stale-but-right-chat beats an empty flash: render the last
+                // loaded window for this conversation immediately; the
+                // generation-guarded reload refreshes it right after (see
+                // meta/issues/chat-switch-window-cache.md).
+                restoreCachedMessageWindow()
             }
         }
     }
     private var selectedChatCache: ChatItem?
+    private struct CachedMessageWindow {
+        var messages: [MessageItem]
+        var loadedLimit: UInt32
+        var hasMoreMessages: Bool
+        var historyExhausted: Bool
+    }
+    /// Last loaded window per conversation, so revisits render instantly
+    /// instead of flashing the empty state while the FFI fetch runs.
+    /// Keyed by account + chat (no cross-account bleed), LRU-bounded.
+    private var messageWindowCache: [ConversationKey: CachedMessageWindow] = [:]
+    private var messageWindowCacheOrder: [ConversationKey] = []
+    private static let messageWindowCacheLimit = 16
     private var visibleMessages: [VisibleMessageKey: MessageItem] = [:]
     private var seenReceiptRequests: Set<VisibleMessageKey> = []
     private(set) var messageListEntries: [MessageListEntry] = []
@@ -615,8 +632,30 @@ final class AppModel {
             messages = page
             hasMoreMessages = !historyExhausted && page.count >= Int(loadedLimit)
             messageWindowGeneration &+= 1
+            storeMessageWindowCache()
         } catch {
             // Preserve the last valid window; a later event retries.
+        }
+    }
+
+    private func restoreCachedMessageWindow() {
+        guard let key = selectedConversationKey,
+              let cached = messageWindowCache[key] else { return }
+        messages = cached.messages
+        loadedLimit = cached.loadedLimit
+        hasMoreMessages = cached.hasMoreMessages
+        historyExhausted = cached.historyExhausted
+    }
+
+    private func storeMessageWindowCache() {
+        guard let key = selectedConversationKey else { return }
+        messageWindowCache[key] = CachedMessageWindow(
+            messages: messages, loadedLimit: loadedLimit,
+            hasMoreMessages: hasMoreMessages, historyExhausted: historyExhausted)
+        messageWindowCacheOrder.removeAll { $0 == key }
+        messageWindowCacheOrder.append(key)
+        if messageWindowCacheOrder.count > Self.messageWindowCacheLimit {
+            messageWindowCache.removeValue(forKey: messageWindowCacheOrder.removeFirst())
         }
     }
 
@@ -658,6 +697,7 @@ final class AppModel {
             loadedLimit += UInt32(older.count)
             hasMoreMessages = older.count >= Int(Self.messagePageSize)
             messageWindowGeneration &+= 1
+            storeMessageWindowCache()
             let outcome = Self.historyLoadOutcome(
                 previousOldest: oldest.id, viewIsAtBottom: viewIsAtBottom)
             scrollDebug(
@@ -1062,8 +1102,12 @@ final class AppModel {
             selectedChatCache = nil
         }
         // Clear immediately so the stale-window growth check in
-        // reloadMessages never compares against the previous chat.
+        // reloadMessages never compares against the previous chat — then
+        // restore this conversation's cached window, which is same-chat
+        // data and therefore safe for that check (and kills the empty
+        // flash while the fetch below runs).
         resetMessageWindow()
+        restoreCachedMessageWindow()
         await reloadMessages()
         scrollDebug(
             "open chat=\(selectedChatId.map(String.init) ?? "-") "
@@ -1103,6 +1147,8 @@ final class AppModel {
         searchTask?.cancel()
         searchTask = nil
         searchGeneration &+= 1
+        messageWindowCache.removeAll()
+        messageWindowCacheOrder.removeAll()
         selectedChatId = nil
         selectedChatCache = nil
         visibleMessages.removeAll()

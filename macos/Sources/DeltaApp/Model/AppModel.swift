@@ -1162,11 +1162,17 @@ final class AppModel {
         resetMessageWindow()
     }
 
-    private func markSelectedChatNoticed() async {
+    /// `force` skips the cached fresh-count guard: on the incoming-message
+    /// path the sidebar row is refreshed by a DEBOUNCED reload behind the
+    /// same event, so it still reads 0 here — while the real count is
+    /// definitionally about to rise. Without force, the guard bailed and
+    /// the viewed chat's badge climbed and stuck (issue:
+    /// viewed-chat-unread-badge).
+    private func markSelectedChatNoticed(force: Bool = false) async {
         guard isAppActive(),
               let accountId = selectedAccountId,
               let chat = selectedChat,
-              chat.freshCount > 0, !chat.isContactRequest
+              force || chat.freshCount > 0, !chat.isContactRequest
         else { return }
         try? await service.markNoticed(accountId: accountId, chatId: chat.id)
     }
@@ -1288,7 +1294,7 @@ final class AppModel {
                 if chatId == selectedChatId {
                     scheduleReloadMessages()
                     if isAppActive() {
-                        await markSelectedChatNoticed()
+                        await markSelectedChatNoticed(force: true)
                     }
                 }
             }

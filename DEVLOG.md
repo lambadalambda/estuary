@@ -1,5 +1,16 @@
 # DEVLOG
 
+## 2026-07-20 — Viewed chat's unread badge climbed: stale fresh-count guard
+
+Incoming-in-selected-chat did call markSelectedChatNoticed, but its
+`freshCount > 0` guard reads the SIDEBAR row — refreshed by a debounced
+reload scheduled by the same event, so it still says 0 at call time; the
+marknoticed RPC never fired and the badge stuck until reselection. Fix:
+`force: true` on the incoming path (the count is definitionally about to
+rise); the guard stays for the other call sites. TDD: positive case red
+first (marks noticed despite stale 0), negative cases pin that other
+chats and inactive-app still accumulate. 103/103.
+
 ## 2026-07-20 — Chat-switch empty flash: per-conversation window cache
 
 Side-by-side with Telegram-macOS (cloned, read): their switch never renders

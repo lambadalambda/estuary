@@ -156,6 +156,52 @@ import Testing
         #expect(model.messages.isEmpty, "chat 10 on account 2 must not show account 1's window")
     }
 
+    /// Viewing a chat means its unread badge must not climb: incoming in
+    /// the SELECTED chat while active marks noticed immediately — even
+    /// though the cached sidebar row still reads freshCount 0 (the reload
+    /// that would raise it is debounced behind the same event; issue:
+    /// viewed-chat-unread-badge).
+    @Test func incomingInViewedChatMarksNoticedDespiteStaleFreshCount() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service, isAppActive: { true })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 3, outgoing: false))
+        await model.chatSelectionChanged()
+        let callsAfterOpen = await service.markNoticedCalls.count
+
+        await service.emit(1, .incomingMessage(chatId: 10, msgId: 3))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await service.markNoticedCalls.count == callsAfterOpen,
+              ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(await service.markNoticedCalls.last == "1:10")
+    }
+
+    @Test func incomingElsewhereOrInactiveDoesNotMarkNoticed() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        @MainActor final class Flag { var value = true }
+        let active = Flag()
+        let model = AppModel(service: service, isAppActive: { active.value })
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 3, outgoing: false))
+        await model.chatSelectionChanged()
+        let baseline = await service.markNoticedCalls.count
+
+        // Another chat: its badge must accumulate.
+        await service.emit(1, .incomingMessage(chatId: 11, msgId: 4))
+        // Inactive app: even the selected chat accumulates.
+        active.value = false
+        await service.emit(1, .incomingMessage(chatId: 10, msgId: 5))
+
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await service.markNoticedCalls.count == baseline)
+    }
+
     @Test func staleNormalListCannotOverwriteArchive() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()
@@ -1155,6 +1201,8 @@ private actor ScriptedChatService: ChatService {
     private var maxUnreadInFlight = 0
     private var markedSeenRecords: [SeenRecord] = []
     private var markNoticedSuspensions: [String] = []
+    /// "account:chat" per markNoticed call, for badge-semantics assertions.
+    private(set) var markNoticedCalls: [String] = []
     private var markNoticedWaiters: [String: CheckedContinuation<Void, any Error>] = [:]
     private var markSeenFailuresRemaining = 0
     private var markSeenCalls = 0
@@ -1468,6 +1516,7 @@ private actor ScriptedChatService: ChatService {
     }
     func sendText(accountId: UInt32, chatId: UInt32, text: String) throws -> UInt32 { throw unused() }
     func markNoticed(accountId: UInt32, chatId: UInt32) async throws {
+        markNoticedCalls.append("\(accountId):\(chatId)")
         guard !markNoticedSuspensions.isEmpty else { return }
         let label = markNoticedSuspensions.removeFirst()
         try await withCheckedThrowingContinuation {

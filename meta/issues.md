@@ -14,3 +14,4 @@
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
 - [ ] [Chat switching flashes an empty timeline](issues/chat-switch-window-cache.md)
 - [ ] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)
+- [ ] [Unread badge climbs for the chat currently being viewed](issues/viewed-chat-unread-badge.md)

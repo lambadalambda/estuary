@@ -15,6 +15,19 @@ import Testing
         return scrollView
     }
 
+    /// The reactive sweep loses the first-frame race on scroll views
+    /// created with content already present (chat switch + window cache) —
+    /// the app-level default makes every scroll view be BORN overlay
+    /// (issue: legacy-scroller-flash).
+    @Test func registrationMakesOverlayThePreferredStyleAppWide() {
+        OverlayScrollers.registerPreferredStyle()
+
+        #expect(
+            UserDefaults.standard.string(forKey: "AppleShowScrollBars")
+                == "WhenScrolling")
+        #expect(NSScroller.preferredScrollerStyle == .overlay)
+    }
+
     @Test func appliesWhenAnchorIsInsideTheScrollView() {
         let scrollView = legacyScrollView()
         let document = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))

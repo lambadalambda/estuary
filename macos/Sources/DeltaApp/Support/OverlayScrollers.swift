@@ -15,6 +15,20 @@ import SwiftUI
 /// insertion is harmless — a later trigger from any anchor catches up.
 /// Attach near a scroll surface: `.background(OverlayScrollers())`.
 struct OverlayScrollers: NSViewRepresentable {
+    /// App-level root fix: register "show scroll bars while scrolling" in
+    /// the app's VOLATILE defaults (never written to disk, never touches
+    /// the user's system setting) BEFORE any window exists.
+    /// NSScroller.preferredScrollerStyle then reports overlay app-wide and
+    /// every scroll view is born overlay — the reactive sweep below can
+    /// no longer lose the first-frame race on scroll views created with
+    /// content already present (chat switch + window cache; see
+    /// meta/issues/legacy-scroller-flash.md). Call first in App.init.
+    static func registerPreferredStyle() {
+        UserDefaults.standard.register(defaults: [
+            "AppleShowScrollBars": "WhenScrolling"
+        ])
+    }
+
     final class Coordinator {
         var observer: NSObjectProtocol?
         deinit {

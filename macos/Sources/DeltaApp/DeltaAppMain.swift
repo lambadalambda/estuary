@@ -7,6 +7,9 @@ struct DeltaAppMain: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Before any window: scroll views must be BORN overlay-style, not
+        // restyled after first draw (legacy-scroller-flash issue).
+        OverlayScrollers.registerPreferredStyle()
         // Running via `swift run` (no .app bundle): become a regular,
         // focusable app with a Dock icon.
         NSApplication.shared.setActivationPolicy(.regular)

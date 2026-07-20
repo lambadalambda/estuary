@@ -13,3 +13,4 @@
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
 - [ ] [Chat switching flashes an empty timeline](issues/chat-switch-window-cache.md)
+- [ ] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)

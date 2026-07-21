@@ -27,3 +27,4 @@
 - [x] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)
 - [x] [Unread badge climbs for the chat currently being viewed](issues/viewed-chat-unread-badge.md)
 - [x] [Overnight chat becomes choppy; switching back to it hangs](issues/overnight-window-bloat.md)
+- [x] [At-bottom detection needs human wiggle room](issues/at-bottom-wiggle-room.md)

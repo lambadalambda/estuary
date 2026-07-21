@@ -25,3 +25,9 @@ the degenerate/empty-list fast path.
 - VM check: nudge 2-3 wheel notches up → incoming still follows; scroll a
   full screen up → incoming does not move the viewport.
 - Full suite green; user confirms the original annoyance is gone.
+
+## Outcome (2026-07-21)
+
+User-confirmed ("yup, that did it"): grazed-near-bottom now follows
+incoming messages. Never-yank side verified twice in the VM; the graze
+semantics are pinned by the six chatIsAtBottom unit tests.

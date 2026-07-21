@@ -32,6 +32,29 @@ run a measured stress spike before committing to a port.
    position; tall-item open not blank.
 4. Verdict table in this issue; the winner gets its own port issue.
 
+## Results (2026-07-21, phase 1: numbers)
+
+Sweep = bottom→top→bottom, stride 8, 100ms steps, hitch = gap > 34ms
+between scroll-geometry callbacks. Same corpus, same bubbles, same
+machine (dev host, debug build):
+
+| container | n=200 hitches | n=1000 hitches | n=1000 maxGapMs | n=1000 sweepMs |
+|---|---|---|---|---|
+| eager (current) | 12 | 589 | 385 | 56055 (stalls: 2x nominal) |
+| lazy | 7 | 171 | 125 | 35675 |
+| list | 1 | 7 | 94 | 27172 (nominal) |
+| table (probe) | n/a* | n/a* | 216 | 29379 (nominal) |
+
+*table swept via instant scrollRowToVisible (no animation): per-frame
+numbers not comparable; nominal-time completion = no stalls.
+
+Reading: eager collapses at n=1000 (matches user reports); List is
+near-perfect and is NSTableView underneath — the custom-AppKit endpoint
+with Apple maintaining the wrapper. Phase 2: correctness gauntlet on List
+(primary) vs eager (control) in the real chat view behind a container
+env switch, driven in the lume VM. The custom table stays the fallback
+if List fails a gauntlet behavior.
+
 ## Acceptance Criteria
 
 - Numbers for all four candidates at n=200 and n=1000 on the same

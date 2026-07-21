@@ -76,6 +76,16 @@ struct RootView: View {
     let model: AppModel
 
     var body: some View {
+        if let stress = StressConfig.fromEnv() {
+            // List-engine stress harness (message-list-engine-spike):
+            // replaces the whole UI; the process prints stats and exits.
+            StressHarnessView(config: stress, model: model)
+        } else {
+            screenBody
+        }
+    }
+
+    @ViewBuilder private var screenBody: some View {
         switch model.screen {
         case .loading:
             ProgressView()

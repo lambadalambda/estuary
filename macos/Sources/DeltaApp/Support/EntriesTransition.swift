@@ -18,6 +18,21 @@ enum EntriesTransition: Equatable {
     case reset
 }
 
+/// Human at-bottom (issue: at-bottom-wiggle-room): the reader counts as
+/// "at the bottom" when the NEWEST row is at least partly inside the
+/// viewport — a trackpad graze that leaves the view a few dozen points shy
+/// still LOOKS pinned, and incoming messages should follow. Fully below
+/// the fold means a deliberate scroll-up: never yank. (The Telegram table
+/// keys its stick-to-bottom on the same visible-range semantic.)
+func chatIsAtBottom(
+    viewportMaxY: CGFloat, contentHeight: CGFloat, lastRowMinY: CGFloat?,
+    slop: CGFloat = 4
+) -> Bool {
+    if viewportMaxY >= contentHeight - slop { return true }
+    guard let lastRowMinY else { return false }
+    return lastRowMinY < viewportMaxY
+}
+
 func entriesTransition(from old: [String], to new: [String]) -> EntriesTransition {
     if old.isEmpty, new.isEmpty { return .none }
     if old.isEmpty { return .initial }

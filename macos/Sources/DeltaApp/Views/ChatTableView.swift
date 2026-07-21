@@ -232,7 +232,11 @@ struct ChatTableView: NSViewRepresentable {
 
         private func isAtBottom() -> Bool {
             let clip = scroll.contentView.bounds
-            return clip.maxY >= contentHeight() - Self.bottomSlop
+            return chatIsAtBottom(
+                viewportMaxY: clip.maxY, contentHeight: contentHeight(),
+                lastRowMinY: ids.isEmpty
+                    ? nil : table.rect(ofRow: ids.count - 1).minY,
+                slop: Self.bottomSlop)
         }
 
         private func scrollToBottom() {

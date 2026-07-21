@@ -8,6 +8,47 @@ import Testing
 // surgically instead of reloading — and fall back to .reset (reload +
 // anchor restore) whenever the shape is anything but clean.
 
+@Suite struct ChatAtBottomTests {
+    // Human at-bottom (issue: at-bottom-wiggle-room): follow when the
+    // newest row is at least partly visible; never yank when it is fully
+    // below the fold. Viewport is 600pt tall over 2000pt of content.
+
+    @Test func exactBottomIsAtBottom() {
+        #expect(chatIsAtBottom(
+            viewportMaxY: 2000, contentHeight: 2000, lastRowMinY: 1940))
+    }
+
+    @Test func fewPointsShyIsAtBottom() {
+        // The trackpad-graze case: 40pt up, newest row clipped but visible.
+        #expect(chatIsAtBottom(
+            viewportMaxY: 1960, contentHeight: 2000, lastRowMinY: 1940))
+    }
+
+    @Test func newestRowPeekingCountsAsAtBottom() {
+        // Only the top 5pt of the newest row shows.
+        #expect(chatIsAtBottom(
+            viewportMaxY: 1945, contentHeight: 2000, lastRowMinY: 1940))
+    }
+
+    @Test func newestRowBelowTheFoldIsNotAtBottom() {
+        #expect(!chatIsAtBottom(
+            viewportMaxY: 1935, contentHeight: 2000, lastRowMinY: 1940))
+    }
+
+    @Test func scrolledFarUpIsNotAtBottom() {
+        #expect(!chatIsAtBottom(
+            viewportMaxY: 800, contentHeight: 2000, lastRowMinY: 1940))
+    }
+
+    @Test func emptyOrShortContentIsAtBottom() {
+        // Content fits the viewport entirely: always at bottom.
+        #expect(chatIsAtBottom(
+            viewportMaxY: 600, contentHeight: 400, lastRowMinY: 360))
+        #expect(chatIsAtBottom(
+            viewportMaxY: 600, contentHeight: 0, lastRowMinY: nil))
+    }
+}
+
 @Suite struct EntriesTransitionTests {
     private func ids(_ range: ClosedRange<Int>) -> [String] {
         range.map { "msg-\($0)" }

@@ -299,8 +299,6 @@ struct DayMarkerView: View {
 
 // MARK: - Message bubble
 
-private let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🎉"]
-
 struct MessageBubbleView: View {
     let model: AppModel
     let message: MessageItem
@@ -533,36 +531,200 @@ struct MessageBubbleView: View {
         }
     }
 
+    // Telegram-style menu (issue: telegram-style-context-menu): the pure
+    // descriptor decides the rows, this just renders them.
     @ViewBuilder
     private var contextMenu: some View {
-        if !message.text.isEmpty {
-            Button("Copy Text") {
+        let entries = messageContextMenuEntries(
+            for: message, quickReactions: defaultQuickReactions)
+        ForEach(entries.indices, id: \.self) { index in
+            menuEntry(entries[index])
+        }
+    }
+
+    @ViewBuilder
+    private func menuEntry(_ entry: MessageMenuEntry) -> some View {
+        switch entry {
+        case .reactionPalette(let emojis, let selected):
+            // Horizontal emoji strip; the user's current reaction shows
+            // selected, and picking it again clears it (toggle semantics).
+            // Palette items display their ICON only — a text label renders
+            // as an empty slot — so the emoji is rasterized into one.
+            ControlGroup {
+                ForEach(emojis, id: \.self) { emoji in
+                    let isSelected = selected == emoji
+                    Toggle(
+                        isOn: Binding(
+                            get: { isSelected },
+                            set: { _ in
+                                Task {
+                                    await model.toggleReaction(
+                                        message: message, emoji: emoji)
+                                }
+                            })
+                    ) {
+                        Label {
+                            Text(emoji)
+                        } icon: {
+                            if let icon = Self.emojiIcon(emoji, selected: isSelected) {
+                                Image(nsImage: icon)
+                            }
+                        }
+                    }
+                }
+            }
+            .controlGroupStyle(.palette)
+        case .reply:
+            Button { model.replyTo = message } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        case .copyText:
+            Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(message.text, forType: .string)
+            } label: {
+                Label("Copy Text", systemImage: "doc.on.doc")
             }
+        case .copyMedia:
+            Button(action: copyMedia) {
+                Label("Copy Media", systemImage: "photo.on.rectangle")
+            }
+        case .saveAs:
+            Button(action: saveAs) {
+                Label("Save As…", systemImage: "square.and.arrow.down")
+            }
+        case .quickLook:
+            Button(action: openFile) {
+                Label("Quick Look", systemImage: "eye")
+            }
+        case .openInApp:
+            Button(action: openInApp) {
+                Label("Open in App", systemImage: "arrow.up.forward.app")
+            }
+        case .forward:
+            Button(action: onForward) {
+                Label("Forward…", systemImage: "arrowshape.turn.up.right")
+            }
+        case .reacted(let total):
+            reactedMenu(total: total)
+        case .delete:
+            Button(role: .destructive) {
+                Task { await model.deleteMessage(msgId: message.id) }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        case .divider:
+            Divider()
         }
-        Button("Reply") { model.replyTo = message }
-        Menu("React") {
-            ForEach(quickReactions, id: \.self) { emoji in
-                Button(emoji) {
-                    Task { await model.toggleReaction(message: message, emoji: emoji) }
+    }
+
+    private func reactedMenu(total: UInt32) -> some View {
+        let summary = reactedSummary(for: message)
+        return Menu {
+            // Informational rows (Telegram opens profiles here; we don't
+            // have those yet), kept as no-op buttons so avatars render at
+            // full color instead of disabled-grey.
+            ForEach(summary.rows.indices, id: \.self) { index in
+                let row = summary.rows[index]
+                Button {
+                } label: {
+                    Label {
+                        Text("\(row.name)   \(row.emoji)")
+                    } icon: {
+                        // Rendered per menu open, uncached: dcvm caps the
+                        // rows at three and ImageCache holds the decoded
+                        // avatar photos.
+                        if let avatar = Self.rasterizeMenuIcon(ChatAvatarView(
+                            name: row.name, colorHex: row.color,
+                            avatarPath: row.avatarPath, size: 18))
+                        {
+                            Image(nsImage: avatar)
+                        }
+                    }
                 }
             }
-            if message.reactions.contains(where: \.isFromSelf) {
-                Divider()
-                Button("Remove Reaction") {
-                    Task { await model.sendReaction(msgId: message.id, emoji: "") }
-                }
+            if summary.othersCount > 0 {
+                Text("and \(summary.othersCount) more")
             }
+        } label: {
+            Label("\(total) Reacted", systemImage: "hands.clap")
         }
-        Button("Forward…", action: onForward)
-        if message.file != nil {
-            Button("Quick Look", action: openFile)
-            Button("Open in App", action: openInApp)
+    }
+
+    /// Menu items can only carry a plain image, so palette emojis and
+    /// avatar bubbles are rasterized at menu-icon size (palette items
+    /// additionally render their ICON only — a text label comes out as an
+    /// empty slot).
+    @MainActor
+    private static func rasterizeMenuIcon(_ content: some View) -> NSImage? {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        return renderer.nsImage
+    }
+
+    /// Rasterized emoji for palette slots, cached — the menu re-renders on
+    /// every open and the set of quick reactions is tiny and fixed. The
+    /// user's current reaction gets a circle baked in (Telegram-style):
+    /// palette selection tinting can't touch a non-template emoji image.
+    /// Appearance and display scale are part of the key: both are baked
+    /// into the bitmap at render time.
+    @MainActor private static var emojiIconCache: [String: NSImage] = [:]
+
+    @MainActor
+    private static func emojiIcon(_ emoji: String, selected: Bool) -> NSImage? {
+        let dark = NSApp.effectiveAppearance
+            .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let key = "\(selected ? "sel" : "plain")-\(dark ? "d" : "l")-\(scale)-\(emoji)"
+        if let hit = emojiIconCache[key] { return hit }
+        let image = rasterizeMenuIcon(
+            Text(emoji)
+                .font(.system(size: 15))
+                .padding(3)
+                .background(
+                    selected ? Color.secondary.opacity(0.4) : Color.clear,
+                    in: Circle()))
+        image.map { emojiIconCache[key] = $0 }
+        return image
+    }
+
+    private func copyMedia() {
+        guard let file = message.file else { return }
+        NSPasteboard.general.clearContents()
+        // File URL first so URL-preferring targets (Finder, apps that keep
+        // GIF animation) get the original blob; the decoded image covers
+        // plain image paste.
+        var objects: [NSPasteboardWriting] = [URL(fileURLWithPath: file) as NSURL]
+        if let image = ImageCache.load(file) {
+            objects.append(image)
         }
-        Divider()
-        Button("Delete", role: .destructive) {
-            Task { await model.deleteMessage(msgId: message.id) }
+        NSPasteboard.general.writeObjects(objects)
+    }
+
+    private func saveAs() {
+        guard let file = message.file else { return }
+        let source = URL(fileURLWithPath: file)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = message.fileName ?? source.lastPathComponent
+        panel.begin { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let fm = FileManager.default
+            do {
+                // Never touch the blob itself, and check the source before
+                // removing the user's existing file — the overwrite the
+                // panel confirmed must not destroy data on a failed copy.
+                guard dest.standardizedFileURL != source.standardizedFileURL
+                else { return }
+                guard fm.fileExists(atPath: source.path) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                if fm.fileExists(atPath: dest.path) {
+                    try fm.removeItem(at: dest)
+                }
+                try fm.copyItem(at: source, to: dest)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
     }
 }

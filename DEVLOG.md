@@ -1,5 +1,28 @@
 # DEVLOG
 
+## 2026-07-21 — Telegram-style message context menu
+
+Menu composition is a pure descriptor (messageContextMenuEntries /
+reactedSummary, unit-tested) rendered by the view: quick-reaction palette
+on top (ControlGroup .palette), then Reply / Copy Text / Copy Media /
+Save As… / Quick Look / Open in App, Forward…, "N Reacted" submenu
+(reactor avatar + name + their emoji, "and N more" past the identity
+cap), red Delete. The old React submenu + Remove Reaction item are
+subsumed by the palette's toggle semantics (self emoji shows a baked-in
+selection circle; a self reaction outside the defaults is appended).
+Findings: palette items render their ICON only — text labels come out as
+empty slots, so emojis (and the selection circle — tint can't touch
+non-template images) are rasterized via ImageRenderer, same trick as the
+reactor-avatar menu icons. Right-clicking the message TEXT still yields
+the system text-selection menu (textSelection(.enabled) wins there);
+rest of the bubble gets ours — same trade-off Telegram avoids by owning
+text views, noted as acceptable for now. VM QA: SwiftUI context menus
+never open from pid-targeted synthetic right-clicks — only desktop-scope
+HID events pop them (AppKit's field-editor menu opens either way).
+Visually verified in the VM: capped 👍5 group menu, full-identity
+3-Reacted submenu, appended+selected 🌅, media rows, live palette toggle
+honoring one-reaction-per-user replacement.
+
 ## 2026-07-21 — Telegram-style reaction pills (in-bubble, reactor avatars)
 
 Reference: user's Telegram screenshot + ChatReactionsView.swift source

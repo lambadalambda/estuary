@@ -92,6 +92,11 @@ final class AppModel {
     // Eager layout renders the whole window (see ChatDetailView's VStack
     // note) — keep pages small; a viewport shows ~10 messages at most.
     static let messagePageSize: UInt32 = 50
+    /// Backstop for PASSIVE growth (scrolled-up + incoming traffic, e.g.
+    /// overnight): the window may ratchet up to preserve a reading
+    /// position, but never past this. Explicit loadOlder scrolling is not
+    /// capped — that's user intent (issue: overnight-window-bloat).
+    static let maxLoadedLimit: UInt32 = messagePageSize * 20
     /// Reported by the chat view's bottom sentinel; gates window growth.
     var viewIsAtBottom = true
     private var reloadChatsScheduled = false
@@ -598,7 +603,10 @@ final class AppModel {
             return
         }
         let generation = messageWindowGeneration
-        let requestedLimit = loadedLimit
+        // At the bottom, a grown window is pure render cost — the newest
+        // page covers everything visible, and the eager VStack must not
+        // keep laying out hundreds of stale items (overnight-window-bloat).
+        let requestedLimit = viewIsAtBottom ? Self.messagePageSize : loadedLimit
         let previousOldest = messages.first?.id
         do {
             // Refresh the whole loaded window so state/reaction changes on
@@ -610,10 +618,12 @@ final class AppModel {
             // user has scrolled to doesn't fall off the top mid-read. The
             // shared loadedLimit is only written after the selection guard.
             var grownLimit = requestedLimit
-            if windowNeedsGrowth(
-                previousOldest: previousOldest, page: page,
-                viewIsAtBottom: viewIsAtBottom) {
-                grownLimit += Self.messagePageSize
+            if grownLimit < Self.maxLoadedLimit,
+               windowNeedsGrowth(
+                   previousOldest: previousOldest, page: page,
+                   viewIsAtBottom: viewIsAtBottom) {
+                grownLimit = min(
+                    grownLimit + Self.messagePageSize, Self.maxLoadedLimit)
                 page = try await service.messages(
                     accountId: accountId, chatId: chatId,
                     limit: grownLimit, beforeMsgId: nil)
@@ -649,9 +659,14 @@ final class AppModel {
 
     private func storeMessageWindowCache() {
         guard let key = selectedConversationKey else { return }
+        // Newest page only: switching back always lands at the bottom, so
+        // a deeper cached window is pure render cost with no reader
+        // benefit — restoring a bloated one was the switch-back hang.
+        let trimmed = Array(messages.suffix(Int(Self.messagePageSize)))
         messageWindowCache[key] = CachedMessageWindow(
-            messages: messages, loadedLimit: loadedLimit,
-            hasMoreMessages: hasMoreMessages, historyExhausted: historyExhausted)
+            messages: trimmed, loadedLimit: Self.messagePageSize,
+            hasMoreMessages: hasMoreMessages || trimmed.count < messages.count,
+            historyExhausted: historyExhausted && trimmed.count == messages.count)
         messageWindowCacheOrder.removeAll { $0 == key }
         messageWindowCacheOrder.append(key)
         if messageWindowCacheOrder.count > Self.messageWindowCacheLimit {

@@ -1,5 +1,26 @@
 # DEVLOG
 
+## 2026-07-21 — Overnight window bloat bounded; list-engine spike agreed
+
+Overnight-open chat went choppy, switch-back hung. Mechanism: passive
+window growth (scrolled-up/stale sentinel + incoming traffic) never
+shrinks, the eager VStack renders O(window), and the 07-20 window cache
+removed the accidental relief valve (selection reset) by faithfully
+restoring the bloated window. Bounded on three sides: at-bottom reloads
+trim to one page, passive growth caps at 20 pages (explicit loadOlder
+stays uncapped — user intent), and the cache stores only the newest page
+(switch-back always lands at the bottom anyway). Found along the way: the
+scripted test service ignored `limit`/`beforeMsgId` entirely — honest
+pagination in the stub surfaced one test leaning on the old behavior.
+User reports only ~90 overnight messages, so bloat alone may not explain
+the severity — and live deep-scroll is slow at a few hundred items
+regardless. Research says our container pattern is the CURRENT Apple
+recommendation with exactly our failure modes documented; serious chat
+apps sit on custom AppKit/UIKit lists. Decision (user): measured spike —
+stress harness, four candidates (eager, modern LazyVStack, List,
+NSTableView representable), numbers + correctness gauntlet before any
+port (issue: message-list-engine-spike).
+
 ## 2026-07-20 — Viewed chat's unread badge climbed: stale fresh-count guard
 
 Incoming-in-selected-chat did call markSelectedChatNoticed, but its

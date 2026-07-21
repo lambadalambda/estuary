@@ -156,6 +156,87 @@ import Testing
         #expect(model.messages.isEmpty, "chat 10 on account 2 must not show account 1's window")
     }
 
+    /// The overnight-bloat relief valve (issue: overnight-window-bloat):
+    /// a reload while the user is AT the bottom trims a grown window back
+    /// to one page — they see the newest few messages either way, and the
+    /// eager VStack must not keep rendering hundreds of stale items.
+    @Test func reloadAtBottomTrimsGrownWindow() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 200))
+        await model.chatSelectionChanged()
+        #expect(model.messages.count == 50)
+
+        model.viewIsAtBottom = false
+        _ = await model.loadOlderMessages()
+        _ = await model.loadOlderMessages()
+        #expect(model.messages.count == 150, "grown window while reading history")
+
+        model.viewIsAtBottom = true
+        await model.reloadMessages()
+        #expect(model.messages.count == 50, "back at bottom, the window trims")
+        #expect(model.messages.last?.id == 200)
+        #expect(model.hasMoreMessages)
+    }
+
+    /// Passive event-driven growth (scrolled up, messages arriving) must
+    /// plateau at the cap instead of ratcheting all night.
+    @Test func passiveWindowGrowthIsCapped() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        let cap = Int(AppModel.maxLoadedLimit)
+        var newest = cap + 100
+        await service.setMessages(testMessages(1 ... newest))
+        await model.chatSelectionChanged()
+        model.viewIsAtBottom = false
+
+        // Each round: enough new messages to push the previous oldest out
+        // of the fresh page, forcing a growth attempt.
+        for _ in 0 ..< (cap / 50 + 3) {
+            newest += 60
+            await service.setMessages(testMessages(1 ... newest))
+            await model.reloadMessages()
+        }
+        #expect(model.messages.count <= cap)
+    }
+
+    /// The cache only ever needs the newest page: switching back lands at
+    /// the bottom, so restoring a deep-scrolled window is pure render cost
+    /// (this was the switch-back hang).
+    @Test func cacheStoresAtMostOnePage() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await service.setMessages(testMessages(1 ... 200))
+        await model.chatSelectionChanged()
+        model.viewIsAtBottom = false
+        _ = await model.loadOlderMessages()
+        _ = await model.loadOlderMessages()
+        #expect(model.messages.count == 150)
+
+        model.selectedChatId = 11
+        await service.setMessages(testMessages(201 ... 205, chatId: 11))
+        await model.chatSelectionChanged()
+
+        await service.enqueueMessages(.suspended("bloat-revisit"))
+        model.selectedChatId = 10
+        #expect(model.messages.count == 50, "restore is the newest page, not the bloated window")
+        #expect(model.messages.last?.id == 200)
+        #expect(model.hasMoreMessages, "trimmed cache still advertises history")
+        let task = Task { await model.chatSelectionChanged() }
+        try await service.waitUntilMessagesSuspended("bloat-revisit")
+        await service.resumeMessages("bloat-revisit", with: testMessages(151 ... 200))
+        await task.value
+    }
+
     /// Viewing a chat means its unread badge must not climb: incoming in
     /// the SELECTED chat while active marks noticed immediately — even
     /// though the cached sidebar row still reads freshCount 0 (the reload
@@ -302,7 +383,9 @@ import Testing
         let reloadTask = Task { await model.reloadMessages() }
         try await service.waitUntilMessagesSuspended("failed-reload")
 
-        await service.setMessages(testMessages(1 ... 50))
+        // Full history in the store: the honest stub pages beforeMsgId=51
+        // out of it (the old stub returned whatever was set, verbatim).
+        await service.setMessages(testMessages(1 ... 100))
         #expect(await model.loadOlderMessages() != .nothing)
         #expect(model.messages.count == 100)
 
@@ -1490,7 +1573,18 @@ private actor ScriptedChatService: ChatService {
     func messages(
         accountId: UInt32, chatId: UInt32, limit: UInt32, beforeMsgId: UInt32?
     ) async throws -> [MessageItem] {
-        guard !messagesPlans.isEmpty else { return currentMessages }
+        guard !messagesPlans.isEmpty else {
+            // Honor real pagination semantics (newest `limit`; with an
+            // anchor, the `limit` strictly-older ones) — returning the
+            // whole array regardless hid window-bounding bugs.
+            var window = currentMessages
+            if let beforeMsgId {
+                guard let index = window.firstIndex(where: { $0.id == beforeMsgId })
+                else { return [] }
+                window = Array(window.prefix(index))
+            }
+            return Array(window.suffix(Int(limit)))
+        }
         switch messagesPlans.removeFirst() {
         case .immediate(let messages): return messages
         case .suspended(let label):

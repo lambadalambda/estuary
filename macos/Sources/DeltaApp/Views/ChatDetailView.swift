@@ -58,13 +58,32 @@ private struct MessageListView: View {
     @State private var loadingOlder = false
     @State private var quickLookURL: URL?
 
-    /// Gauntlet switch (message-list-engine-spike phase 2): render the
-    /// SAME rows in a List (NSTableView-backed) instead of the eager
-    /// ScrollView. Dev-only until the spike verdict.
-    private static let useListContainer =
-        ProcessInfo.processInfo.environment["DCNATIVE_LIST_CONTAINER"] == "list"
+    /// The AppKit table is the default after passing the five-behavior
+    /// gauntlet (appkit-message-table-port, 2026-07-21). "eager" is the
+    /// rollback hatch until the user confirms daily-driver feel; "list"
+    /// keeps the failed List experiment reproducible. Both SwiftUI
+    /// containers get deleted once the confirmation lands.
+    private static let container =
+        ProcessInfo.processInfo.environment["DCNATIVE_LIST_CONTAINER"] ?? "table"
 
     var body: some View {
+        if Self.container == "table" {
+            ChatTableView(
+                model: model, accountId: accountId,
+                selectionGeneration: selectionGeneration, chat: chat,
+                onForward: { forwardingMsgId = $0 },
+                onPreview: { quickLookURL = $0 })
+                .id(chat.id)
+                .quickLookPreview($quickLookURL)
+                .sheet(item: $forwardingMsgId) { msgId in
+                    ForwardSheet(model: model, msgId: msgId)
+                }
+        } else {
+            swiftUIBody
+        }
+    }
+
+    private var swiftUIBody: some View {
         ScrollViewReader { proxy in
             containerBody(proxy)
                 // The sizeChanges anchor stopped engaging under the eager
@@ -86,7 +105,7 @@ private struct MessageListView: View {
     }
 
     @ViewBuilder private func containerBody(_ proxy: ScrollViewProxy) -> some View {
-        if Self.useListContainer {
+        if Self.container == "list" {
             List {
                 listRows(proxy)
                     .listRowSeparator(.hidden)

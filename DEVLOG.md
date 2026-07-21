@@ -1,5 +1,21 @@
 # DEVLOG
 
+## 2026-07-21 — AppKit message table ported, gauntleted, flipped to default
+
+ChatTableView: NSTableView + recycled NSHostingView bubbles, exact
+per-(entry,width) height cache, updates classified by the pure
+entriesTransition (surgical row edits; ambiguity → reload + anchor
+restore). Every scroll behavior is now an explicit synchronous AppKit
+call: bottom-pin via setBoundsOrigin, at-bottom derived from
+documentVisibleRect (the 1px sentinel and its visibility races are gone
+from the table path), loadOlder from viewport-top proximity, prepend
+restore via saved anchor row + offset, MDN from the visible row range.
+Five-behavior gauntlet in the VM: all pass, including the two List
+killed (open-at-bottom long chat, follow under churn) and the tall-item
+open that used to blank the lazy stack. Default flipped to table;
+eager remains an env rollback hatch until the user signs off, then the
+SwiftUI containers get deleted.
+
 ## 2026-07-21 — List-engine spike phases 1+2: verdict is the AppKit table
 
 Phase 1 (stress harness, same corpus/bubbles): eager collapses at n=1000

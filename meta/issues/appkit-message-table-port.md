@@ -59,6 +59,29 @@ telegram learned that they need it, we do too."
   modifiers deleted; OverlayScrollers reduced to whatever the table
   still needs (scroller style is set at scroll-view creation there).
 
+## Gauntlet results (2026-07-21, lume VM, DCNATIVE_SEED=120)
+
+All five behaviors PASS on ChatTableView:
+
+- Open-at-bottom, long chat: fresh open lands on the newest arrivals
+  above the composer (screenshot; the exact scenario List failed).
+- Follow-on-send at bottom: AUTOSEND probe ends atBottom=true with
+  continuous bottom-pins (23 in the gauntlet build, 18 on the flipped
+  default) — no dropped follows.
+- Scrolled-up stability: send while mid-history → pixel-identical
+  viewport, message lands (sidebar preview updates).
+- Prepend restore: deep wheel-scroll drove multiple loadOlder prepends
+  with continuous position; static check pixel-identical across a
+  4s settle window.
+- Tall item: 500-char message renders fully on reopen, exact height,
+  styled link — no blanking.
+
+Default flipped to "table"; DCNATIVE_LIST_CONTAINER=eager is the
+rollback hatch. Remaining before archive: apples-to-apples animated
+stress numbers for the production table; user confirms daily-driver
+feel on the real account; then delete the SwiftUI containers, the
+sizeChanges anchor modifiers, and slim OverlayScrollers.
+
 ## Notes
 
 - Keep dcvm/model untouched: this is a view-layer port by construction.

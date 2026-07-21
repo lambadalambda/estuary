@@ -16,5 +16,3 @@
 - [ ] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)
 - [ ] [Unread badge climbs for the chat currently being viewed](issues/viewed-chat-unread-badge.md)
 - [ ] [Overnight chat becomes choppy; switching back to it hangs](issues/overnight-window-bloat.md)
-- [ ] [Message-list engine spike: measure before the port](issues/message-list-engine-spike.md)
-- [ ] [Port the message list to an AppKit NSTableView representable](issues/appkit-message-table-port.md)

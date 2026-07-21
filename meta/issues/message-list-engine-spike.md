@@ -105,3 +105,9 @@ its acceptance gate.
 - Sources reviewed 2026-07-21: Apple forums threads on List/LazyVStack
   jitter and pagination jumps; Stream SwiftUI SDK writeup; TGUIKit
   TableView (custom NSTableView) as the Telegram reference.
+
+## Outcome (2026-07-21)
+
+Spike complete: phase-1 numbers + phase-2 gauntlet drove the port
+decision; the port shipped, passed 5/5, and the user confirmed feel.
+Archived together with appkit-message-table-port.

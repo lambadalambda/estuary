@@ -87,3 +87,13 @@ sizeChanges anchor modifiers, and slim OverlayScrollers.
 - Keep dcvm/model untouched: this is a view-layer port by construction.
 - The window caps from overnight-window-bloat stay: virtualization makes
   big windows cheap to SCROLL, not free to fetch through core.
+
+## Outcome (2026-07-21)
+
+User confirmed: "feels fast now." Cleanup landed: ChatTableView is the
+sole container; the eager/List branches, container env switch, bottom
+anchor sentinel, ScrollViewReader plumbing, and scrollGeometryDebug are
+deleted (git history and the spike issue keep the record). 118/118
+tests; AUTOSEND probe on the cleaned build: 27 bottom-pins, ends
+atBottom=true. The formal animated-sweep numbers item moved to
+native-feel-polish alongside the deep-window profiling it supersedes.

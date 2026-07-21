@@ -3,7 +3,6 @@ import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let bottomAnchorID = "bottom-anchor"
 
 struct ChatDetailView: View {
     @Bindable var model: AppModel
@@ -55,150 +54,24 @@ private struct MessageListView: View {
     let selectionGeneration: UInt64
     let chat: ChatItem
     @State private var forwardingMsgId: UInt32?
-    @State private var loadingOlder = false
     @State private var quickLookURL: URL?
 
-    /// The AppKit table is the default after passing the five-behavior
-    /// gauntlet (appkit-message-table-port, 2026-07-21). "eager" is the
-    /// rollback hatch until the user confirms daily-driver feel; "list"
-    /// keeps the failed List experiment reproducible. Both SwiftUI
-    /// containers get deleted once the confirmation lands.
-    private static let container =
-        ProcessInfo.processInfo.environment["DCNATIVE_LIST_CONTAINER"] ?? "table"
-
+    // The AppKit table is the sole container since the five-behavior
+    // gauntlet + user sign-off (appkit-message-table-port). The SwiftUI
+    // containers it replaced — eager VStack (correct but O(window)) and
+    // List (fast but drops programmatic scrolls) — are preserved in git
+    // history and in the spike issue's data, not in this file.
     var body: some View {
-        if Self.container == "table" {
-            ChatTableView(
-                model: model, accountId: accountId,
-                selectionGeneration: selectionGeneration, chat: chat,
-                onForward: { forwardingMsgId = $0 },
-                onPreview: { quickLookURL = $0 })
-                .id(chat.id)
-                .quickLookPreview($quickLookURL)
-                .sheet(item: $forwardingMsgId) { msgId in
-                    ForwardSheet(model: model, msgId: msgId)
-                }
-        } else {
-            swiftUIBody
-        }
-    }
-
-    private var swiftUIBody: some View {
-        ScrollViewReader { proxy in
-            containerBody(proxy)
-                // The sizeChanges anchor stopped engaging under the eager
-                // VStack (geo logs: offset frozen through every append),
-                // and view-side at-bottom checks race layout. The model
-                // decides from the pre-append sentinel state; this just
-                // obeys. Issue: send-scroll-regression.
-                .onChange(of: model.followBottomGeneration) {
-                    model.scrollDebug("view: follow appended entry")
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                }
-                .scrollGeometryDebug(model: model)
-                .id(chat.id)
-        }
-        .quickLookPreview($quickLookURL)
-        .sheet(item: $forwardingMsgId) { msgId in
-            ForwardSheet(model: model, msgId: msgId)
-        }
-    }
-
-    @ViewBuilder private func containerBody(_ proxy: ScrollViewProxy) -> some View {
-        if Self.container == "list" {
-            List {
-                listRows(proxy)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(
-                        top: 3, leading: 16, bottom: 3, trailing: 16))
+        ChatTableView(
+            model: model, accountId: accountId,
+            selectionGeneration: selectionGeneration, chat: chat,
+            onForward: { forwardingMsgId = $0 },
+            onPreview: { quickLookURL = $0 })
+            .id(chat.id)
+            .quickLookPreview($quickLookURL)
+            .sheet(item: $forwardingMsgId) { msgId in
+                ForwardSheet(model: model, msgId: msgId)
             }
-            .listStyle(.plain)
-            // Keep the tiled chat backdrop: List paints its own background
-            // otherwise.
-            .scrollContentBackground(.hidden)
-            .background(OverlayScrollers())
-            // List ignores defaultScrollAnchor; open at the bottom
-            // explicitly once content exists.
-            .task(id: chat.id) {
-                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-            }
-            .onChange(of: model.messageListAssemblyCount) { old, new in
-                // First assembly after a cache-less open: snap to bottom.
-                if model.messageListEntries.isEmpty == false, old == 0 {
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                }
-            }
-        } else {
-            ScrollView {
-                // Eager layout avoids LazyVStack's inaccurate height
-                // estimates under bottom anchoring. The model keeps the
-                // window bounded.
-                VStack(spacing: 6) {
-                    listRows(proxy)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(OverlayScrollers())
-            }
-            .defaultScrollAnchor(.bottom)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
-        }
-    }
-
-    @ViewBuilder private func listRows(_ proxy: ScrollViewProxy) -> some View {
-        if model.hasMoreMessages {
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .onScrollVisibilityChange { visible in
-                    if visible { loadOlder(proxy: proxy) }
-                }
-        }
-        ForEach(model.messageListEntries) { entry in
-            switch entry {
-            case .dayMarker(_, let label):
-                DayMarkerView(label: label)
-            case .message(let message, let showAuthor):
-                MessageBubbleView(
-                    model: model, message: message, showAuthor: showAuthor,
-                    inGroup: chat.isGroup,
-                    onForward: { forwardingMsgId = message.id },
-                    onPreview: { quickLookURL = $0 })
-                    .onScrollVisibilityChange(threshold: 0.01) { visible in
-                        model.messageVisibilityChanged(
-                            accountId: accountId, chatId: chat.id,
-                            selectionGeneration: selectionGeneration,
-                            message: message, visible: visible)
-                    }
-            }
-        }
-        Color.clear
-            .frame(height: 1)
-            .id(bottomAnchorID)
-            .onScrollVisibilityChange { visible in
-                model.scrollDebug("view: bottom anchor visible=\(visible)")
-                model.viewIsAtBottom = visible
-            }
-    }
-
-    private func loadOlder(proxy: ScrollViewProxy) {
-        guard !loadingOlder else { return }
-        loadingOlder = true
-        Task {
-            switch await model.loadOlderMessages() {
-            case .restore(let anchorId):
-                model.scrollDebug("view: restore to msg-\(anchorId)")
-                proxy.scrollTo("msg-\(anchorId)", anchor: .top)
-            case .pinBottom:
-                model.scrollDebug("view: re-pin bottom after prepend")
-                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-            case .nothing:
-                break
-            }
-            loadingOlder = false
-        }
     }
 }
 
@@ -327,38 +200,7 @@ private struct ChatComposerView: View {
     }
 }
 
-/// Snapshot of the scroll geometry, Int-truncated so the change callback
-/// dedups to meaningful movement instead of every sub-point frame.
-private struct ScrollGeoSample: Equatable {
-    let offset: Int
-    let content: Int
-    let container: Int
-}
-
 extension View {
-    /// Scroll diagnostics for DCNATIVE_DEBUG_SCROLL=1: offset vs content
-    /// vs container height is exactly what distinguishes "viewport parked
-    /// outside the content" from "content never realized" in the
-    /// blank-open bug. Kept off the scroll hot path entirely unless the
-    /// env is set (the flag is process-constant, so the branch is stable).
-    @ViewBuilder
-    func scrollGeometryDebug(model: AppModel) -> some View {
-        if AppModel.scrollDebugEnabled {
-            onScrollGeometryChange(for: ScrollGeoSample.self) { geo in
-                ScrollGeoSample(
-                    offset: Int(geo.contentOffset.y),
-                    content: Int(geo.contentSize.height),
-                    container: Int(geo.containerSize.height))
-            } action: { _, new in
-                model.scrollDebug(
-                    "geo: offset=\(new.offset) content=\(new.content) "
-                        + "container=\(new.container)")
-            }
-        } else {
-            self
-        }
-    }
-
     /// One rounded-card recipe for the chat chrome: message bubbles and the
     /// composer share it, so radius, surface, and shadow can't drift apart.
     fileprivate func cardSurface(_ fill: AnyShapeStyle, shadowed: Bool) -> some View {

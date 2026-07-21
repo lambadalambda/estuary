@@ -32,3 +32,8 @@ macOS 26.
   bubble re-evaluates per composer keystroke. If it hitches: hoist the
   per-bubble TimelineView, or cap/trim the grown window when re-pinned at
   the bottom.
+
+- Inherited from appkit-message-table-port (2026-07-21): animated-sweep
+  stress numbers for the production ChatTableView (apples-to-apples with
+  the spike's phase-1 table probe); supersedes the earlier deep-window
+  profiling follow-up now that the container is virtualized.

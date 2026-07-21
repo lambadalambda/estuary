@@ -21,3 +21,5 @@
 - [x] [Nightly DMG crashes on launch on any machine except the build machine](issues/nightly-dmg-bundle-module-crash.md)
 - [x] [Local core builds target the host macOS, not the app's minimum](issues/local-core-deployment-target.md)
 - [x] [Posting a message no longer scrolls to the bottom](issues/send-scroll-regression.md)
+- [x] [Message-list engine spike: measure before the port](issues/message-list-engine-spike.md)
+- [x] [Port the message list to an AppKit NSTableView representable](issues/appkit-message-table-port.md)

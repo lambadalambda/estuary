@@ -232,6 +232,17 @@ final class AppModel {
             selectedChatId = first.id
             await chatSelectionChanged()
         }
+        // Gauntlet seeding (message-list-engine-spike): fill the selected
+        // chat with enough history to page, then stay up for driving.
+        if screen == .main, let raw = env["DCNATIVE_SEED"], let n = Int(raw),
+           n > 0, selectedChatId != nil {
+            Task {
+                for i in 1 ... n {
+                    await send("seed \(i)")
+                }
+                scrollDebug("model: SEED done (messages=\(messages.count))")
+            }
+        }
         // Send-scroll probe (issue: send-scroll-regression): seed past one
         // window so the probe exercises the full-window slide, then send a
         // probe message. Pair with DCNATIVE_DEBUG_SCROLL=1 and read whether

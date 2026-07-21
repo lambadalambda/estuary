@@ -55,6 +55,43 @@ with Apple maintaining the wrapper. Phase 2: correctness gauntlet on List
 env switch, driven in the lume VM. The custom table stays the fallback
 if List fails a gauntlet behavior.
 
+## Results (2026-07-21, phase 2: List correctness gauntlet, lume VM)
+
+Real MessageListView behind DCNATIVE_LIST_CONTAINER=list, mock account,
+DCNATIVE_SEED=120 into a 1:1 chat, driven via cua-driver:
+
+- Open-at-bottom (long chat): **FAIL** — fresh open parks at the TOP of
+  the loaded window (screenshot: Echo seed 19–30 visible, newest 120
+  offscreen), with the loadOlder spinner visible and firing pointless
+  history loads. Both explicit scrollTo attempts (.task(id:) and
+  first-assembly onChange) fired before List materialized rows: no-ops.
+- Follow-on-append: **FAIL under churn** — 2 follow events across 120
+  seeds (eager fires continuously); the first scrollTo never landed, the
+  sentinel scrolled out, viewIsAtBottom went false, and the model
+  correctly stopped following. ScrollViewReader.scrollTo is unreliable
+  against List's row virtualization at open/append time.
+- Short chat open (fits viewport): pass, trivially.
+- Scrolled-up stability / prepend-restore: not reached — blocked on the
+  two failures above.
+
+Verdict: List = excellent raw scrolling (phase 1) but unreliable
+programmatic scroll through SwiftUI's wrapper — fixable only with the
+retry/timing-hack pattern this spike exists to escape. The eager VStack
+is the mirror image (correct control, collapsing perf). The NSTableView
+representable is the only candidate with BOTH: nominal-time sweeps in
+phase 1 AND deterministic, immediate scroll control (scrollRowToVisible
+is synchronous AppKit, no materialization races).
+
+## Recommendation
+
+Port the message list to an NSTableView-backed representable: SwiftUI
+bubbles in recycled NSHostingView rows, model layer unchanged (the
+followBottomGeneration/loadOlder/sentinel contract maps 1:1 to explicit
+AppKit calls we own). The spike harness's table probe is the skeleton;
+the port issue should cover row-height caching, prepend scroll-position
+restore via documentVisibleRect math, and the five-behavior gauntlet as
+its acceptance gate.
+
 ## Acceptance Criteria
 
 - Numbers for all four candidates at n=200 and n=1000 on the same

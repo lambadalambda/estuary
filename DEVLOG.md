@@ -1,5 +1,22 @@
 # DEVLOG
 
+## 2026-07-21 — List-engine spike phases 1+2: verdict is the AppKit table
+
+Phase 1 (stress harness, same corpus/bubbles): eager collapses at n=1000
+(589 hitches, 2x-nominal sweep — the user's choppiness, quantified);
+LazyVStack mediocre (171); SwiftUI List near-perfect (7 hitches, nominal);
+NSTableView probe nominal with instant precise jumps. Phase 2 (real
+MessageListView behind DCNATIVE_LIST_CONTAINER=list, VM-driven): List
+FAILS open-at-bottom on a long chat (parks at the top of the window,
+loadOlder spinner firing) and follow-on-append under churn (2 follows per
+120 seeds — the first scrollTo never lands against row virtualization,
+the sentinel exits, the model correctly stops). Same lesson at a new
+altitude: SwiftUI's wrappers scroll fast but won't take orders reliably;
+the eager container takes orders but can't scroll fast. The NSTableView
+representable demonstrated both. Recommendation recorded in the spike
+issue: port to an AppKit-backed list, SwiftUI bubbles in recycled rows,
+model contract unchanged.
+
 ## 2026-07-21 — Overnight window bloat bounded; list-engine spike agreed
 
 Overnight-open chat went choppy, switch-back hung. Mechanism: passive

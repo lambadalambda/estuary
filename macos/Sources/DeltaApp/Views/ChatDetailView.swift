@@ -58,46 +58,65 @@ private struct MessageListView: View {
     @State private var loadingOlder = false
     @State private var quickLookURL: URL?
 
+    /// Gauntlet switch (message-list-engine-spike phase 2): render the
+    /// SAME rows in a List (NSTableView-backed) instead of the eager
+    /// ScrollView. Dev-only until the spike verdict.
+    private static let useListContainer =
+        ProcessInfo.processInfo.environment["DCNATIVE_LIST_CONTAINER"] == "list"
+
     var body: some View {
         ScrollViewReader { proxy in
+            containerBody(proxy)
+                // The sizeChanges anchor stopped engaging under the eager
+                // VStack (geo logs: offset frozen through every append),
+                // and view-side at-bottom checks race layout. The model
+                // decides from the pre-append sentinel state; this just
+                // obeys. Issue: send-scroll-regression.
+                .onChange(of: model.followBottomGeneration) {
+                    model.scrollDebug("view: follow appended entry")
+                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                }
+                .scrollGeometryDebug(model: model)
+                .id(chat.id)
+        }
+        .quickLookPreview($quickLookURL)
+        .sheet(item: $forwardingMsgId) { msgId in
+            ForwardSheet(model: model, msgId: msgId)
+        }
+    }
+
+    @ViewBuilder private func containerBody(_ proxy: ScrollViewProxy) -> some View {
+        if Self.useListContainer {
+            List {
+                listRows(proxy)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(
+                        top: 3, leading: 16, bottom: 3, trailing: 16))
+            }
+            .listStyle(.plain)
+            // Keep the tiled chat backdrop: List paints its own background
+            // otherwise.
+            .scrollContentBackground(.hidden)
+            .background(OverlayScrollers())
+            // List ignores defaultScrollAnchor; open at the bottom
+            // explicitly once content exists.
+            .task(id: chat.id) {
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+            }
+            .onChange(of: model.messageListAssemblyCount) { old, new in
+                // First assembly after a cache-less open: snap to bottom.
+                if model.messageListEntries.isEmpty == false, old == 0 {
+                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                }
+            }
+        } else {
             ScrollView {
-                // Eager layout avoids LazyVStack's inaccurate height estimates
-                // under bottom anchoring. The model keeps the window bounded.
+                // Eager layout avoids LazyVStack's inaccurate height
+                // estimates under bottom anchoring. The model keeps the
+                // window bounded.
                 VStack(spacing: 6) {
-                    if model.hasMoreMessages {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .onScrollVisibilityChange { visible in
-                                if visible { loadOlder(proxy: proxy) }
-                            }
-                    }
-                    ForEach(model.messageListEntries) { entry in
-                        switch entry {
-                        case .dayMarker(_, let label):
-                            DayMarkerView(label: label)
-                        case .message(let message, let showAuthor):
-                            MessageBubbleView(
-                                model: model, message: message, showAuthor: showAuthor,
-                                inGroup: chat.isGroup,
-                                onForward: { forwardingMsgId = message.id },
-                                onPreview: { quickLookURL = $0 })
-                                .onScrollVisibilityChange(threshold: 0.01) { visible in
-                                    model.messageVisibilityChanged(
-                                        accountId: accountId, chatId: chat.id,
-                                        selectionGeneration: selectionGeneration,
-                                        message: message, visible: visible)
-                                }
-                        }
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(bottomAnchorID)
-                        .onScrollVisibilityChange { visible in
-                            model.scrollDebug("view: bottom anchor visible=\(visible)")
-                            model.viewIsAtBottom = visible
-                        }
+                    listRows(proxy)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -105,22 +124,44 @@ private struct MessageListView: View {
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            // The sizeChanges anchor stopped engaging under the eager VStack
-            // (geo logs: offset frozen through every append), and view-side
-            // at-bottom checks race layout. The model decides from the
-            // pre-append sentinel state; this just obeys. Issue:
-            // send-scroll-regression.
-            .onChange(of: model.followBottomGeneration) {
-                model.scrollDebug("view: follow appended entry")
-                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+        }
+    }
+
+    @ViewBuilder private func listRows(_ proxy: ScrollViewProxy) -> some View {
+        if model.hasMoreMessages {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .onScrollVisibilityChange { visible in
+                    if visible { loadOlder(proxy: proxy) }
+                }
+        }
+        ForEach(model.messageListEntries) { entry in
+            switch entry {
+            case .dayMarker(_, let label):
+                DayMarkerView(label: label)
+            case .message(let message, let showAuthor):
+                MessageBubbleView(
+                    model: model, message: message, showAuthor: showAuthor,
+                    inGroup: chat.isGroup,
+                    onForward: { forwardingMsgId = message.id },
+                    onPreview: { quickLookURL = $0 })
+                    .onScrollVisibilityChange(threshold: 0.01) { visible in
+                        model.messageVisibilityChanged(
+                            accountId: accountId, chatId: chat.id,
+                            selectionGeneration: selectionGeneration,
+                            message: message, visible: visible)
+                    }
             }
-            .scrollGeometryDebug(model: model)
-            .id(chat.id)
         }
-        .quickLookPreview($quickLookURL)
-        .sheet(item: $forwardingMsgId) { msgId in
-            ForwardSheet(model: model, msgId: msgId)
-        }
+        Color.clear
+            .frame(height: 1)
+            .id(bottomAnchorID)
+            .onScrollVisibilityChange { visible in
+                model.scrollDebug("view: bottom anchor visible=\(visible)")
+                model.viewIsAtBottom = visible
+            }
     }
 
     private func loadOlder(proxy: ScrollViewProxy) {

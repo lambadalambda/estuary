@@ -29,3 +29,4 @@
 - [x] [Overnight chat becomes choppy; switching back to it hangs](issues/overnight-window-bloat.md)
 - [x] [At-bottom detection needs human wiggle room](issues/at-bottom-wiggle-room.md)
 - [x] [Telegram-style message context menu](issues/telegram-style-context-menu.md)
+- [x] [Telegram-style reaction pills: in-bubble, reactor avatars](issues/telegram-style-reactions.md)

@@ -24,8 +24,8 @@ use crate::mapping::{
     viewtype_for_path,
 };
 use crate::types::{
-    AccountInfo, ChatItem, ContactItem, MessageItem, QrKind, QuoteInfo, ReactionItem, VmError,
-    VmEvent,
+    AccountInfo, ChatItem, ContactItem, MessageItem, QrKind, QuoteInfo, ReactionContact,
+    ReactionItem, VmError, VmEvent,
 };
 
 /// Default chatmail relay used for instant account creation. A client-side
@@ -212,6 +212,26 @@ async fn sender_info(
     Ok(info)
 }
 
+/// Pills show up to this many reactor identities; `ReactionItem::count`
+/// keeps the full number for the shell's count fallback. Mirrored by
+/// MockChatService.reactorDisplayCap — keep them in step.
+const REACTOR_DISPLAY_CAP: usize = 3;
+
+/// A reactor's pill identity, riding the message-page sender/avatar caches.
+async fn reaction_contact(
+    ctx: &Context,
+    contact_id: ContactId,
+    senders: &mut HashMap<ContactId, SenderInfo>,
+    avatars: &mut HashMap<ContactId, Option<String>>,
+) -> Result<ReactionContact, VmError> {
+    let (info, avatar) = message_sender(ctx, contact_id, senders, avatars).await?;
+    Ok(ReactionContact {
+        name: info.name,
+        color: info.color,
+        avatar_path: avatar,
+    })
+}
+
 async fn message_sender(
     ctx: &Context,
     contact_id: ContactId,
@@ -275,12 +295,20 @@ async fn message_item(
             Some(entry) => {
                 entry.count += 1;
                 entry.is_from_self |= contact_id == ContactId::SELF;
+                if entry.reactors.len() < REACTOR_DISPLAY_CAP {
+                    entry
+                        .reactors
+                        .push(reaction_contact(ctx, contact_id, senders, avatars).await?);
+                }
             }
-            None => reactions.push(ReactionItem {
-                emoji: emoji.to_string(),
-                count: 1,
-                is_from_self: contact_id == ContactId::SELF,
-            }),
+            None => {
+                reactions.push(ReactionItem {
+                    emoji: emoji.to_string(),
+                    count: 1,
+                    is_from_self: contact_id == ContactId::SELF,
+                    reactors: vec![reaction_contact(ctx, contact_id, senders, avatars).await?],
+                });
+            }
         }
     }
 

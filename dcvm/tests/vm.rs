@@ -755,14 +755,17 @@ Date: Wed, 15 Jul 2026 10:00:00 +0000\r\n\r\nreact to me\r\n",
         .unwrap();
     let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     let reacted = msgs.iter().find(|m| m.id == incoming.id).unwrap();
-    assert_eq!(
-        reacted.reactions,
-        vec![dcvm::ReactionItem {
-            emoji: "👍".into(),
-            count: 1,
-            is_from_self: true
-        }]
-    );
+    // Telegram-style pills need reactor identities, not just a count
+    // (issue: telegram-style-reactions): the self-reaction must carry the
+    // self contact's name and a well-formed color.
+    assert_eq!(reacted.reactions.len(), 1);
+    let reaction = &reacted.reactions[0];
+    assert_eq!(reaction.emoji, "👍");
+    assert_eq!(reaction.count, 1);
+    assert!(reaction.is_from_self);
+    assert_eq!(reaction.reactors.len(), 1);
+    assert!(!reaction.reactors[0].name.is_empty());
+    assert!(reaction.reactors[0].color.starts_with('#'));
     app.send_reaction(id, incoming.id, "".into()).await.unwrap();
     let msgs = app.messages(id, chat_id, 0, None).await.unwrap();
     assert!(msgs

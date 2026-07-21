@@ -1,5 +1,19 @@
 # DEVLOG
 
+## 2026-07-21 — Telegram-style reaction pills (in-bubble, reactor avatars)
+
+Reference: user's Telegram screenshot + ChatReactionsView.swift source
+read. dcvm ReactionItem carries up to three reactor identities
+(name/color/avatar, riding the message-page sender caches; count keeps
+the full number) — exported-API change, bindings regenerated, ChatService
+protocol + Core + Mock updated together. Pills moved inside the bubble
+card above the timestamp line: emoji + overlapping 18pt avatar bubbles
+(ring = pill fill) when identities cover every reactor, count fallback
+past the cap; accent fill for own reactions, white-opacity fills on the
+teal outgoing surface. Mock showcases both variants; VM screenshots
+verified both + AUTOSEND probe green. Rust offline test pins reactor
+identity on self-reactions.
+
 ## 2026-07-21 — AppKit message table ported, gauntleted, flipped to default
 
 ChatTableView: NSTableView + recycled NSHostingView bubbles, exact

@@ -65,6 +65,16 @@ struct ReactionItem: Equatable, Sendable {
     var emoji: String
     var count: UInt32
     var isFromSelf: Bool
+    /// Up to three reactor identities for the avatar pill; `count` keeps
+    /// the full number (the pill falls back to it past the cap).
+    var reactors: [ReactionContact] = []
+}
+
+/// Mirrors Rust `ReactionContact`.
+struct ReactionContact: Equatable, Sendable {
+    var name: String
+    var color: String
+    var avatarPath: String?
 }
 
 /// Mirrors Rust `MessageItem`.

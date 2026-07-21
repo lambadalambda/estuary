@@ -42,6 +42,19 @@ pub struct ReactionItem {
     pub emoji: String,
     pub count: u32,
     pub is_from_self: bool,
+    /// Up to three reactor identities for the Telegram-style avatar pill
+    /// (`count` keeps the full number; shells fall back to showing the
+    /// count when it exceeds the identities carried here).
+    pub reactors: Vec<ReactionContact>,
+}
+
+/// A reactor's display identity for reaction pills.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ReactionContact {
+    pub name: String,
+    /// `#rrggbb`
+    pub color: String,
+    pub avatar_path: Option<String>,
 }
 
 /// One address-book contact.

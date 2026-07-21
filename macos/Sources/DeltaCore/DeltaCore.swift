@@ -2327,19 +2327,98 @@ public func FfiConverterTypeQuoteInfo_lower(_ value: QuoteInfo) -> RustBuffer {
 
 
 /**
+ * A reactor's display identity for reaction pills.
+ */
+public struct ReactionContact: Equatable, Hashable {
+    public let name: String
+    /**
+     * `#rrggbb`
+     */
+    public let color: String
+    public let avatarPath: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, 
+        /**
+         * `#rrggbb`
+         */color: String, avatarPath: String?) {
+        self.name = name
+        self.color = color
+        self.avatarPath = avatarPath
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ReactionContact: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReactionContact: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReactionContact {
+        return
+            try ReactionContact(
+                name: FfiConverterString.read(from: &buf), 
+                color: FfiConverterString.read(from: &buf), 
+                avatarPath: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReactionContact, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.color, into: &buf)
+        FfiConverterOptionString.write(value.avatarPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReactionContact_lift(_ buf: RustBuffer) throws -> ReactionContact {
+    return try FfiConverterTypeReactionContact.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReactionContact_lower(_ value: ReactionContact) -> RustBuffer {
+    return FfiConverterTypeReactionContact.lower(value)
+}
+
+
+/**
  * One aggregated reaction on a message.
  */
 public struct ReactionItem: Equatable, Hashable {
     public let emoji: String
     public let count: UInt32
     public let isFromSelf: Bool
+    /**
+     * Up to three reactor identities for the Telegram-style avatar pill
+     * (`count` keeps the full number; shells fall back to showing the
+     * count when it exceeds the identities carried here).
+     */
+    public let reactors: [ReactionContact]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(emoji: String, count: UInt32, isFromSelf: Bool) {
+    public init(emoji: String, count: UInt32, isFromSelf: Bool, 
+        /**
+         * Up to three reactor identities for the Telegram-style avatar pill
+         * (`count` keeps the full number; shells fall back to showing the
+         * count when it exceeds the identities carried here).
+         */reactors: [ReactionContact]) {
         self.emoji = emoji
         self.count = count
         self.isFromSelf = isFromSelf
+        self.reactors = reactors
     }
 
     
@@ -2360,7 +2439,8 @@ public struct FfiConverterTypeReactionItem: FfiConverterRustBuffer {
             try ReactionItem(
                 emoji: FfiConverterString.read(from: &buf), 
                 count: FfiConverterUInt32.read(from: &buf), 
-                isFromSelf: FfiConverterBool.read(from: &buf)
+                isFromSelf: FfiConverterBool.read(from: &buf), 
+                reactors: FfiConverterSequenceTypeReactionContact.read(from: &buf)
         )
     }
 
@@ -2368,6 +2448,7 @@ public struct FfiConverterTypeReactionItem: FfiConverterRustBuffer {
         FfiConverterString.write(value.emoji, into: &buf)
         FfiConverterUInt32.write(value.count, into: &buf)
         FfiConverterBool.write(value.isFromSelf, into: &buf)
+        FfiConverterSequenceTypeReactionContact.write(value.reactors, into: &buf)
     }
 }
 
@@ -3169,6 +3250,31 @@ fileprivate struct FfiConverterSequenceTypeMessageItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMessageItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeReactionContact: FfiConverterRustBuffer {
+    typealias SwiftType = [ReactionContact]
+
+    public static func write(_ value: [ReactionContact], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeReactionContact.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ReactionContact] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ReactionContact]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeReactionContact.read(from: &buf))
         }
         return seq
     }

@@ -35,6 +35,8 @@ actor MockChatService: ChatService {
     private var ioRunning = false
 
     private static let selfColor = "#2f9e44"
+    /// Mirrors dcvm's REACTOR_DISPLAY_CAP — keep them in step.
+    private static let reactorDisplayCap = 3
     private static let palette = [
         "#e56555", "#3d7bde", "#66a350", "#9b59b6",
         "#c98a2b", "#2aa198", "#d33682", "#5f7a8a",
@@ -374,19 +376,36 @@ actor MockChatService: ChatService {
     func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) {
         for (key, var messages) in messagesByChat where key.accountId == accountId {
             guard let index = messages.firstIndex(where: { $0.id == msgId }) else { continue }
-            var reactions = messages[index].reactions.filter { !$0.isFromSelf || $0.count > 1 }
-            // Drop the own share of any previous reaction.
-            reactions = messages[index].reactions.compactMap { r in
+            let selfReactor = ReactionContact(
+                name: "Me", color: Self.selfColor, avatarPath: nil)
+            // Drop the own share of any previous reaction, incl. the self
+            // reactor identity (full-identity match, not name-keyed).
+            // Mirrors dcvm's shape — reactors carry up to reactorDisplayCap
+            // identities, count keeps the full number — though a capped
+            // pill that loses the self share keeps fewer identities than
+            // dcvm's from-scratch rebuild would; acceptable for the mock.
+            var reactions = messages[index].reactions.compactMap { r -> ReactionItem? in
                 guard r.isFromSelf else { return r }
-                return r.count > 1
-                    ? ReactionItem(emoji: r.emoji, count: r.count - 1, isFromSelf: false) : nil
+                guard r.count > 1 else { return nil }
+                var updated = r
+                updated.count -= 1
+                updated.isFromSelf = false
+                if let i = updated.reactors.firstIndex(of: selfReactor) {
+                    updated.reactors.remove(at: i)
+                }
+                return updated
             }
             if !emoji.isEmpty {
                 if let i = reactions.firstIndex(where: { $0.emoji == emoji }) {
                     reactions[i].count += 1
                     reactions[i].isFromSelf = true
+                    if reactions[i].reactors.count < Self.reactorDisplayCap {
+                        reactions[i].reactors.append(selfReactor)
+                    }
                 } else {
-                    reactions.append(ReactionItem(emoji: emoji, count: 1, isFromSelf: true))
+                    reactions.append(ReactionItem(
+                        emoji: emoji, count: 1, isFromSelf: true,
+                        reactors: [selfReactor]))
                 }
             }
             messages[index].reactions = reactions
@@ -700,6 +719,25 @@ actor MockChatService: ChatService {
         addMessage(hikers, "Welcome Priya!", minutesAgo: 5 * day - 5, sender: elena)
         addMessage(hikers, "Hi everyone, happy to be here", minutesAgo: 5 * day - 10, sender: priya)
         addMessage(hikers, "Trail plan for Sunday: meet at the falls parking lot, 9am?", minutesAgo: day + 400, sender: marco)
+        // Count-fallback showcase: more reactors than the 3 carried
+        // identities → the pill shows the number instead of avatars.
+        let hikersKey = ChatKey(accountId: accountId, chatId: hikers)
+        if var hikersMessages = messagesByChat[hikersKey],
+           let trailPlan = hikersMessages.lastIndex(where: { $0.senderName == marco.name }) {
+            hikersMessages[trailPlan].reactions = [
+                ReactionItem(
+                    emoji: "👍", count: 5, isFromSelf: false,
+                    reactors: [
+                        ReactionContact(
+                            name: elena.name, color: elena.color, avatarPath: nil),
+                        ReactionContact(
+                            name: priya.name, color: priya.color, avatarPath: nil),
+                        ReactionContact(
+                            name: marco.name, color: marco.color, avatarPath: nil),
+                    ])
+            ]
+            messagesByChat[hikersKey] = hikersMessages
+        }
         addMessage(hikers, "Works for me. Weather forecast looks perfect.", minutesAgo: day + 390, outgoing: true, state: .read)
         addMessage(hikers, "Can someone give me a ride? My car's in the shop.", minutesAgo: 130, sender: priya)
 
@@ -720,8 +758,20 @@ actor MockChatService: ChatService {
                     text: last.text, senderName: last.senderName,
                     senderColor: last.senderColor),
                 reactions: [
-                    ReactionItem(emoji: "❤️", count: 2, isFromSelf: false),
-                    ReactionItem(emoji: "🌅", count: 1, isFromSelf: true),
+                    ReactionItem(
+                        emoji: "❤️", count: 2, isFromSelf: false,
+                        reactors: [
+                            ReactionContact(
+                                name: "Elena", color: "#e56555", avatarPath: nil),
+                            ReactionContact(
+                                name: "Marco", color: "#3d7bde", avatarPath: nil),
+                        ]),
+                    ReactionItem(
+                        emoji: "🌅", count: 1, isFromSelf: true,
+                        reactors: [
+                            ReactionContact(
+                                name: "Me", color: Self.selfColor, avatarPath: nil)
+                        ]),
                 ]))
         }
         if let imagePath = AppResources.bundle.url(

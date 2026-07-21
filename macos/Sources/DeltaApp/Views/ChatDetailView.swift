@@ -349,13 +349,10 @@ struct MessageBubbleView: View {
     }
 
     private var bubbleWithReactions: some View {
-        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
-            bubble
-                .contextMenu { contextMenu }
-            if !message.reactions.isEmpty {
-                ReactionChipsView(model: model, message: message)
-            }
-        }
+        // Reactions render INSIDE the bubble card (Telegram-style pills);
+        // the wrapper only carries the context menu now.
+        bubble
+            .contextMenu { contextMenu }
     }
 
     private var bubble: some View {
@@ -413,6 +410,10 @@ struct MessageBubbleView: View {
                         .textSelection(.enabled)
                         .foregroundStyle(message.isOutgoing ? .white : .primary)
                 }
+            }
+            if !message.reactions.isEmpty {
+                ReactionChipsView(model: model, message: message)
+                    .padding(.top, 3)
             }
             }
             // Reserved line so the overlaid footer never covers text.
@@ -586,37 +587,87 @@ enum ImageCache {
 
 // MARK: - Reactions
 
+/// Telegram-style reaction pills (issue: telegram-style-reactions): emoji
+/// plus overlapping reactor avatars when identities cover everyone, the
+/// count otherwise; accent-filled when the user reacted. Lives inside the
+/// bubble card, so fills are tuned against both bubble surfaces.
 struct ReactionChipsView: View {
     let model: AppModel
     let message: MessageItem
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             ForEach(message.reactions, id: \.emoji) { reaction in
                 Button {
                     Task { await model.toggleReaction(message: message, emoji: reaction.emoji) }
                 } label: {
-                    HStack(spacing: 3) {
-                        Text(reaction.emoji)
-                        if reaction.count > 1 {
-                            Text("\(reaction.count)")
-                                .font(.caption2.weight(.semibold))
-                        }
-                    }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        reaction.isFromSelf
-                            ? AnyShapeStyle(EstuaryTheme.accent.opacity(0.25))
-                            : AnyShapeStyle(.quaternary),
-                        in: Capsule())
-                    .overlay(
-                        Capsule().strokeBorder(
-                            reaction.isFromSelf ? EstuaryTheme.accent : .clear, lineWidth: 1))
+                    chip(reaction)
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func chip(_ reaction: ReactionItem) -> some View {
+        let avatars = showsAvatars(reaction)
+        return HStack(spacing: 5) {
+            Text(reaction.emoji)
+                .font(.callout)
+            if avatars {
+                // Overlapping reactor bubbles, first reactor in front; the
+                // ring approximates the surface under the pill so the
+                // circles read as separate.
+                HStack(spacing: -7) {
+                    ForEach(Array(reaction.reactors.enumerated()), id: \.offset) {
+                        index, reactor in
+                        ChatAvatarView(
+                            name: reactor.name, colorHex: reactor.color,
+                            avatarPath: reactor.avatarPath, size: 18)
+                            .overlay(Circle().strokeBorder(
+                                ringColor(reaction), lineWidth: 1.5))
+                            .zIndex(Double(-index))
+                    }
+                }
+            } else {
+                Text("\(reaction.count)")
+                    .font(.caption.weight(.semibold))
+                    // The outgoing bubble is deep teal in BOTH appearances:
+                    // like all in-bubble text, the count must stay white
+                    // there (a capped pill has isFromSelf false even on
+                    // own messages).
+                    .foregroundStyle(
+                        reaction.isFromSelf || message.isOutgoing
+                            ? Color.white : .primary)
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, avatars ? 5 : 9)
+        .padding(.vertical, 2.5)
+        .background(fillColor(reaction), in: Capsule())
+    }
+
+    /// Avatars when the carried identities cover every reactor; the bare
+    /// count once people outnumber them (dcvm caps identities at 3).
+    private func showsAvatars(_ reaction: ReactionItem) -> Bool {
+        !reaction.reactors.isEmpty && reaction.reactors.count == Int(reaction.count)
+    }
+
+    private func fillColor(_ reaction: ReactionItem) -> Color {
+        if reaction.isFromSelf {
+            return message.isOutgoing
+                ? Color.white.opacity(0.30) : EstuaryTheme.accent
+        }
+        return message.isOutgoing
+            ? Color.white.opacity(0.18) : EstuaryTheme.accent.opacity(0.12)
+    }
+
+    private func ringColor(_ reaction: ReactionItem) -> Color {
+        if message.isOutgoing {
+            // Translucent white fills composite over the teal bubble; a
+            // teal ring reads as the gap between circles there.
+            return EstuaryTheme.bubble
+        }
+        return reaction.isFromSelf ? EstuaryTheme.accent : .white
     }
 }
 
@@ -738,7 +789,12 @@ struct DeliveryStateView: View {
                     id: 2, chatId: 1, text: "Hey! Did you see the native prototype?",
                     timestamp: now - 3600, isOutgoing: false, isInfo: false,
                     senderName: "Alice", senderColor: "#e56555", state: .noState,
-                    reactions: [ReactionItem(emoji: "👍", count: 2, isFromSelf: true)]),
+                    reactions: [ReactionItem(
+                        emoji: "👍", count: 2, isFromSelf: true,
+                        reactors: [
+                            ReactionContact(name: "Me", color: "#2f9e44", avatarPath: nil),
+                            ReactionContact(name: "Elena", color: "#e56555", avatarPath: nil),
+                        ])]),
                 showAuthor: true)
             MessageBubbleView(
                 model: model,

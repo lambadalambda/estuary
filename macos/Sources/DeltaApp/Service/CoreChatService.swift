@@ -359,7 +359,12 @@ private func mapMessage(_ m: DeltaCore.MessageItem) -> MessageItem {
             QuoteInfo(text: $0.text, senderName: $0.senderName, senderColor: $0.senderColor)
         },
         reactions: m.reactions.map {
-            ReactionItem(emoji: $0.emoji, count: $0.count, isFromSelf: $0.isFromSelf)
+            ReactionItem(
+                emoji: $0.emoji, count: $0.count, isFromSelf: $0.isFromSelf,
+                reactors: $0.reactors.map {
+                    ReactionContact(
+                        name: $0.name, color: $0.color, avatarPath: $0.avatarPath)
+                })
         }
     )
 }

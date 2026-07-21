@@ -31,3 +31,8 @@ change or app re-activation.
   inactive does not.
 - Full Swift suite green.
 - User confirms the badge no longer climbs in the open chat.
+
+## Outcome (2026-07-21)
+
+User-confirmed ("nice"): the viewed chat's badge stays quiet while other
+chats and the inactive-app case still accumulate (pinned by tests).

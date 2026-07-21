@@ -37,3 +37,10 @@ belt-and-braces for anything AppKit re-stamps at runtime.
   machine, which reproduces the flash). Escalating to the argument domain
   would win unconditionally but overrides a deliberate accessibility
   choice; deliberately not done.
+
+## Outcome (2026-07-21)
+
+App-level AppleShowScrollBars registration shipped 2026-07-20; no flash
+reports since, and the AppKit table now sets its scroller style at
+creation anyway. Archived with the user's 2026-07-21 sign-off. The
+explicit-system-"Always" caveat stands documented in Notes.

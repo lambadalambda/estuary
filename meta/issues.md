@@ -12,7 +12,3 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
-- [ ] [Chat switching flashes an empty timeline](issues/chat-switch-window-cache.md)
-- [ ] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)
-- [ ] [Unread badge climbs for the chat currently being viewed](issues/viewed-chat-unread-badge.md)
-- [ ] [Overnight chat becomes choppy; switching back to it hangs](issues/overnight-window-bloat.md)

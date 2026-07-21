@@ -38,3 +38,10 @@ and reintroduces the cross-chat timing risks our guards exist to kill.
 - Full Swift suite green; AUTOSEND scroll probe unchanged (open at bottom,
   follows on append).
 - User confirms chat switching no longer flashes on a real account.
+
+## Outcome (2026-07-21)
+
+User-confirmed ("mostly works well" on landing; no complaints since, and
+the one side effect found — the legacy scroller flash — got its own
+issue and fix). Cache store/restore later bounded to one page by
+overnight-window-bloat. Archived with the user's 2026-07-21 sign-off.

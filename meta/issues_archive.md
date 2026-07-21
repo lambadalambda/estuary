@@ -23,3 +23,7 @@
 - [x] [Posting a message no longer scrolls to the bottom](issues/send-scroll-regression.md)
 - [x] [Message-list engine spike: measure before the port](issues/message-list-engine-spike.md)
 - [x] [Port the message list to an AppKit NSTableView representable](issues/appkit-message-table-port.md)
+- [x] [Chat switching flashes an empty timeline](issues/chat-switch-window-cache.md)
+- [x] [Legacy scrollbar flashes on chat switch](issues/legacy-scroller-flash.md)
+- [x] [Unread badge climbs for the chat currently being viewed](issues/viewed-chat-unread-badge.md)
+- [x] [Overnight chat becomes choppy; switching back to it hangs](issues/overnight-window-bloat.md)

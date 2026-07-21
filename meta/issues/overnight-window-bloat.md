@@ -40,3 +40,12 @@ unbounded model growth multiplied by eager rendering:
 - Full Swift suite green; AUTOSEND probe unchanged.
 - User confirms an overnight-style bloated chat recovers (scroll smooth
   after returning to bottom / switching back; no hang).
+
+## Outcome (2026-07-21)
+
+Window bounded on three sides (at-bottom trim, passive-growth cap,
+one-page cache); the honest-stub fix made the bounds testable. The
+severity question ("only ~90 messages") was answered by the spike: the
+eager container's O(window) rendering amplified even modest windows —
+now moot, the virtualized table renders ~15 rows regardless. User
+sign-off 2026-07-21 ("feels fast now").

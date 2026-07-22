@@ -64,7 +64,7 @@ struct ChatTableView: NSViewRepresentable {
 
         private var table: NSTableView!
         private var scroll: NSScrollView!
-        private let sizingHost = NSHostingView(rootView: AnyView(EmptyView()))
+        private let sizingHost = NSHostingController(rootView: AnyView(EmptyView()))
 
         /// Trigger loadOlder when the viewport top is within this many
         /// points of the loaded content's top.
@@ -380,8 +380,8 @@ struct ChatTableView: NSViewRepresentable {
             if let cached = heightCache[key] { return cached }
             let width = scroll?.contentView.bounds.width ?? cachedWidth
             guard width > 0 else { return 44 }
-            sizingHost.rootView = rowContent(entry)
-            let height = sizingHost.fittingSize(forWidth: width)
+            let height = sizingHost.fittingHeight(
+                of: rowContent(entry), forWidth: width)
             heightCache[key] = height
             return height
         }
@@ -410,11 +410,22 @@ struct ChatTableView: NSViewRepresentable {
     }
 }
 
-extension NSHostingView {
-    /// Height of the content when constrained to `width` — the row-height
-    /// measurement primitive for the chat table's cache.
-    @MainActor func fittingSize(forWidth width: CGFloat) -> CGFloat {
-        frame = NSRect(x: 0, y: 0, width: width, height: 10)
-        return fittingSize.height
+extension NSHostingController where Content == AnyView {
+    /// Height of `content` when constrained to `width` — the row-height
+    /// measurement primitive for the chat table's cache. The width is
+    /// fixed and `fixedSize(vertical:)` pins the height to the content's
+    /// IDEAL at that width: wrapping Text reports its full wrapped height
+    /// (NSHostingView.fittingSize returned one line — the truncated-bubble
+    /// bug), while greedy decorations like the quote accent bar keep
+    /// their ideal size instead of inflating an unbounded proposal (the
+    /// giant-bubble bug the first, (width, ∞)-proposal fix introduced).
+    @MainActor func fittingHeight(
+        of content: some View, forWidth width: CGFloat
+    ) -> CGFloat {
+        rootView = AnyView(
+            content
+                .frame(width: width, alignment: .topLeading)
+                .fixedSize(horizontal: false, vertical: true))
+        return sizeThatFits(in: NSSize(width: width, height: 0)).height
     }
 }

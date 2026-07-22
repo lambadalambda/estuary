@@ -1022,7 +1022,42 @@ impl DcApp {
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
             let parsed = deltachat::qr::check_qr(&ctx, &qr).await?;
+            // Contact invites carry only a contact id; resolve the display
+            // name here so the UI can ask "chat with <name>?" directly.
+            if let deltachat::qr::Qr::AskVerifyContact { contact_id, .. } = &parsed {
+                let contact = Contact::get_by_id(&ctx, *contact_id).await?;
+                return Ok(QrKind::AskVerifyContact {
+                    name: contact.get_display_name().to_string(),
+                });
+            }
             Ok(map_qr(&parsed))
+        })
+        .await
+    }
+
+    /// My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
+    /// securejoin link, also used verbatim as QR content. First contact on
+    /// chatmail relays REQUIRES this — filtermail rejects plain first mails
+    /// (issue: qr-invite-contact-flow).
+    pub async fn securejoin_qr(&self, account_id: u32) -> Result<String, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            Ok(deltachat::securejoin::get_securejoin_qr(&ctx, None).await?)
+        })
+        .await
+    }
+
+    /// Joins a scanned/pasted securejoin invite and returns the chat id.
+    /// The key-exchange handshake continues in the background over IO; the
+    /// chat is usable as soon as it completes.
+    pub async fn join_securejoin(&self, account_id: u32, qr: String) -> Result<u32, VmError> {
+        let accounts = self.accounts.clone();
+        on_rt(async move {
+            let ctx = get_ctx(&accounts, account_id).await?;
+            Ok(deltachat::securejoin::join_securejoin(&ctx, &qr)
+                .await?
+                .to_u32())
         })
         .await
     }

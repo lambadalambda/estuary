@@ -166,7 +166,13 @@ pub enum QrKind {
     BackupTooNew,
     /// `DCLOGIN:` — log in to an existing e-mail address.
     Login { address: String },
-    /// Anything else (contact verification, proxies, urls, ...): not yet supported here.
+    /// A securejoin contact invite (`https://i.delta.chat/#…` or
+    /// `OPENPGP4FPR:`) — start first contact with this person
+    /// (issue: qr-invite-contact-flow).
+    AskVerifyContact { name: String },
+    /// A securejoin group invite: join this group.
+    AskVerifyGroup { group_name: String },
+    /// Anything else (proxies, urls, ...): not yet supported here.
     Unsupported,
 }
 

@@ -568,7 +568,6 @@ async fn instant_account_against_local_relay() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a running local chatmail relay; set DCVM_TEST_RELAY"]
 async fn message_roundtrip_on_local_relay() {
-    use dcvm::deltachat::securejoin::{get_securejoin_qr, join_securejoin};
     use dcvm::deltachat::EventType as CoreEventType;
 
     let relay =
@@ -606,14 +605,16 @@ async fn message_roundtrip_on_local_relay() {
         .await
         .expect("account never reached Connected");
     }
-    let invite = get_securejoin_qr(&bob_ctx, None).await.expect("invite qr");
+    // Through the exported dcvm surface (issue: qr-invite-contact-flow) —
+    // the same calls the shells make.
+    let invite = app.securejoin_qr(bob).await.expect("invite qr");
     // Subscribe BEFORE joining: the receiver only sees events emitted after
     // its creation, and a fast handshake can finish before join returns.
     let raw_events = alice_ctx.get_event_emitter();
-    let chat = join_securejoin(&alice_ctx, &invite)
+    let chat = app
+        .join_securejoin(alice, invite)
         .await
-        .expect("join_securejoin")
-        .to_u32();
+        .expect("join_securejoin");
 
     // If IMAP IDLE/push misbehaves, core falls back to slow periodic polling
     // and the multi-roundtrip handshake stalls. maybe_network() forces an
@@ -1334,4 +1335,39 @@ async fn chat_list_survives_deletion_between_snapshot_and_load() {
     let chats = app.chat_list(id).await.expect("chat_list after deletion");
     assert!(chats.iter().any(|c| c.id == keep));
     assert!(!chats.iter().any(|c| c.id == doomed));
+}
+
+/// Contact invites (issue: qr-invite-contact-flow), all offline: my invite
+/// is the shareable i.delta.chat securejoin link, and ANOTHER account
+/// classifies it as a contact-verification ask carrying my display name.
+#[tokio::test(flavor = "multi_thread")]
+async fn securejoin_invite_generation_and_classification() {
+    let (app, _collector, _dir) = make_app().await;
+    let alice = app.add_account().await.unwrap();
+    let bob = app.add_account().await.unwrap();
+    pseudo_configure(&app, alice, "alice@example.org").await;
+    pseudo_configure(&app, bob, "bob@example.org").await;
+    app.context(alice)
+        .await
+        .unwrap()
+        .set_config(
+            dcvm::deltachat::config::Config::Displayname,
+            Some("Alice Ondra"),
+        )
+        .await
+        .unwrap();
+
+    let invite = app.securejoin_qr(alice).await.expect("invite link");
+    assert!(
+        invite.starts_with("https://i.delta.chat/#"),
+        "invite should be the shareable link form, got: {invite}"
+    );
+
+    let kind = app.check_qr(bob, invite).await.expect("classification");
+    assert_eq!(
+        kind,
+        dcvm::QrKind::AskVerifyContact {
+            name: "Alice Ondra".into()
+        }
+    );
 }

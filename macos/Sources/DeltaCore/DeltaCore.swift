@@ -680,6 +680,13 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func joinSecondDevice(accountId: UInt32, qr: String) async throws 
     
     /**
+     * Joins a scanned/pasted securejoin invite and returns the chat id.
+     * The key-exchange handshake continues in the background over IO; the
+     * chat is usable as soon as it completes.
+     */
+    func joinSecurejoin(accountId: UInt32, qr: String) async throws  -> UInt32
+    
+    /**
      * Stores credentials and configures the account (autoconfig fills in the
      * rest). Progress arrives as `ConfigureProgress` events.
      */
@@ -728,6 +735,14 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      * Global full-text message search, newest last, capped at 100 hits.
      */
     func searchMessages(accountId: UInt32, query: String) async throws  -> [MessageItem]
+    
+    /**
+     * My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
+     * securejoin link, also used verbatim as QR content. First contact on
+     * chatmail relays REQUIRES this — filtermail rejects plain first mails
+     * (issue: qr-invite-contact-flow).
+     */
+    func securejoinQr(accountId: UInt32) async throws  -> String
     
     func selectAccount(id: UInt32) async throws 
     
@@ -1185,6 +1200,27 @@ open func joinSecondDevice(accountId: UInt32, qr: String)async throws   {
 }
     
     /**
+     * Joins a scanned/pasted securejoin invite and returns the chat id.
+     * The key-exchange handshake continues in the background over IO; the
+     * chat is usable as soon as it completes.
+     */
+open func joinSecurejoin(accountId: UInt32, qr: String)async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_join_securejoin(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterString.lower(qr)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_u32,
+            completeFunc: ffi_dcvm_rust_future_complete_u32,
+            freeFunc: ffi_dcvm_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
      * Stores credentials and configures the account (autoconfig fills in the
      * rest). Progress arrives as `ConfigureProgress` events.
      */
@@ -1356,6 +1392,28 @@ open func searchMessages(accountId: UInt32, query: String)async throws  -> [Mess
             completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
             freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeMessageItem.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
+     * securejoin link, also used verbatim as QR content. First contact on
+     * chatmail relays REQUIRES this — filtermail rejects plain first mails
+     * (issue: qr-invite-contact-flow).
+     */
+open func securejoinQr(accountId: UInt32)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_securejoin_qr(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -2715,7 +2773,19 @@ public enum QrKind: Equatable, Hashable {
     case login(address: String
     )
     /**
-     * Anything else (contact verification, proxies, urls, ...): not yet supported here.
+     * A securejoin contact invite (`https://i.delta.chat/#…` or
+     * `OPENPGP4FPR:`) — start first contact with this person
+     * (issue: qr-invite-contact-flow).
+     */
+    case askVerifyContact(name: String
+    )
+    /**
+     * A securejoin group invite: join this group.
+     */
+    case askVerifyGroup(groupName: String
+    )
+    /**
+     * Anything else (proxies, urls, ...): not yet supported here.
      */
     case unsupported
 
@@ -2749,7 +2819,13 @@ public struct FfiConverterTypeQrKind: FfiConverterRustBuffer {
         case 4: return .login(address: try FfiConverterString.read(from: &buf)
         )
         
-        case 5: return .unsupported
+        case 5: return .askVerifyContact(name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .askVerifyGroup(groupName: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .unsupported
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -2777,8 +2853,18 @@ public struct FfiConverterTypeQrKind: FfiConverterRustBuffer {
             FfiConverterString.write(address, into: &buf)
             
         
-        case .unsupported:
+        case let .askVerifyContact(name):
             writeInt(&buf, Int32(5))
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .askVerifyGroup(groupName):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(groupName, into: &buf)
+            
+        
+        case .unsupported:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -3435,6 +3521,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_join_second_device() != 39313) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_dcvm_checksum_method_dcapp_join_securejoin() != 45648) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_dcvm_checksum_method_dcapp_login() != 55131) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3460,6 +3549,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_search_messages() != 12636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_securejoin_qr() != 64476) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_select_account() != 20991) {

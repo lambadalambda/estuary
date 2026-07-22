@@ -1,5 +1,23 @@
 # DEVLOG
 
+## 2026-07-23 — QR invite contact flow (securejoin end to end)
+
+First contact on chatmail relays now works: securejoin invites in both
+directions. Nice discovery: core v2.53's get_securejoin_qr already
+returns the shareable https://i.delta.chat/# link — one string serves as
+QR content AND copyable invite. dcvm exports securejoin_qr /
+join_securejoin and QrKind gained AskVerifyContact (display name
+resolved in check_qr — the pure map_qr can't do contact lookups) and
+AskVerifyGroup. The InviteSheet shows my QR (CIQRCodeGenerator, rendered
+interpolation-free) + copy link, and joins via paste (with a live "Chat
+with <name>" preview through check_qr) or the reused onboarding camera
+scanner. Verified: offline cross-account classification test; the
+opt-in relay round-trip rewired through the exported API passed live
+against the podman chatmail relay (3.35s handshake + encrypted
+round-trip); full UI flow driven in the VM against the mock. Camera
+scan path shares the proven onboarding scanner but is not
+VM-verifiable (no camera).
+
 ## 2026-07-22 — Composer attachment staging + image paste
 
 Attachments no longer send on drop/pick: they stage per conversation

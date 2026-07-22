@@ -76,6 +76,11 @@ pub fn map_qr(qr: &Qr) -> QrKind {
         Qr::Login { address, .. } => QrKind::Login {
             address: address.clone(),
         },
+        // AskVerifyContact is NOT mapped here: its display name needs a
+        // contact lookup, which `check_qr` does with the live context.
+        Qr::AskVerifyGroup { grpname, .. } => QrKind::AskVerifyGroup {
+            group_name: grpname.clone(),
+        },
         _ => QrKind::Unsupported,
     }
 }
@@ -357,6 +362,22 @@ mod tests {
             }
         );
         assert_eq!(map_qr(&Qr::BackupTooNew {}), QrKind::BackupTooNew);
+        assert_eq!(
+            map_qr(&Qr::AskVerifyGroup {
+                grpname: "Weekend Hikers".into(),
+                grpid: "grp1".into(),
+                contact_id: deltachat::contact::ContactId::new(12),
+                fingerprint: "1234567890123456789012345678901234567890"
+                    .parse()
+                    .expect("fingerprint"),
+                invitenumber: "inv".into(),
+                authcode: "auth".into(),
+                is_v3: true,
+            }),
+            QrKind::AskVerifyGroup {
+                group_name: "Weekend Hikers".into()
+            }
+        );
         assert_eq!(
             map_qr(&Qr::Url {
                 url: "https://delta.chat".into()

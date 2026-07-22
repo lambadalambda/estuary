@@ -159,6 +159,16 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
+    func securejoinQr(accountId: UInt32) async throws -> String {
+        do { return try await app().securejoinQr(accountId: accountId) }
+        catch { throw mapError(error) }
+    }
+
+    func joinSecurejoin(accountId: UInt32, qr: String) async throws -> UInt32 {
+        do { return try await app().joinSecurejoin(accountId: accountId, qr: qr) }
+        catch { throw mapError(error) }
+    }
+
     func createInstantAccount(
         accountId: UInt32, displayName: String, instance: String?
     ) async throws {
@@ -426,6 +436,8 @@ private func mapQrKind(_ k: DeltaCore.QrKind) -> QrKind {
     case .backup: .backup
     case .backupTooNew: .backupTooNew
     case .login(let address): .login(address: address)
+    case .askVerifyContact(let name): .askVerifyContact(name: name)
+    case .askVerifyGroup(let groupName): .askVerifyGroup(groupName: groupName)
     case .unsupported: .unsupported
     }
 }

@@ -5,6 +5,42 @@ import Testing
 
 @MainActor
 @Suite struct AppModelTests {
+    @Test func joinInviteSelectsChatOnSuccessAndSurfacesFailure() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        await service.setSecurejoinChat(77)
+        await service.setChat(testChat(name: "Nina", id: 77), accountId: 1)
+        let error = await model.joinInvite("https://i.delta.chat/#ABC&a=n@x.org")
+        #expect(error == nil)
+        #expect(model.selectedChatId == 77)
+        #expect(await service.joinedInvites() == ["https://i.delta.chat/#ABC&a=n@x.org"])
+
+        await service.failNextSecurejoin()
+        let failure = await model.joinInvite("https://i.delta.chat/#BROKEN")
+        #expect(failure != nil)
+        #expect(model.selectedChatId == 77)
+    }
+
+    @Test func inviteLinkComesFromTheService() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        #expect(await model.inviteLink() == "https://i.delta.chat/#SCRIPTED")
+    }
+
+    @Test func inviteePreviewNamesContactInvitesOnly() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        #expect(await model.inviteePreview("https://i.delta.chat/#X") == "Scripted")
+        #expect(await model.inviteePreview("not an invite") == nil)
+    }
+
     @Test func messageExpansionTogglesAndClearsOnChatSwitch() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()
@@ -1823,7 +1859,28 @@ private actor ScriptedChatService: ChatService {
         }
         throw unused()
     }
-    func checkQr(accountId: UInt32, qr: String) throws -> QrKind { throw unused() }
+    func checkQr(accountId: UInt32, qr: String) throws -> QrKind {
+        qr.hasPrefix("https://i.delta.chat/#")
+            ? .askVerifyContact(name: "Scripted") : .unsupported
+    }
+    private var securejoinChatId: UInt32?
+    private var securejoinFailuresRemaining = 0
+    private var joinedInviteQrs: [String] = []
+    func setSecurejoinChat(_ id: UInt32) { securejoinChatId = id }
+    func failNextSecurejoin() { securejoinFailuresRemaining += 1 }
+    func joinedInvites() -> [String] { joinedInviteQrs }
+    func securejoinQr(accountId: UInt32) throws -> String {
+        "https://i.delta.chat/#SCRIPTED"
+    }
+    func joinSecurejoin(accountId: UInt32, qr: String) throws -> UInt32 {
+        if securejoinFailuresRemaining > 0 {
+            securejoinFailuresRemaining -= 1
+            throw ServiceError.core(msg: "scripted securejoin failure")
+        }
+        guard let securejoinChatId else { throw unused() }
+        joinedInviteQrs.append(qr)
+        return securejoinChatId
+    }
     func createInstantAccount(accountId: UInt32, displayName: String, instance: String?) throws { throw unused() }
     func joinSecondDevice(accountId: UInt32, qr: String) throws { throw unused() }
     func cancelOngoing(accountId: UInt32) {}

@@ -364,6 +364,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_forward_messages(uint64_t ptr, uint32_t acc
 uint64_t uniffi_dcvm_fn_method_dcapp_join_second_device(uint64_t ptr, uint32_t account_id, RustBuffer qr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_JOIN_SECUREJOIN
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_JOIN_SECUREJOIN
+uint64_t uniffi_dcvm_fn_method_dcapp_join_securejoin(uint64_t ptr, uint32_t account_id, RustBuffer qr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_LOGIN
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_LOGIN
 uint64_t uniffi_dcvm_fn_method_dcapp_login(uint64_t ptr, uint32_t account_id, RustBuffer addr, RustBuffer password
@@ -407,6 +412,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_search_chats(uint64_t ptr, uint32_t account
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SEARCH_MESSAGES
 uint64_t uniffi_dcvm_fn_method_dcapp_search_messages(uint64_t ptr, uint32_t account_id, RustBuffer query
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SECUREJOIN_QR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SECUREJOIN_QR
+uint64_t uniffi_dcvm_fn_method_dcapp_securejoin_qr(uint64_t ptr, uint32_t account_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_SELECT_ACCOUNT
@@ -869,6 +879,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_join_second_device(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_JOIN_SECUREJOIN
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_JOIN_SECUREJOIN
+uint16_t uniffi_dcvm_checksum_method_dcapp_join_securejoin(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_LOGIN
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_LOGIN
 uint16_t uniffi_dcvm_checksum_method_dcapp_login(void
@@ -920,6 +936,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_search_chats(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_MESSAGES
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SEARCH_MESSAGES
 uint16_t uniffi_dcvm_checksum_method_dcapp_search_messages(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SECUREJOIN_QR
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_SECUREJOIN_QR
+uint16_t uniffi_dcvm_checksum_method_dcapp_securejoin_qr(void
     
 );
 #endif

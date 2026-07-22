@@ -215,6 +215,7 @@ final class AppModel {
     var showSettings = false
     var showNewChat = false
     var showNewGroup = false
+    var showInvite = false
     private(set) var connectivityValue: UInt32 = 0
     private(set) var dockUnreadCount: UInt32 = 0
 
@@ -1332,6 +1333,42 @@ final class AppModel {
         let generation = selectionGeneration
         do {
             let chatId = try await service.createChat(accountId: accountId, email: email, name: name)
+            guard accountId == selectedAccountId, generation == selectionGeneration else {
+                return nil
+            }
+            return await selectCreatedChat(
+                accountId: accountId, chatId: chatId,
+                originatingGeneration: generation)
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// My shareable securejoin invite (QR content + copyable link); nil
+    /// when no account is selected or the service fails.
+    func inviteLink() async -> String? {
+        guard let accountId = selectedAccountId else { return nil }
+        return try? await service.securejoinQr(accountId: accountId)
+    }
+
+    /// Preview for a pasted invite: the inviter's display name when the
+    /// payload is a recognizable contact invite, nil otherwise.
+    func inviteePreview(_ qr: String) async -> String? {
+        guard let accountId = selectedAccountId,
+            case .askVerifyContact(let name) =
+                try? await service.checkQr(accountId: accountId, qr: qr)
+        else { return nil }
+        return name
+    }
+
+    /// Joins a pasted/scanned securejoin invite and opens the resulting
+    /// chat. Returns a user-facing error string, nil on success — same
+    /// contract as `createChat` (issue: qr-invite-contact-flow).
+    func joinInvite(_ qr: String) async -> String? {
+        guard let accountId = selectedAccountId else { return nil }
+        let generation = selectionGeneration
+        do {
+            let chatId = try await service.joinSecurejoin(accountId: accountId, qr: qr)
             guard accountId == selectedAccountId, generation == selectionGeneration else {
                 return nil
             }

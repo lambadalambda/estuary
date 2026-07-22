@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct MainView: View {
@@ -66,6 +67,8 @@ struct MainView: View {
                     Menu {
                         Button("New Chat…") { model.showNewChat = true }
                         Button("New Group…") { model.showNewGroup = true }
+                        Divider()
+                        Button("Invite / Join via QR…") { model.showInvite = true }
                     } label: {
                         Label("New", systemImage: "square.and.pencil")
                     }
@@ -109,6 +112,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showNewChat) {
             NewChatSheet(model: model)
+        }
+        .sheet(isPresented: $model.showInvite) {
+            InviteSheet(model: model)
         }
         .sheet(isPresented: $model.showNewGroup) {
             NewGroupSheet(model: model)
@@ -436,6 +442,191 @@ struct SettingsSheet: View {
 }
 
 // MARK: - New chat sheet
+
+/// Securejoin invites, both directions (issue: qr-invite-contact-flow):
+/// my QR/link to hand out, and paste-or-scan to join someone else's.
+/// This is how first contact works on chatmail — plain first mails are
+/// rejected by the relay, invites carry the key exchange.
+struct InviteSheet: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var inviteLink: String?
+    @State private var inviteLoadFailed = false
+    @State private var copied = false
+    @State private var pasted = ""
+    @State private var inviteeName: String?
+    @State private var error: String?
+    @State private var isJoining = false
+    @State private var scanning = false
+    @State private var scanner: QrCameraScanner?
+    @State private var cameraError: String?
+    @State private var sheetGone = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Invite")
+                .font(.title2.bold())
+            HStack(alignment: .top, spacing: 16) {
+                if let inviteLink, let image = qrImage(for: inviteLink) {
+                    Image(nsImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 150, height: 150)
+                        .accessibilityLabel("Your invite QR code")
+                } else if inviteLoadFailed {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Text("Couldn't create your invite.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Retry") {
+                            Task { await loadInvite() }
+                        }
+                    }
+                    .frame(width: 150, height: 150)
+                } else {
+                    ProgressView()
+                        .frame(width: 150, height: 150)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Have them scan this code with Delta Chat, or send the link over any channel. The chat is end-to-end encrypted from the first message.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(copied ? "Copied" : "Copy Invite Link") {
+                        guard let inviteLink else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(inviteLink, forType: .string)
+                        copied = true
+                    }
+                    .disabled(inviteLink == nil)
+                }
+            }
+
+            Divider()
+
+            Text("Got an invite?")
+                .font(.headline)
+            TextField("Paste an invite link (https://i.delta.chat/#…)", text: $pasted)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: pasted) { _, payload in
+                    Task {
+                        let name = await model.inviteePreview(payload)
+                        // Previews resolve out of order under fast edits:
+                        // only the one matching the CURRENT field wins.
+                        if pasted == payload { inviteeName = name }
+                    }
+                }
+            if scanning, let scanner {
+                CameraPreview(session: scanner.session)
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            if let cameraError {
+                Text(cameraError).font(.caption).foregroundStyle(.red)
+            }
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Button(scanning ? "Stop Scanning" : "Scan QR Code") {
+                    scanning ? stopScan() : startScan()
+                }
+                Spacer()
+                Button("Close") { dismiss() }
+                Button(inviteeName.map { "Chat with \($0)" } ?? "Join") {
+                    join(pasted)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || isJoining)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task { await loadInvite() }
+        .onDisappear {
+            sheetGone = true
+            stopScan()
+        }
+    }
+
+    private func loadInvite() async {
+        inviteLoadFailed = false
+        inviteLink = await model.inviteLink()
+        inviteLoadFailed = inviteLink == nil
+    }
+
+    private func join(_ payload: String) {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Easy slip: the Copy button is one click away in the same sheet.
+        // Core would only say "Unsupported QR type" for one's own invite.
+        if trimmed == inviteLink {
+            error = "This is your own invite — send it to the person you want to chat with."
+            return
+        }
+        Task {
+            isJoining = true
+            error = nil
+            defer { isJoining = false }
+            if let failure = await model.joinInvite(trimmed) {
+                error = failure
+            } else {
+                dismiss()
+            }
+        }
+    }
+
+    // Same permission dance as onboarding's second-device scan.
+    private func startScan() {
+        cameraError = nil
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            beginSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    if granted {
+                        beginSession()
+                    } else {
+                        cameraError = "Camera access was denied."
+                    }
+                }
+            }
+        default:
+            cameraError = "Camera access is denied — allow it in System Settings → Privacy & Security → Camera."
+        }
+    }
+
+    private func beginSession() {
+        // The TCC prompt outlives the sheet: granting access after Close
+        // must not switch the camera on against a dead view.
+        guard !sheetGone else { return }
+        guard let scanner = QrCameraScanner(onFound: { payload in
+            Task { @MainActor in
+                pasted = payload
+                stopScan()
+                join(payload)
+            }
+        }) else {
+            cameraError = "No usable camera found."
+            return
+        }
+        self.scanner = scanner
+        scanning = true
+        scanner.start()
+    }
+
+    private func stopScan() {
+        scanner?.stop()
+        scanner = nil
+        scanning = false
+    }
+}
 
 struct NewChatSheet: View {
     let model: AppModel

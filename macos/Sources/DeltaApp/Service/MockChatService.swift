@@ -275,7 +275,59 @@ actor MockChatService: ChatService {
         if upper.hasPrefix("DCLOGIN:") {
             return .login(address: String(payload.dropFirst("DCLOGIN:".count)))
         }
+        // Securejoin invites: honor the real link's `n=` display-name param
+        // so pasting an invite previews the actual person.
+        if payload.hasPrefix("https://i.delta.chat/#") || upper.hasPrefix("OPENPGP4FPR:") {
+            return .askVerifyContact(name: Self.inviteName(from: payload))
+        }
         return .unsupported
+    }
+
+    /// Mirrors core: the invite link carries the inviter's display name as
+    /// the url-encoded `n=` parameter.
+    private static func inviteName(from payload: String) -> String {
+        guard let fragment = payload.split(separator: "#").last else { return "Contact" }
+        for param in fragment.split(separator: "&") {
+            if param.hasPrefix("n=") {
+                let raw = String(param.dropFirst(2))
+                return raw.removingPercentEncoding ?? raw
+            }
+        }
+        return "Contact"
+    }
+
+    private static let ownInvite =
+        "https://i.delta.chat/#MOCKFPR&v=3&a=me%40mock.example&n=Me"
+    /// Real join_securejoin is idempotent — the same invite always yields
+    /// the same chat.
+    private var joinedInviteChats: [String: UInt32] = [:]
+
+    func securejoinQr(accountId: UInt32) throws -> String {
+        guard accountsById[accountId] != nil else {
+            throw ServiceError.core(msg: "no such account: \(accountId)")
+        }
+        return Self.ownInvite
+    }
+
+    func joinSecurejoin(accountId: UInt32, qr: String) throws -> UInt32 {
+        // Core classifies one's own invite as a withdraw QR and join
+        // bails "Unsupported QR type" — mirror the rejection.
+        guard qr != Self.ownInvite else {
+            throw ServiceError.core(msg: "Unsupported QR type")
+        }
+        if let existing = joinedInviteChats[qr] { return existing }
+        guard case .askVerifyContact(let name) = checkQr(accountId: accountId, qr: qr)
+        else {
+            throw ServiceError.core(msg: "not a contact invite")
+        }
+        // Real semantics: the chat exists immediately; the handshake
+        // finishes in the background.
+        let chatId = try createChat(
+            accountId: accountId,
+            email: "\(name.lowercased().replacingOccurrences(of: " ", with: "."))@invite.example",
+            name: name)
+        joinedInviteChats[qr] = chatId
+        return chatId
     }
 
     func createInstantAccount(

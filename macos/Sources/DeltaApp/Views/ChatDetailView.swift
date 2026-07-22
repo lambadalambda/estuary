@@ -19,31 +19,27 @@ struct ChatDetailView: View {
         }
         .navigationTitle(chat.name)
         .navigationSubtitle(chat.isContactRequest ? "Contact request" : "")
+        // Drops STAGE (issue: attachment-staging-in-composer) — nothing
+        // leaves the machine until the user hits send. One attachment per
+        // message: the first file of a multi-drop wins; a later drop
+        // replaces it. Keyed on THIS chat: the provider callback is async
+        // and the user may have switched conversations by then.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            let caption = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            let quotedMsgId = model.replyTo?.id
-            for provider in providers {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url, url.isFileURL {
-                        Task { @MainActor in
-                            sendDroppedFile(
-                                url: url, caption: caption,
-                                quotedMsgId: quotedMsgId)
-                        }
+            // No composer on contact requests — staging would be an
+            // invisible time bomb that sends when the chat is accepted.
+            guard !chat.isContactRequest, let provider = providers.first
+            else { return false }
+            let accountId = accountId
+            let chatId = chat.id
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL {
+                    Task { @MainActor in
+                        model.stageAttachment(
+                            path: url.path, accountId: accountId, chatId: chatId)
                     }
                 }
             }
             return true
-        }
-    }
-
-    private func sendDroppedFile(url: URL, caption: String, quotedMsgId: UInt32?) {
-        Task {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            await model.sendAttachment(
-                accountId: accountId, chatId: chat.id, path: url.path,
-                caption: caption, quotedMsgId: quotedMsgId)
         }
     }
 }
@@ -80,8 +76,6 @@ private struct ChatComposerView: View {
     let accountId: UInt32
     let chat: ChatItem
     @State private var showAttachPicker = false
-    @State private var attachmentCaption = ""
-    @State private var attachmentReplyId: UInt32?
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -90,9 +84,8 @@ private struct ChatComposerView: View {
             .onChange(of: chat.id) { composerFocused = true }
             .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
                 if case .success(let url) = result {
-                    sendFile(
-                        url: url, caption: attachmentCaption,
-                        quotedMsgId: attachmentReplyId)
+                    model.stageAttachment(
+                        path: url.path, accountId: accountId, chatId: chat.id)
                 }
             }
     }
@@ -145,14 +138,14 @@ private struct ChatComposerView: View {
                     // (issue: reply-banner-half-screen).
                     .fixedSize(horizontal: false, vertical: true)
                 }
+                if let staged = model.stagedAttachmentPath {
+                    stagedAttachmentChip(staged)
+                }
                 // Baseline alignment centers the icons with a single line
                 // and keeps them anchored to the last line as the field
                 // grows — no hand-tuned paddings.
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Button {
-                        attachmentCaption = model.draft.trimmingCharacters(
-                            in: .whitespacesAndNewlines)
-                        attachmentReplyId = model.replyTo?.id
                         showAttachPicker = true
                     } label: {
                         Image(systemName: "paperclip")
@@ -183,25 +176,59 @@ private struct ChatComposerView: View {
         }
     }
 
+    /// Staged-attachment preview between reply banner and input: image
+    /// thumbnail or file icon + name, with a remove control. The file
+    /// only sends when the user does.
+    private func stagedAttachmentChip(_ path: String) -> some View {
+        HStack(spacing: 8) {
+            if let image = ImageCache.load(path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: "doc.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text((path as NSString).lastPathComponent)
+                    .font(.caption)
+                    .lineLimit(1)
+                Text("Sends with your message")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                model.removeStagedAttachment()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        // Greedy-decoration family rule: pin banners to content height.
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var canSend: Bool {
-        !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        model.stagedAttachmentPath != nil
+            || !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sendDraft() {
+        composerFocused = true
+        if model.stagedAttachmentPath != nil {
+            Task { await model.sendStagedAttachment() }
+            return
+        }
         let text = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        composerFocused = true
         Task { await model.send(text) }
-    }
-
-    private func sendFile(url: URL, caption: String, quotedMsgId: UInt32?) {
-        Task {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            await model.sendAttachment(
-                accountId: accountId, chatId: chat.id, path: url.path,
-                caption: caption, quotedMsgId: quotedMsgId)
-        }
     }
 }
 

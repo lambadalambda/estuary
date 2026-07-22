@@ -119,6 +119,38 @@ final class AppModel {
             expandedMessageIds.insert(msgId)
         }
     }
+
+    /// Attachment staged in the composer, sent only on explicit send with
+    /// the draft as caption (issue: attachment-staging-in-composer).
+    /// Kept per conversation like drafts: switching chats hides it,
+    /// switching back restores it.
+    private var stagedAttachments: [ConversationKey: String] = [:]
+    var stagedAttachmentPath: String? {
+        selectedConversationKey.flatMap { stagedAttachments[$0] }
+    }
+
+    /// Keyed explicitly on the DROP-TARGET conversation: provider
+    /// callbacks arrive async (iCloud placeholders, file promises), and
+    /// reading the current selection then would stage into whichever chat
+    /// the user switched to meanwhile.
+    func stageAttachment(path: String, accountId: UInt32, chatId: UInt32) {
+        stagedAttachments[ConversationKey(accountId: accountId, chatId: chatId)] = path
+    }
+
+    func removeStagedAttachment() {
+        guard let key = selectedConversationKey else { return }
+        stagedAttachments.removeValue(forKey: key)
+    }
+
+    func sendStagedAttachment() async {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId,
+            let path = stagedAttachmentPath
+        else { return }
+        await sendAttachment(
+            accountId: accountId, chatId: chatId, path: path,
+            caption: draft.trimmingCharacters(in: .whitespacesAndNewlines),
+            quotedMsgId: replyTo?.id)
+    }
     private var drafts: [ConversationKey: String] = [:]
     var draft: String {
         get {
@@ -1028,6 +1060,12 @@ final class AppModel {
             if accountId == selectedAccountId, chatId == selectedChatId,
                replyTo?.id == replyId, generation == selectionGeneration {
                 replyTo = nil
+            }
+            // Only what was actually sent leaves the stage: a failed send
+            // (below) keeps it for retry, and a different path staged
+            // meanwhile survives.
+            if stagedAttachments[conversationKey] == path {
+                stagedAttachments.removeValue(forKey: conversationKey)
             }
             clearDraft(
                 conversationKey, ifUnchanged: draftAtStart,

@@ -25,6 +25,106 @@ import Testing
         #expect(model.expandedMessageIds.isEmpty)
     }
 
+    @Test func stagedAttachmentPersistsPerConversationLikeDrafts() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        model.stageAttachment(path: "/tmp/a.png", accountId: 1, chatId: 10)
+        #expect(model.stagedAttachmentPath == "/tmp/a.png")
+
+        // Switching away hides it; the other chat stages independently;
+        // switching back restores — drafts semantics.
+        model.selectedChatId = 11
+        await model.chatSelectionChanged()
+        #expect(model.stagedAttachmentPath == nil)
+        model.stageAttachment(path: "/tmp/b.pdf", accountId: 1, chatId: 11)
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+        #expect(model.stagedAttachmentPath == "/tmp/a.png")
+
+        model.removeStagedAttachment()
+        #expect(model.stagedAttachmentPath == nil)
+        model.selectedChatId = 11
+        await model.chatSelectionChanged()
+        #expect(model.stagedAttachmentPath == "/tmp/b.pdf")
+    }
+
+    @Test func sendStagedAttachmentSendsCaptionAndReplyThenClears() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        model.draft = "the caption"
+        let quoted = testMessages(1 ... 1)[0]
+        model.replyTo = quoted
+        model.stageAttachment(path: "/tmp/pic.png", accountId: 1, chatId: 10)
+
+        await service.enqueueSendMessage("staged")
+        let task = Task { await model.sendStagedAttachment() }
+        try await service.waitUntilSendMessageSuspended("staged")
+        await service.resumeSendMessage("staged", result: 42)
+        await task.value
+
+        let record = await service.lastSendRecord()
+        #expect(record == ScriptedChatService.SendRecord(
+            text: "the caption", filePath: "/tmp/pic.png", quotedMsgId: quoted.id))
+        #expect(model.stagedAttachmentPath == nil)
+        #expect(model.draft.isEmpty)
+        #expect(model.replyTo == nil)
+    }
+
+    @Test func failedStagedSendKeepsAttachmentAndDraft() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        model.draft = "retry me"
+        model.stageAttachment(path: "/tmp/pic.png", accountId: 1, chatId: 10)
+
+        await service.enqueueSendMessage("staged-fail")
+        let task = Task { await model.sendStagedAttachment() }
+        try await service.waitUntilSendMessageSuspended("staged-fail")
+        await service.failSendMessage("staged-fail")
+        await task.value
+
+        #expect(model.stagedAttachmentPath == "/tmp/pic.png")
+        #expect(model.draft == "retry me")
+        #expect(model.actionError != nil)
+    }
+
+    @Test func restagingDuringSuspendedSendSurvivesTheCompletion() async throws {
+        // The success block un-stages only the path it SENT: a file
+        // staged while the previous one is still uploading must not
+        // vanish when that upload completes.
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        model.stageAttachment(path: "/tmp/first.png", accountId: 1, chatId: 10)
+        await service.enqueueSendMessage("slow-send")
+        let task = Task { await model.sendStagedAttachment() }
+        try await service.waitUntilSendMessageSuspended("slow-send")
+
+        model.stageAttachment(path: "/tmp/second.png", accountId: 1, chatId: 10)
+        await service.resumeSendMessage("slow-send", result: 7)
+        await task.value
+
+        #expect(model.stagedAttachmentPath == "/tmp/second.png")
+    }
+
     @Test func concurrentReloadDoesNotClobberPrependedHistory() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()
@@ -1368,6 +1468,13 @@ private actor ScriptedChatService: ChatService {
     func enqueueSendMessage(_ label: String) { sendMessagePlans.append(label) }
     func enqueueBlockChat(_ label: String) { blockChatPlans.append(label) }
     func sendMessageCallCount() -> Int { sendMessageCalls }
+    struct SendRecord: Equatable, Sendable {
+        var text: String?
+        var filePath: String?
+        var quotedMsgId: UInt32?
+    }
+    private var sendMessageRecords: [SendRecord] = []
+    func lastSendRecord() -> SendRecord? { sendMessageRecords.last }
     func searchCallCount() -> Int { searchCalls }
     func enqueueSearch(_ plan: ChatListPlan) { searchPlans.append(plan) }
 
@@ -1659,6 +1766,8 @@ private actor ScriptedChatService: ChatService {
         accountId: UInt32, chatId: UInt32, text: String?, filePath: String?, quotedMsgId: UInt32?
     ) async throws -> UInt32 {
         sendMessageCalls += 1
+        sendMessageRecords.append(SendRecord(
+            text: text, filePath: filePath, quotedMsgId: quotedMsgId))
         guard !sendMessagePlans.isEmpty else { throw unused() }
         let label = sendMessagePlans.removeFirst()
         return try await withCheckedThrowingContinuation {

@@ -139,6 +139,11 @@ private struct ChatComposerView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
+                    // The accent bar is greedy: without pinning the banner
+                    // to its ideal height it accepts ANY proposal, and the
+                    // chat VStack then hands the composer half the window
+                    // (issue: reply-banner-half-screen).
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 // Baseline alignment centers the icons with a single line
                 // and keeps them anchored to the last line as the field

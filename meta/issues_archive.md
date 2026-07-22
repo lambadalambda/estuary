@@ -31,3 +31,4 @@
 - [x] [Telegram-style message context menu](issues/telegram-style-context-menu.md)
 - [x] [Telegram-style reaction pills: in-bubble, reactor avatars](issues/telegram-style-reactions.md)
 - [x] [Long plain messages truncate to one line; no proper collapse for huge ones](issues/long-message-height-and-collapse.md)
+- [x] [Reply banner fills half the screen](issues/reply-banner-half-screen.md)

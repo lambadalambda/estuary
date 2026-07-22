@@ -1,5 +1,21 @@
 # DEVLOG
 
+## 2026-07-22 — Pill hover affordance; reply banner un-ballooned
+
+Reaction pills got a hand cursor + hover tint (Color.primary wash works
+on all four fill/appearance combos); review caught that a pill vanishing
+mid-hover (removing your own last reaction, row recycling) leaks the
+pushed NSCursor — onDisappear pops it. Reply banner filling half the
+window was the greedy-accent-bar family again: the bar made the composer
+accept any height and the chat VStack split the window between two
+greedy children; fixedSize(vertical:) on the banner pins it. Rule of
+thumb recorded: any decorative Shape given only a width constraint
+poisons ancestor sizing wherever the proposal isn't content-driven —
+third instance (bubble quote, height measurement, composer banner).
+Filed from the same user report: composer attachment staging (drop/
+attach currently send immediately) and image paste, staged as dependent
+issues.
+
 ## 2026-07-22 — One-line bubbles: row measurement fixed; real Show more
 
 User report: long plain messages cut to one line + "…", clicking reflowed

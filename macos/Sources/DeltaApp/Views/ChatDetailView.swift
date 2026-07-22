@@ -76,11 +76,26 @@ private struct ChatComposerView: View {
     let accountId: UInt32
     let chat: ChatItem
     @State private var showAttachPicker = false
+    @State private var pasteMonitor: Any?
     @FocusState private var composerFocused: Bool
 
     var body: some View {
         composer
-            .onAppear { composerFocused = true }
+            .onAppear {
+                composerFocused = true
+                model.composerHasFocus = true
+                installPasteMonitor()
+            }
+            .onDisappear {
+                if let pasteMonitor {
+                    NSEvent.removeMonitor(pasteMonitor)
+                }
+                pasteMonitor = nil
+                model.composerHasFocus = false
+            }
+            .onChange(of: composerFocused) { _, focused in
+                model.composerHasFocus = focused
+            }
             .onChange(of: chat.id) { composerFocused = true }
             .fileImporter(isPresented: $showAttachPicker, allowedContentTypes: [.item]) { result in
                 if case .success(let url) = result {
@@ -213,6 +228,37 @@ private struct ChatComposerView: View {
         .padding(.top, 8)
         // Greedy-decoration family rule: pin banners to content height.
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Cmd+V with an image or file on the pasteboard stages it (issue:
+    /// composer-image-paste). A key-event monitor, not onPasteCommand:
+    /// the focused field's editor wins the paste command and would insert
+    /// the URL as text. The model reads the CURRENT selection, so a
+    /// captured stale view copy can't misdirect the stage; text-only
+    /// pasteboards fall through to the normal paste.
+    private func installPasteMonitor() {
+        guard pasteMonitor == nil else { return }
+        let model = model
+        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+            let typed = event.charactersIgnoringModifiers?.lowercased()
+            // Cmd+V with Caps Lock allowed but not Shift/Option/Control;
+            // the keyCode fallback covers non-Latin layouts (Cyrillic
+            // etc. report their own character), gated on non-ASCII so a
+            // Dvorak Cmd+<that position> is never misread as paste.
+            let isPasteKey = typed == "v"
+                || (event.keyCode == 9
+                    && typed?.first?.isASCII != true)
+            guard flags.contains(.command),
+                flags.isDisjoint(with: [.shift, .option, .control]),
+                isPasteKey
+            else { return event }
+            let staged = MainActor.assumeIsolated {
+                model.composerHasFocus && model.stagePasteboardAttachment()
+            }
+            return staged ? nil : event
+        }
     }
 
     private var canSend: Bool {

@@ -33,3 +33,5 @@
 - [x] [Long plain messages truncate to one line; no proper collapse for huge ones](issues/long-message-height-and-collapse.md)
 - [x] [Reply banner fills half the screen](issues/reply-banner-half-screen.md)
 - [x] [Reaction pills need hover affordance](issues/reaction-pill-hover-affordance.md)
+- [x] [Attachments send immediately instead of staging in the composer](issues/attachment-staging-in-composer.md)
+- [x] [Image attachments can't be pasted into the composer](issues/composer-image-paste.md)

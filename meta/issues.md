@@ -12,5 +12,3 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
-- [ ] [Attachments send immediately instead of staging in the composer](issues/attachment-staging-in-composer.md)
-- [ ] [Image attachments can't be pasted into the composer](issues/composer-image-paste.md)

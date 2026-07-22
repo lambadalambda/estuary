@@ -120,6 +120,12 @@ final class AppModel {
         }
     }
 
+    /// Mirror of the composer field's focus, kept fresh by the view: the
+    /// paste monitor gates on it so Cmd+V aimed at the search field or a
+    /// sheet's text field is never hijacked (FocusState itself can't be
+    /// read reliably from an event-monitor closure).
+    var composerHasFocus = false
+
     /// Attachment staged in the composer, sent only on explicit send with
     /// the draft as caption (issue: attachment-staging-in-composer).
     /// Kept per conversation like drafts: switching chats hides it,
@@ -134,12 +140,45 @@ final class AppModel {
     /// reading the current selection then would stage into whichever chat
     /// the user switched to meanwhile.
     func stageAttachment(path: String, accountId: UInt32, chatId: UInt32) {
-        stagedAttachments[ConversationKey(accountId: accountId, chatId: chatId)] = path
+        let key = ConversationKey(accountId: accountId, chatId: chatId)
+        if let old = stagedAttachments[key], old != path {
+            discardPastedTempFile(old)
+        }
+        stagedAttachments[key] = path
     }
 
     func removeStagedAttachment() {
         guard let key = selectedConversationKey else { return }
-        stagedAttachments.removeValue(forKey: key)
+        if let old = stagedAttachments.removeValue(forKey: key) {
+            discardPastedTempFile(old)
+        }
+    }
+
+    /// Cmd+V handler (issue: composer-image-paste): a file URL or image
+    /// data on the pasteboard stages an attachment for the selected chat
+    /// (bitmaps land in a temp .png first). Returns false for text-only
+    /// pasteboards so the normal text paste proceeds — the caller only
+    /// swallows the key event on true.
+    func stagePasteboardAttachment() -> Bool {
+        guard let accountId = selectedAccountId, let chatId = selectedChatId,
+            selectedChat?.isContactRequest != true
+        else { return false }
+        let pasteboard = NSPasteboard.general
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]) as? [URL],
+            let url = urls.first
+        {
+            stageAttachment(path: url.path, accountId: accountId, chatId: chatId)
+            return true
+        }
+        guard
+            let data = pasteboard.data(forType: .png)
+                ?? pasteboard.data(forType: .tiff),
+            let path = stagePastedImageData(data)
+        else { return false }
+        stageAttachment(path: path, accountId: accountId, chatId: chatId)
+        return true
     }
 
     func sendStagedAttachment() async {

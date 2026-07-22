@@ -102,6 +102,72 @@ import Testing
         #expect(model.actionError != nil)
     }
 
+    @Test func pasteboardImageAndFileStageButTextDoesNot() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+        let pasteboard = NSPasteboard.general
+
+        // Text-only: falls through so the field's normal paste runs.
+        pasteboard.clearContents()
+        pasteboard.setString("just words", forType: .string)
+        #expect(!model.stagePasteboardAttachment())
+        #expect(model.stagedAttachmentPath == nil)
+
+        // File URL flavor stages the file itself.
+        pasteboard.clearContents()
+        pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/copied.pdf") as NSURL])
+        #expect(model.stagePasteboardAttachment())
+        #expect(model.stagedAttachmentPath == "/tmp/copied.pdf")
+
+        // Bare bitmap data lands as a staged temp .png.
+        model.removeStagedAttachment()
+        let image = NSImage(size: NSSize(width: 8, height: 8))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: 8, height: 8).fill()
+        image.unlockFocus()
+        pasteboard.clearContents()
+        pasteboard.setData(image.tiffRepresentation!, forType: .tiff)
+        #expect(model.stagePasteboardAttachment())
+        let staged = try #require(model.stagedAttachmentPath)
+        #expect(staged.hasSuffix(".png"))
+        #expect(FileManager.default.fileExists(atPath: staged))
+
+        // Removing a PASTED stage reclaims its temp file (user files are
+        // never touched — covered by the .pdf staying staged-by-path).
+        model.removeStagedAttachment()
+        #expect(!FileManager.default.fileExists(atPath: staged))
+        pasteboard.clearContents()
+    }
+
+    @Test func contactRequestChatRefusesPasteboardStaging() async throws {
+        // Parity with the drop handler: no composer chip exists on a
+        // contact request, so a stage would be an invisible time bomb.
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await service.setChat(
+            ChatItem(
+                id: 10, name: "Request", preview: "", timestamp: 0,
+                freshCount: 0, isSelfTalk: false, isPinned: false,
+                isMuted: false, isContactRequest: true, color: "#d33682"),
+            accountId: 1)
+        await model.bootstrap()
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/copied.pdf") as NSURL])
+        #expect(!model.stagePasteboardAttachment())
+        #expect(model.stagedAttachmentPath == nil)
+        pasteboard.clearContents()
+    }
+
     @Test func restagingDuringSuspendedSendSurvivesTheCompletion() async throws {
         // The success block un-stages only the path it SENT: a file
         // staged while the previous one is still uploading must not

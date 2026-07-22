@@ -1,5 +1,28 @@
 # DEVLOG
 
+## 2026-07-22 — Composer attachment staging + image paste
+
+Attachments no longer send on drop/pick: they stage per conversation
+(drafts-style dict), render as a chip with remove control, and go out on
+explicit send with the draft as caption. Review caught two real traps
+before commit: async drop-provider callbacks must stage into the
+DROP-TARGET chat (keying on read-at-callback selection misdirects a slow
+iCloud/file-promise drop after a chat switch), and contact-request chats
+must refuse stages (no composer chip → invisible time bomb that ships on
+Accept). Paste finding worth remembering: **onPasteCommand never fires
+while a TextField is focused** — the field editor wins and pastes a file
+URL as literal text. The working shape is an NSEvent local keyDown
+monitor gated on a model-mirrored composer-focus flag (FocusState can't
+be read from monitor closures), with Caps-Lock-tolerant flag matching
+and a keyCode fallback for non-Latin layouts. Pasted bitmaps normalize
+to PNG in tmp/EstuaryPasted (reclaimed on replace/remove; sent files
+left for the OS tmp purge — the mock renders from the original path).
+Known v1 trade-off: PNG encode of a huge pasted screenshot runs
+synchronously in the keypress (the swallow decision must be sync).
+Monitor itself is the untestable AppKit sliver; VM-verified both ways
+(focused paste stages, unfocused passes through). Everything else is
+unit-tested at the model seam.
+
 ## 2026-07-22 — Pill hover affordance; reply banner un-ballooned
 
 Reaction pills got a hand cursor + hover tint (Color.primary wash works

@@ -394,6 +394,12 @@ struct MessageBubbleView: View {
                 }
                 .padding(6)
                 .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                // Defensive: the accent bar is greedy (third bug in this
+                // family — see DEVLOG 2026-07-22). Contained today by the
+                // table's fixed row heights + pinned measurement, but pin
+                // it here so a future non-content-driven host can't
+                // balloon it.
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             mediaContent

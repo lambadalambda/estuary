@@ -12,4 +12,3 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
-- [ ] [Long plain messages truncate to one line; no proper collapse for huge ones](issues/long-message-height-and-collapse.md)

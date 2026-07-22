@@ -30,3 +30,4 @@
 - [x] [At-bottom detection needs human wiggle room](issues/at-bottom-wiggle-room.md)
 - [x] [Telegram-style message context menu](issues/telegram-style-context-menu.md)
 - [x] [Telegram-style reaction pills: in-bubble, reactor avatars](issues/telegram-style-reactions.md)
+- [x] [Long plain messages truncate to one line; no proper collapse for huge ones](issues/long-message-height-and-collapse.md)

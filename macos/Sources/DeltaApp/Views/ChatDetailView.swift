@@ -394,19 +394,32 @@ struct MessageBubbleView: View {
             mediaContent
 
             if !message.text.isEmpty {
-                if containsLink(message.text) {
+                let display = longMessageDisplay(
+                    message.text,
+                    expanded: model.expandedMessageIds.contains(message.id))
+                if containsLink(display.shown) {
                     // AppKit-backed: per-range hand cursor + native link
                     // clicks; SwiftUI's pointerStyle loses to the selection
                     // pointer here.
                     LinkText(
-                        text: message.text,
+                        text: display.shown,
                         textColor: message.isOutgoing ? .white : .labelColor,
                         linkColor: message.isOutgoing
                             ? .white : EstuaryTheme.accentNSColor)
                 } else {
-                    Text(message.text)
+                    Text(display.shown)
                         .textSelection(.enabled)
                         .foregroundStyle(message.isOutgoing ? .white : .primary)
+                }
+                if display.isExpandable {
+                    Button(display.isTruncated ? "Show more" : "Show less") {
+                        model.toggleMessageExpansion(message.id)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(
+                        message.isOutgoing ? Color.white : EstuaryTheme.accent)
+                    .padding(.top, 2)
                 }
             }
             if !message.reactions.isEmpty {

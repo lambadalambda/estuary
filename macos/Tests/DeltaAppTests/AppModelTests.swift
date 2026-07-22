@@ -5,6 +5,26 @@ import Testing
 
 @MainActor
 @Suite struct AppModelTests {
+    @Test func messageExpansionTogglesAndClearsOnChatSwitch() async throws {
+        _ = NSApplication.shared
+        let service = ScriptedChatService()
+        let model = AppModel(service: service)
+        await model.bootstrap()
+
+        model.toggleMessageExpansion(5)
+        #expect(model.expandedMessageIds == [5])
+        model.toggleMessageExpansion(7)
+        #expect(model.expandedMessageIds == [5, 7])
+        model.toggleMessageExpansion(5)
+        #expect(model.expandedMessageIds == [7])
+
+        // Per-visit state: switching chats must not leak expansion into
+        // a conversation where the ids mean different messages.
+        model.selectedChatId = 10
+        await model.chatSelectionChanged()
+        #expect(model.expandedMessageIds.isEmpty)
+    }
+
     @Test func concurrentReloadDoesNotClobberPrependedHistory() async throws {
         _ = NSApplication.shared
         let service = ScriptedChatService()

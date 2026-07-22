@@ -41,7 +41,8 @@ struct ChatTableView: NSViewRepresentable {
     func updateNSView(_ view: NSScrollView, context: Context) {
         context.coordinator.apply(
             entries: model.messageListEntries,
-            followGeneration: model.followBottomGeneration)
+            followGeneration: model.followBottomGeneration,
+            expandedIds: model.expandedMessageIds)
     }
 
     @MainActor
@@ -59,6 +60,7 @@ struct ChatTableView: NSViewRepresentable {
         private var heightCache: [String: CGFloat] = [:]
         private var cachedWidth: CGFloat = 0
         private var visibleReported: Set<String> = []
+        private var expandedIds: Set<UInt32> = []
         private var loadingOlder = false
         private var applying = false
 
@@ -125,7 +127,10 @@ struct ChatTableView: NSViewRepresentable {
 
         // MARK: Update application
 
-        func apply(entries newEntries: [MessageListEntry], followGeneration: UInt64) {
+        func apply(
+            entries newEntries: [MessageListEntry], followGeneration: UInt64,
+            expandedIds newExpanded: Set<UInt32>
+        ) {
             let newIds = newEntries.map(\.id)
             let transition = entriesTransition(from: ids, to: newIds)
             let followRequested =
@@ -137,6 +142,11 @@ struct ChatTableView: NSViewRepresentable {
                 applyTransition(transition, newEntries: newEntries, newIds: newIds)
                 applying = false
             }
+            // After the transition: expansion toggles arrive with
+            // transition == .none, and running the diff against the OLD
+            // entries on a chat switch would invalidate rows the reset is
+            // about to reload anyway.
+            applyExpansionChanges(newExpanded)
             if followRequested || transition == .initial {
                 scrollToBottom()
             }
@@ -216,7 +226,7 @@ struct ChatTableView: NSViewRepresentable {
                     as? NSHostingView<AnyView> {
                     view.rootView = rowContent(entries[row])
                 }
-                heightCache.removeValue(forKey: heightKey(entries[row]))
+                invalidateHeights(for: entries[row])
                 resized.insert(row)
             }
             if !resized.isEmpty {
@@ -386,8 +396,56 @@ struct ChatTableView: NSViewRepresentable {
             return height
         }
 
+        /// Keyed on the LIVE model set (not the coordinator mirror): the
+        /// measured content reads the same set, so key and measurement
+        /// can never disagree — a mirror-keyed cache could file an
+        /// expanded height under the collapsed key in the window between
+        /// the toggle and the next apply().
         private func heightKey(_ entry: MessageListEntry) -> String {
-            entry.id
+            if case .message(let message, _) = entry,
+                model.expandedMessageIds.contains(message.id)
+            {
+                return entry.id + "+expanded"
+            }
+            return entry.id
+        }
+
+        /// Both expansion variants of a row's height: an entry change
+        /// (reaction arriving, edit) invalidates the OTHER variant too, or
+        /// the next toggle would restore a stale height.
+        private func invalidateHeights(for entry: MessageListEntry) {
+            heightCache.removeValue(forKey: entry.id)
+            heightCache.removeValue(forKey: entry.id + "+expanded")
+        }
+
+        /// Long-message expand/collapse changes a row's height without
+        /// changing its entry: re-measure toggled rows (the bubble itself
+        /// re-renders through model observation). Scroll policy: expanding
+        /// keeps the reading position (growth happens below the anchor —
+        /// re-pinning bottom would teleport past the whole message);
+        /// collapsing re-pins only when the user was at the bottom.
+        private func applyExpansionChanges(_ newExpanded: Set<UInt32>) {
+            let toggled = expandedIds.symmetricDifference(newExpanded)
+            expandedIds = newExpanded
+            guard !toggled.isEmpty, table != nil else { return }
+            var changed = IndexSet()
+            for (row, entry) in entries.enumerated() {
+                if case .message(let message, _) = entry,
+                    toggled.contains(message.id)
+                {
+                    changed.insert(row)
+                }
+            }
+            guard !changed.isEmpty else { return }
+            let expanding = toggled.contains { newExpanded.contains($0) }
+            let wasAtBottom = isAtBottom()
+            let anchor = saveAnchor()
+            table.noteHeightOfRows(withIndexesChanged: changed)
+            if !expanding && wasAtBottom {
+                scrollToBottom()
+            } else {
+                restoreAnchor(anchor)
+            }
         }
 
         private func rowContent(_ entry: MessageListEntry) -> AnyView {

@@ -109,6 +109,16 @@ final class AppModel {
     var actionError: String?
     /// Message being replied to (composer banner); sent as quote.
     var replyTo: MessageItem?
+    /// Messages the user expanded past the long-message collapse
+    /// (issue: long-message-height-and-collapse). Per-visit state: cleared
+    /// on chat switch alongside the message window.
+    var expandedMessageIds: Set<UInt32> = []
+
+    func toggleMessageExpansion(_ msgId: UInt32) {
+        if expandedMessageIds.remove(msgId) == nil {
+            expandedMessageIds.insert(msgId)
+        }
+    }
     private var drafts: [ConversationKey: String] = [:]
     var draft: String {
         get {
@@ -1118,6 +1128,7 @@ final class AppModel {
     /// Called when the sidebar selection changes.
     func chatSelectionChanged() async {
         replyTo = nil
+        expandedMessageIds.removeAll()
         if let selectedChatId {
             if let row = chats.first(where: { $0.id == selectedChatId }) {
                 selectedChatCache = row

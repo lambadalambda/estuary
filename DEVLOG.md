@@ -1,5 +1,25 @@
 # DEVLOG
 
+## 2026-07-22 — One-line bubbles: row measurement fixed; real Show more
+
+User report: long plain messages cut to one line + "…", clicking reflowed
+text outside the bubble. Root cause was the table's height primitive:
+NSHostingView.fittingSize returns SwiftUI Text's IDEAL (single-line) size,
+not height-at-width — broken since the AppKit port for any wrapping plain
+message; never seen because demo texts were short and link-bearing
+messages measure correctly through LinkText.sizeThatFits (VM A/B test
+pinned it: plain=collapsed, linked=fine). First fix — NSHostingController
+sizeThatFits proposing (width, ∞) — swapped the bug for giant bubbles:
+greedy views (quote accent bar) expand into any proposed height. Final
+form pins content with .frame(width:) + .fixedSize(vertical:) so Text
+reports wrapped height while decorations keep their ideal; both failure
+modes are regression tests now. On top: >5000-char messages collapse at a
+whitespace boundary with an explicit Show more/Show less (pure
+longMessageDisplay, tested), expansion state on AppModel (cleared on chat
+switch), and ChatTableView re-keys the row height per expansion and
+re-pins the bottom. Untestable-by-unit and covered in the VM instead:
+the actual row resize on toggle and the scroll re-pin.
+
 ## 2026-07-21 — Telegram-style message context menu
 
 Menu composition is a pure descriptor (messageContextMenuEntries /

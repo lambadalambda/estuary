@@ -62,3 +62,15 @@ the model and closures.
   pair it with the new chat header. Swift: 90 passed.
 - Still open: a debug body-count signpost or Instruments trace confirming the
   SwiftUI subtree itself remains stable, plus the grown-window manual trace.
+
+## Audit (2026-07-22) — resolved/superseded
+
+All four requirements verified in the current tree: draft state is read
+only inside ChatComposerView (keystrokes cannot invalidate the message
+list, which is the AppKit table since the port — the eager-VStack
+re-render premise no longer exists); entry assembly runs in AppModel on
+message changes, not in body; SharedLinkDetector is a shared static;
+avatars load through ImageCache; sidebar search debounces 250 ms with
+generation + cancellation. The signpost/Instruments acceptance targeted
+the deleted container; superseded by the table port's stress numbers
+(see appkit-message-table-port).

@@ -76,3 +76,16 @@ single feature issue. Each is a few lines; batch them.
   registration, transient failures retry with a three-attempt bound, and visible
   messages skipped while inactive retry on activation. The second-device/manual
   MDN check remains.
+
+## Audit (2026-07-22)
+
+Re-verified every claim in the current tree: `make test` runs bindings →
+Rust (34) → Swift (155) green in one chain; Info.plist says 15.0; the
+MDN visible-bubble registry has four dedicated tests (epoch races,
+account-id collisions, transient retry, activation retry) and is fed by
+the table's real visible-row range; New Chat keeps the sheet open and
+renders the failure string; drafts/attachments survive failed sends
+(re-covered by the staging tests); reload failure preserves the window.
+ONLY remaining acceptance line: live observation that a second device
+receives MDNs solely for on-screen bubbles — needs a human with two
+devices; everything beneath it is unit-verified.

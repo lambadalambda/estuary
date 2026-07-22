@@ -36,3 +36,4 @@
 - [x] [Attachments send immediately instead of staging in the composer](issues/attachment-staging-in-composer.md)
 - [x] [Image attachments can't be pasted into the composer](issues/composer-image-paste.md)
 - [x] [dcvm correctness batch (search window/order + small fixes)](issues/dcvm-correctness-batch.md)
+- [x] [Cheap rendering performance wins](issues/render-perf-easy-wins.md)

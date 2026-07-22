@@ -169,12 +169,50 @@ async fn build_chat_item(
 }
 
 /// Loads chat rows for the given chatlist flags / search query.
+///
+/// A chat can be deleted between the chatlist snapshot and the per-chat
+/// loads, failing the pass on a row that no longer exists. Core v2.53 has
+/// no optional chat loader and classifying its anyhow chain would couple us
+/// to core's rusqlite version, so the boundary is a single retry against a
+/// FRESH snapshot: the race resolves (the deleted chat is gone from the new
+/// list), while genuine database trouble fails twice and propagates.
 async fn chat_items(
     ctx: &Context,
     listflags: usize,
     query: Option<&str>,
 ) -> Result<Vec<ChatItem>, VmError> {
     let chatlist = Chatlist::try_load(ctx, listflags, query, None).await?;
+    chat_items_with_initial(ctx, listflags, query, &chatlist).await
+}
+
+/// Row building with the retry (see `chat_items`). Split so the offline
+/// test can drive the RETRY PATH itself with a deliberately stale
+/// snapshot — testing through `chat_items` alone never reaches the retry
+/// branch, since it always starts from a fresh list.
+#[doc(hidden)]
+pub async fn chat_items_with_initial(
+    ctx: &Context,
+    listflags: usize,
+    query: Option<&str>,
+    initial: &Chatlist,
+) -> Result<Vec<ChatItem>, VmError> {
+    match chat_rows_for_list(ctx, initial).await {
+        Ok(rows) => Ok(rows),
+        Err(_) => {
+            let fresh = Chatlist::try_load(ctx, listflags, query, None).await?;
+            chat_rows_for_list(ctx, &fresh).await
+        }
+    }
+}
+
+/// One row-building pass over a chatlist snapshot. Public only so the
+/// offline tests can pin the snapshot/deletion race with a stale list;
+/// not part of the exported FFI surface.
+#[doc(hidden)]
+pub async fn chat_rows_for_list(
+    ctx: &Context,
+    chatlist: &Chatlist,
+) -> Result<Vec<ChatItem>, VmError> {
     let mut out = Vec::with_capacity(chatlist.len());
     for index in 0..chatlist.len() {
         let chat_id = chatlist.get_chat_id(index)?;

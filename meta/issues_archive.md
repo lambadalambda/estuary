@@ -35,3 +35,4 @@
 - [x] [Reaction pills need hover affordance](issues/reaction-pill-hover-affordance.md)
 - [x] [Attachments send immediately instead of staging in the composer](issues/attachment-staging-in-composer.md)
 - [x] [Image attachments can't be pasted into the composer](issues/composer-image-paste.md)
+- [x] [dcvm correctness batch (search window/order + small fixes)](issues/dcvm-correctness-batch.md)

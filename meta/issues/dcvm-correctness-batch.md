@@ -63,3 +63,19 @@ implements newest-last.
 - Still open: core v2.53 provides no optional Chat loader or public existence
   query, so the chatlist snapshot/deletion race needs an upstream API or a
   deliberate error-classification boundary before it can be fixed safely.
+
+## Progress (2026-07-22) — resolved
+
+- The last open item is fixed: `chat_items` builds rows via an extracted
+  single pass and, on failure, retries ONCE against a fresh chatlist
+  snapshot. The deletion race resolves (the deleted chat is absent from
+  the new snapshot); genuine database trouble fails twice and propagates.
+  Chosen over error classification: core v2.53 wraps the missing row as
+  rusqlite `QueryReturnedNoRows` inside anyhow context, and matching that
+  from dcvm would couple us to core's rusqlite version or error strings.
+- Offline test pins both halves: the stale-snapshot pass errors on the
+  deleted chat (race mechanism), and the public `chat_list` recovers with
+  the surviving chat only.
+- No exported-API change (the test seam is `#[doc(hidden)] pub`, not
+  uniffi-annotated) — no bindings regen needed. fmt + strict clippy green,
+  Rust 34 passed / 2 relay-ignored.

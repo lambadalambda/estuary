@@ -1280,3 +1280,58 @@ async fn demo_account_seeds_rich_showcase() {
         msgs.iter().map(|m| &m.text).collect::<Vec<_>>()
     );
 }
+
+/// A chat deleted between the chatlist snapshot and the per-chat loads must
+/// not fail the whole sidebar (issue: dcvm-correctness-batch, last open
+/// item). The stale-snapshot pass errors — that mechanism is pinned here —
+/// and `chat_list` recovers by retrying against a fresh snapshot.
+#[tokio::test(flavor = "multi_thread")]
+async fn chat_list_survives_deletion_between_snapshot_and_load() {
+    use dcvm::deltachat::chat::ChatId;
+    use dcvm::deltachat::chatlist::Chatlist;
+
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    app.select_account(id).await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+
+    let keep = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    let doomed = app
+        .create_chat(id, "carol@example.net".into(), "Carol".into())
+        .await
+        .unwrap();
+
+    let ctx = app.context(id).await.unwrap();
+    let stale = Chatlist::try_load(&ctx, 0, None, None).await.unwrap();
+
+    // Baseline: the snapshot builds fine while both chats exist — so the
+    // failure below is attributable to the deletion, not to some
+    // unrelated row-building regression.
+    let baseline = dcvm::app::chat_rows_for_list(&ctx, &stale)
+        .await
+        .expect("baseline rows");
+    assert!(baseline.iter().any(|c| c.id == keep));
+    assert!(baseline.iter().any(|c| c.id == doomed));
+
+    ChatId::new(doomed).delete(&ctx).await.expect("delete chat");
+
+    // The race, reproduced: the same stale snapshot now fails on the
+    // deleted chat.
+    assert!(dcvm::app::chat_rows_for_list(&ctx, &stale).await.is_err());
+
+    // The RETRY PATH recovers: driven with the stale snapshot so the
+    // Err arm (fresh re-snapshot) actually executes.
+    let rows = dcvm::app::chat_items_with_initial(&ctx, 0, None, &stale)
+        .await
+        .expect("retry recovers");
+    assert!(rows.iter().any(|c| c.id == keep));
+    assert!(!rows.iter().any(|c| c.id == doomed));
+
+    // And the public surface end-to-end.
+    let chats = app.chat_list(id).await.expect("chat_list after deletion");
+    assert!(chats.iter().any(|c| c.id == keep));
+    assert!(!chats.iter().any(|c| c.id == doomed));
+}

@@ -742,6 +742,40 @@ struct MessageBubbleView: View {
     }
 }
 
+/// Hand cursor + a tint wash while hovering a reaction pill.
+/// `Color.primary` adapts to the appearance, so the wash reads on every
+/// pill fill: it darkens the light ones in light mode and lightens the
+/// dark ones in dark mode.
+private struct PillHoverAffordance: ViewModifier {
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                Capsule()
+                    .fill(Color.primary.opacity(isHovered ? 0.12 : 0))
+                    .allowsHitTesting(false))
+            .animation(.easeOut(duration: 0.1), value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            // A pill can vanish mid-hover (clicking away your own last
+            // reaction, row recycling): onHover(false) never fires then,
+            // which would leak the pushed cursor for the session.
+            .onDisappear {
+                if isHovered {
+                    isHovered = false
+                    NSCursor.pop()
+                }
+            }
+    }
+}
+
 // MARK: - Image cache
 
 /// Decoded-image cache: every bubble body re-evaluates on view updates
@@ -779,6 +813,9 @@ struct ReactionChipsView: View {
                     chip(reaction)
                 }
                 .buttonStyle(.plain)
+                // Pills toggle your reaction; without this nothing says
+                // they're clickable (issue: reaction-pill-hover-affordance).
+                .modifier(PillHoverAffordance())
             }
         }
     }

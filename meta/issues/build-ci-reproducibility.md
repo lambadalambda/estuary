@@ -78,3 +78,14 @@ replacement. Toolchain and relay inputs are also mutable.
   `.github/BRANCH_PROTECTION.md`.
 - Still open: observe the new nightly workflow complete successfully and apply
   the documented branch-protection rule in repository settings.
+
+## Resolution (2026-07-23)
+
+Both residuals settled. The reworked nightly has been observed green
+across every push since 2026-07-18 (including the 2026-07-23 group
+invite build, 11m39s, published transactionally); its failure machinery
+was also exercised for real during the deployment-target incident.
+Branch protection: deliberately NOT applied — the project works by
+direct pushes to main (no PR flow), and strict required checks would
+block them. `.github/BRANCH_PROTECTION.md` stays as the recipe for the
+day a PR flow exists.

@@ -7,4 +7,3 @@
 - [ ] [Correctness + housekeeping leftovers from the 2026-07-18 review](issues/review-leftovers-batch.md)
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
-- [ ] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)

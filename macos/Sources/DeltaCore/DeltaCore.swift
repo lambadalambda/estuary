@@ -737,12 +737,13 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func searchMessages(accountId: UInt32, query: String) async throws  -> [MessageItem]
     
     /**
-     * My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
-     * securejoin link, also used verbatim as QR content. First contact on
-     * chatmail relays REQUIRES this — filtermail rejects plain first mails
-     * (issue: qr-invite-contact-flow).
+     * My shareable `https://i.delta.chat/#…` securejoin invite, also used
+     * verbatim as QR content. `chat_id` None = 1:1 contact invite; Some =
+     * invite into that group. First contact on chatmail relays REQUIRES
+     * this — filtermail rejects plain first mails
+     * (issues: qr-invite-contact-flow, encrypted-group-creation).
      */
-    func securejoinQr(accountId: UInt32) async throws  -> String
+    func securejoinQr(accountId: UInt32, chatId: UInt32?) async throws  -> String
     
     func selectAccount(id: UInt32) async throws 
     
@@ -1397,17 +1398,18 @@ open func searchMessages(accountId: UInt32, query: String)async throws  -> [Mess
 }
     
     /**
-     * My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
-     * securejoin link, also used verbatim as QR content. First contact on
-     * chatmail relays REQUIRES this — filtermail rejects plain first mails
-     * (issue: qr-invite-contact-flow).
+     * My shareable `https://i.delta.chat/#…` securejoin invite, also used
+     * verbatim as QR content. `chat_id` None = 1:1 contact invite; Some =
+     * invite into that group. First contact on chatmail relays REQUIRES
+     * this — filtermail rejects plain first mails
+     * (issues: qr-invite-contact-flow, encrypted-group-creation).
      */
-open func securejoinQr(accountId: UInt32)async throws  -> String  {
+open func securejoinQr(accountId: UInt32, chatId: UInt32?)async throws  -> String  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_dcvm_fn_method_dcapp_securejoin_qr(
-                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId)
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterOptionUInt32.lower(chatId)
                 )
             },
             pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
@@ -3551,7 +3553,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_dcvm_checksum_method_dcapp_search_messages() != 12636) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_dcvm_checksum_method_dcapp_securejoin_qr() != 64476) {
+    if (uniffi_dcvm_checksum_method_dcapp_securejoin_qr() != 29546) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_select_account() != 20991) {

@@ -6,6 +6,45 @@ import Testing
 // DCNATIVE_AUTOSELECT=1): these pin the properties the captures rely on.
 
 @Suite struct MockShowcaseTests {
+    /// Group invite semantics mirror core (issue:
+    /// encrypted-group-creation-correctness): the link round-trips the
+    /// percent-encoded name, own invites are rejected like core's
+    /// withdraw classification, joins are idempotent, and 1:1 chats
+    /// cannot generate group links.
+    @Test func groupInviteMirrorsRealSemantics() async throws {
+        let mock = MockChatService()
+        let account = await mock.addAccount()
+        let group = try await mock.createGroup(
+            accountId: account, name: "Chess Club", memberContactIds: [])
+
+        let link = try await mock.securejoinQr(accountId: account, chatId: group)
+        #expect(link.contains("g=Chess%20Club"))
+        #expect(
+            await mock.checkQr(accountId: account, qr: link)
+                == .askVerifyGroup(groupName: "Chess Club"))
+
+        // Own invite: core classifies it as a withdraw QR and join bails.
+        await #expect(throws: ServiceError.self) {
+            _ = try await mock.joinSecurejoin(accountId: account, qr: link)
+        }
+
+        // Someone else's group invite joins once, idempotently.
+        let foreign = "https://i.delta.chat/#OTHERFPR&v=3&x=grp9&g=Book%20Circle"
+        let joined = try await mock.joinSecurejoin(accountId: account, qr: foreign)
+        let again = try await mock.joinSecurejoin(accountId: account, qr: foreign)
+        #expect(joined == again)
+        let chats = try await mock.chatList(accountId: account)
+        #expect(chats.filter { $0.name == "Book Circle" }.count == 1)
+        #expect(chats.first { $0.name == "Book Circle" }?.isGroup == true)
+
+        // A 1:1 chat id must not yield a bogus group link.
+        let oneToOne = try await mock.createChat(
+            accountId: account, email: "pia@example.org", name: "Pia")
+        await #expect(throws: ServiceError.self) {
+            _ = try await mock.securejoinQr(accountId: account, chatId: oneToOne)
+        }
+    }
+
     @Test func autoselectOpensTheMediaRichChat() async throws {
         let mock = MockChatService()
         let id = await mock.addDemoAccount()

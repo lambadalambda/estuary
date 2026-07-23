@@ -1348,7 +1348,14 @@ final class AppModel {
     /// when no account is selected or the service fails.
     func inviteLink() async -> String? {
         guard let accountId = selectedAccountId else { return nil }
-        return try? await service.securejoinQr(accountId: accountId)
+        return try? await service.securejoinQr(accountId: accountId, chatId: nil)
+    }
+
+    /// Shareable invite INTO the given group — scanning/pasting it joins
+    /// the group (issue: encrypted-group-creation-correctness).
+    func groupInviteLink(chatId: UInt32) async -> String? {
+        guard let accountId = selectedAccountId else { return nil }
+        return try? await service.securejoinQr(accountId: accountId, chatId: chatId)
     }
 
     /// Preview for a pasted invite: the inviter's display name when the

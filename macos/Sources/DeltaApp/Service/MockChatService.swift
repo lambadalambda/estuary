@@ -275,25 +275,28 @@ actor MockChatService: ChatService {
         if upper.hasPrefix("DCLOGIN:") {
             return .login(address: String(payload.dropFirst("DCLOGIN:".count)))
         }
-        // Securejoin invites: honor the real link's `n=` display-name param
-        // so pasting an invite previews the actual person.
+        // Securejoin invites: honor the real link's params — `g=` carries
+        // a group name (group invite), `n=` the inviter's display name.
         if payload.hasPrefix("https://i.delta.chat/#") || upper.hasPrefix("OPENPGP4FPR:") {
-            return .askVerifyContact(name: Self.inviteName(from: payload))
+            if let groupName = Self.inviteParam("g", from: payload) {
+                return .askVerifyGroup(groupName: groupName)
+            }
+            return .askVerifyContact(
+                name: Self.inviteParam("n", from: payload) ?? "Contact")
         }
         return .unsupported
     }
 
-    /// Mirrors core: the invite link carries the inviter's display name as
-    /// the url-encoded `n=` parameter.
-    private static func inviteName(from payload: String) -> String {
-        guard let fragment = payload.split(separator: "#").last else { return "Contact" }
+    /// Mirrors core's invite-link fragment: url-encoded `key=value` params.
+    private static func inviteParam(_ key: String, from payload: String) -> String? {
+        guard let fragment = payload.split(separator: "#").last else { return nil }
         for param in fragment.split(separator: "&") {
-            if param.hasPrefix("n=") {
-                let raw = String(param.dropFirst(2))
+            if param.hasPrefix("\(key)=") {
+                let raw = String(param.dropFirst(key.count + 1))
                 return raw.removingPercentEncoding ?? raw
             }
         }
-        return "Contact"
+        return nil
     }
 
     private static let ownInvite =
@@ -302,30 +305,50 @@ actor MockChatService: ChatService {
     /// the same chat.
     private var joinedInviteChats: [String: UInt32] = [:]
 
-    func securejoinQr(accountId: UInt32) throws -> String {
+    func securejoinQr(accountId: UInt32, chatId: UInt32?) throws -> String {
         guard accountsById[accountId] != nil else {
             throw ServiceError.core(msg: "no such account: \(accountId)")
         }
-        return Self.ownInvite
+        guard let chatId else { return Self.ownInvite }
+        guard let chat = chatsByAccount[accountId]?.first(where: { $0.id == chatId })
+        else {
+            throw ServiceError.core(msg: "no such chat: \(chatId)")
+        }
+        // Core ensure!'s the chat is a group; a 1:1 id must not yield a
+        // bogus link the real service would reject.
+        guard chat.isGroup else {
+            throw ServiceError.core(
+                msg: "Can't generate SecureJoin QR code for chat \(chatId) of type Single")
+        }
+        let encoded = chat.name.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics) ?? chat.name
+        return "https://i.delta.chat/#MOCKGRP\(chatId)&v=3&x=grp\(chatId)&g=\(encoded)"
     }
 
     func joinSecurejoin(accountId: UInt32, qr: String) throws -> UInt32 {
-        // Core classifies one's own invite as a withdraw QR and join
-        // bails "Unsupported QR type" — mirror the rejection.
-        guard qr != Self.ownInvite else {
+        // Core classifies one's own invites (contact AND group) as
+        // withdraw QRs and join bails "Unsupported QR type" — mirror it.
+        guard qr != Self.ownInvite,
+            !qr.hasPrefix("https://i.delta.chat/#MOCKGRP")
+        else {
             throw ServiceError.core(msg: "Unsupported QR type")
         }
         if let existing = joinedInviteChats[qr] { return existing }
-        guard case .askVerifyContact(let name) = checkQr(accountId: accountId, qr: qr)
-        else {
-            throw ServiceError.core(msg: "not a contact invite")
-        }
         // Real semantics: the chat exists immediately; the handshake
         // finishes in the background.
-        let chatId = try createChat(
-            accountId: accountId,
-            email: "\(name.lowercased().replacingOccurrences(of: " ", with: "."))@invite.example",
-            name: name)
+        let chatId: UInt32
+        switch checkQr(accountId: accountId, qr: qr) {
+        case .askVerifyContact(let name):
+            chatId = try createChat(
+                accountId: accountId,
+                email: "\(name.lowercased().replacingOccurrences(of: " ", with: "."))@invite.example",
+                name: name)
+        case .askVerifyGroup(let groupName):
+            chatId = try createGroup(
+                accountId: accountId, name: groupName, memberContactIds: [])
+        default:
+            throw ServiceError.core(msg: "not a securejoin invite")
+        }
         joinedInviteChats[qr] = chatId
         return chatId
     }

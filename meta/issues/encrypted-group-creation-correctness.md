@@ -57,3 +57,16 @@ member failure leaves an empty or partially populated group behind.
 - Still open: core exposes no fault-injection seam between `create_group` and
   `add_contact_to_chat`, so the unexpected post-creation rollback branch is
   not directly exercised. True cross-device atomicity also needs a core API.
+
+## Resolution (2026-07-23)
+
+Creation-correctness fixes from 2026-07-18 re-verified in the tree.
+Closing addition: group invite generation (securejoin_qr with a chat
+id) + "Group Invite…" in the sidebar group context menu + InviteSheet
+group mode; offline test pins generation + cross-account
+AskVerifyGroup classification, VM-verified both directions, mock
+semantics pinned (own-invite rejection, idempotency, non-group
+refusal). Remaining residuals are upstream-blocked and documented in
+the notes: no core fault-injection seam for the post-creation rollback
+branch, and cross-device create atomicity needs a core API accepting
+validated members pre-sync.

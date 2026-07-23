@@ -196,8 +196,9 @@ protocol ChatService: Sendable {
     /// Classifies a scanned/pasted QR payload (pure parsing, no network).
     func checkQr(accountId: UInt32, qr: String) async throws -> QrKind
     /// My shareable securejoin invite link (`https://i.delta.chat/#…`),
-    /// used verbatim as QR content. First contact on chatmail requires it.
-    func securejoinQr(accountId: UInt32) async throws -> String
+    /// used verbatim as QR content; `chatId` nil = 1:1 contact invite,
+    /// set = invite into that group. First contact on chatmail requires it.
+    func securejoinQr(accountId: UInt32, chatId: UInt32?) async throws -> String
     /// Joins a scanned/pasted securejoin invite; returns the chat id. The
     /// key handshake continues in the background over IO.
     func joinSecurejoin(accountId: UInt32, qr: String) async throws -> UInt32

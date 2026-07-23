@@ -38,3 +38,4 @@
 - [x] [dcvm correctness batch (search window/order + small fixes)](issues/dcvm-correctness-batch.md)
 - [x] [Cheap rendering performance wins](issues/render-perf-easy-wins.md)
 - [x] [QR invite contact flow (first contact on chatmail)](issues/qr-invite-contact-flow.md)
+- [x] [Encrypted group member discovery and safe creation](issues/encrypted-group-creation-correctness.md)

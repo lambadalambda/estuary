@@ -159,8 +159,8 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
-    func securejoinQr(accountId: UInt32) async throws -> String {
-        do { return try await app().securejoinQr(accountId: accountId) }
+    func securejoinQr(accountId: UInt32, chatId: UInt32?) async throws -> String {
+        do { return try await app().securejoinQr(accountId: accountId, chatId: chatId) }
         catch { throw mapError(error) }
     }
 

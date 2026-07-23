@@ -1,5 +1,21 @@
 # DEVLOG
 
+## 2026-07-23 — Group invites; encrypted-group issue closed
+
+Audit confirmed the 2026-07-18 group-creation fixes in the tree (picker
+is key-contacts-only, members prevalidated before core creates/syncs,
+orphan cleanup, offline coverage). The missing half was invite
+GENERATION: securejoin_qr now takes an optional chat id (core's
+get_securejoin_qr(Some(chat)) — the receiving side shipped with the
+contact-invite work), the sidebar's group context menu gets "Group
+Invite…", and InviteSheet gained a group mode (invite-only, no join
+section). Review kept the mock honest: own group invites are rejected
+like core's withdraw classification, joins are idempotent, and 1:1 chat
+ids refuse to mint group links; all pinned by a mock-semantics test.
+Residuals documented in the issue, both upstream-blocked: the
+post-creation rollback branch has no fault-injection seam in core, and
+cross-device create atomicity needs a core API.
+
 ## 2026-07-23 — QR invite contact flow (securejoin end to end)
 
 First contact on chatmail relays now works: securejoin invites in both

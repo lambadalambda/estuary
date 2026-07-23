@@ -4,6 +4,7 @@ import SwiftUI
 struct MainView: View {
     @Bindable var model: AppModel
     @State private var confirmRemoveAccount = false
+    @State private var inviteGroup: ChatItem?
 
     var body: some View {
         NavigationSplitView {
@@ -30,6 +31,9 @@ struct MainView: View {
                                     Task { await model.setMuted(chatId: chat.id, durationSeconds: -1) }
                                 }
                             }
+                        }
+                        if chat.isGroup, !chat.isContactRequest {
+                            Button("Group Invite\u{2026}") { inviteGroup = chat }
                         }
                         Button(chat.isArchived ? "Unarchive" : "Archive") {
                             Task {
@@ -115,6 +119,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showInvite) {
             InviteSheet(model: model)
+        }
+        .sheet(item: $inviteGroup) { group in
+            InviteSheet(model: model, group: group)
         }
         .sheet(isPresented: $model.showNewGroup) {
             NewGroupSheet(model: model)
@@ -449,6 +456,9 @@ struct SettingsSheet: View {
 /// rejected by the relay, invites carry the key exchange.
 struct InviteSheet: View {
     let model: AppModel
+    /// When set, the sheet shows an invite INTO this group instead of a
+    /// 1:1 contact invite, and hides the join section.
+    var group: ChatItem? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var inviteLink: String?
     @State private var inviteLoadFailed = false
@@ -464,7 +474,7 @@ struct InviteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Invite")
+            Text(group.map { "Invite to \($0.name)" } ?? "Invite")
                 .font(.title2.bold())
             HStack(alignment: .top, spacing: 16) {
                 if let inviteLink, let image = qrImage(for: inviteLink) {
@@ -490,7 +500,9 @@ struct InviteSheet: View {
                         .frame(width: 150, height: 150)
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Have them scan this code with Delta Chat, or send the link over any channel. The chat is end-to-end encrypted from the first message.")
+                    Text(group == nil
+                        ? "Have them scan this code with Delta Chat, or send the link over any channel. The chat is end-to-end encrypted from the first message."
+                        : "Have them scan this code with Delta Chat, or send the link over any channel — it lets them join this group.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -504,6 +516,27 @@ struct InviteSheet: View {
                 }
             }
 
+            if group == nil {
+                joinSection
+            } else {
+                HStack {
+                    Spacer()
+                    Button("Close") { dismiss() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task { await loadInvite() }
+        .onDisappear {
+            sheetGone = true
+            stopScan()
+        }
+    }
+
+    @ViewBuilder
+    private var joinSection: some View {
             Divider()
 
             Text("Got an invite?")
@@ -544,19 +577,15 @@ struct InviteSheet: View {
                     pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || isJoining)
             }
-        }
-        .padding(20)
-        .frame(width: 460)
-        .task { await loadInvite() }
-        .onDisappear {
-            sheetGone = true
-            stopScan()
-        }
     }
 
     private func loadInvite() async {
         inviteLoadFailed = false
-        inviteLink = await model.inviteLink()
+        inviteLink = if let group {
+            await model.groupInviteLink(chatId: group.id)
+        } else {
+            await model.inviteLink()
+        }
         inviteLoadFailed = inviteLink == nil
     }
 

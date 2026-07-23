@@ -1035,15 +1035,20 @@ impl DcApp {
         .await
     }
 
-    /// My 1:1 contact invite: a shareable `https://i.delta.chat/#…`
-    /// securejoin link, also used verbatim as QR content. First contact on
-    /// chatmail relays REQUIRES this — filtermail rejects plain first mails
-    /// (issue: qr-invite-contact-flow).
-    pub async fn securejoin_qr(&self, account_id: u32) -> Result<String, VmError> {
+    /// My shareable `https://i.delta.chat/#…` securejoin invite, also used
+    /// verbatim as QR content. `chat_id` None = 1:1 contact invite; Some =
+    /// invite into that group. First contact on chatmail relays REQUIRES
+    /// this — filtermail rejects plain first mails
+    /// (issues: qr-invite-contact-flow, encrypted-group-creation).
+    pub async fn securejoin_qr(
+        &self,
+        account_id: u32,
+        chat_id: Option<u32>,
+    ) -> Result<String, VmError> {
         let accounts = self.accounts.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
-            Ok(deltachat::securejoin::get_securejoin_qr(&ctx, None).await?)
+            Ok(deltachat::securejoin::get_securejoin_qr(&ctx, chat_id.map(ChatId::new)).await?)
         })
         .await
     }

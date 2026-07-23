@@ -30,6 +30,9 @@ import Testing
         let model = AppModel(service: service)
         await model.bootstrap()
         #expect(await model.inviteLink() == "https://i.delta.chat/#SCRIPTED")
+        #expect(
+            await model.groupInviteLink(chatId: 77)
+                == "https://i.delta.chat/#SCRIPTEDGRP77")
     }
 
     @Test func inviteePreviewNamesContactInvitesOnly() async throws {
@@ -1869,8 +1872,9 @@ private actor ScriptedChatService: ChatService {
     func setSecurejoinChat(_ id: UInt32) { securejoinChatId = id }
     func failNextSecurejoin() { securejoinFailuresRemaining += 1 }
     func joinedInvites() -> [String] { joinedInviteQrs }
-    func securejoinQr(accountId: UInt32) throws -> String {
-        "https://i.delta.chat/#SCRIPTED"
+    func securejoinQr(accountId: UInt32, chatId: UInt32?) throws -> String {
+        chatId.map { "https://i.delta.chat/#SCRIPTEDGRP\($0)" }
+            ?? "https://i.delta.chat/#SCRIPTED"
     }
     func joinSecurejoin(accountId: UInt32, qr: String) throws -> UInt32 {
         if securejoinFailuresRemaining > 0 {

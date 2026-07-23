@@ -607,7 +607,7 @@ async fn message_roundtrip_on_local_relay() {
     }
     // Through the exported dcvm surface (issue: qr-invite-contact-flow) —
     // the same calls the shells make.
-    let invite = app.securejoin_qr(bob).await.expect("invite qr");
+    let invite = app.securejoin_qr(bob, None).await.expect("invite qr");
     // Subscribe BEFORE joining: the receiver only sees events emitted after
     // its creation, and a fast handshake can finish before join returns.
     let raw_events = alice_ctx.get_event_emitter();
@@ -1357,7 +1357,7 @@ async fn securejoin_invite_generation_and_classification() {
         .await
         .unwrap();
 
-    let invite = app.securejoin_qr(alice).await.expect("invite link");
+    let invite = app.securejoin_qr(alice, None).await.expect("invite link");
     assert!(
         invite.starts_with("https://i.delta.chat/#"),
         "invite should be the shareable link form, got: {invite}"
@@ -1368,6 +1368,37 @@ async fn securejoin_invite_generation_and_classification() {
         kind,
         dcvm::QrKind::AskVerifyContact {
             name: "Alice Ondra".into()
+        }
+    );
+}
+
+/// Group invites (closing move of encrypted-group-creation-correctness):
+/// generating an invite for MY group produces the shareable link, and
+/// another account classifies it as a group-join ask with the group name.
+#[tokio::test(flavor = "multi_thread")]
+async fn group_invite_generation_and_classification() {
+    let (app, _collector, _dir) = make_app().await;
+    let alice = app.add_account().await.unwrap();
+    let bob = app.add_account().await.unwrap();
+    pseudo_configure(&app, alice, "alice@example.org").await;
+    pseudo_configure(&app, bob, "bob@example.org").await;
+
+    let group = app
+        .create_group(bob, "Hiking Buddies".into(), vec![])
+        .await
+        .expect("create group");
+
+    let invite = app
+        .securejoin_qr(bob, Some(group))
+        .await
+        .expect("group invite link");
+    assert!(invite.starts_with("https://i.delta.chat/#"));
+
+    let kind = app.check_qr(alice, invite).await.expect("classification");
+    assert_eq!(
+        kind,
+        dcvm::QrKind::AskVerifyGroup {
+            group_name: "Hiking Buddies".into()
         }
     );
 }

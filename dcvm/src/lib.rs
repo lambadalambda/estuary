@@ -4,6 +4,7 @@ uniffi::setup_scaffolding!();
 
 pub mod app;
 pub mod mapping;
+pub mod stt;
 pub mod types;
 
 pub use app::{DcApp, EventListener};

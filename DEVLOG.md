@@ -1140,3 +1140,28 @@ rust-cache prefix-key — review catch: an exact hit on the old debug cache
 would never save release artifacts, cold-building core every night. Local
 release app (76MB bundle) verified launching against mock data. Build
 plumbing is untestable per rules — verified by building both profiles.
+
+## 2026-07-26 — STT stage 1: voice-message audio decode (issue: stt-audio-decode)
+
+Engine decision recorded in meta/issues/voice-message-transcription.md:
+transcribe.cpp + Parakeet TDT 0.6B v3 (25 languages, Rust bindings, model
+below the FFI) over macOS 26 SpeechAnalyzer (zero-bloat but shell-side and
+narrower locales). User picked Parakeet.
+
+New `dcvm/src/stt/decode.rs`: symphonia (aac/isomp4/mp3 features added) +
+rubato → 16 kHz mono f32 for the ASR engine. Findings:
+- Adding symphonia/rubato re-resolved socket2 edges 0.5.10 → 0.6.1 on
+  hyper-util/quinn/quinn-udp AGAIN (same trio as 2026-07-16), breaking
+  netwatch. Same fix: hand-flip the three edges in Cargo.lock, verify
+  `cargo build --locked`. Any manifest touch requires this check.
+- Review-caught real bug the length/RMS tests couldn't see: trimming
+  resampler output to expected length from the FRONT eats speech onset —
+  rubato's process_partial zero-pads at the END (measured 363-sample /
+  23 ms shift via an impulse-position test). Fix: drain output_delay()
+  from the front, truncate padding from the end; residual error 22
+  samples (~1.4 ms, rubato's reported-vs-actual delay rounding).
+  Moral: for DSP code, test *timing* with impulse positions, not just
+  length + energy.
+- Opus-in-Ogg → typed Unsupported (no symphonia decoder); core never
+  classifies bare .opus as Voice/Audio, so realistic voice blobs are
+  m4a/aac/mp3/wav. 30-min decode cap (TooLong) guards memory.

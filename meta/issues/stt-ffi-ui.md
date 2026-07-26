@@ -47,11 +47,10 @@ Implemented and mostly verified; kept open for two remaining real-app checks:
   Parakeet Q8_0 transcribed jfk.wav; transcript rendered in the audio bubble
   (screenshot verified via cua-driver). Model was pre-planted in
   `<data_dir>/stt-models/`.
-- REMAINING: first-use model download in the real app UI (progress bar over
-  the FFI event path — unit/mock tested only), and a *received* Voice-kind
-  message (e2e used an outgoing Audio-kind wav; same code path, but the
-  acceptance names a received voice message — needs the local chatmail relay
-  and a second account).
+- CLOSED 2026-07-26: user exercised the full real-account flow — first-use
+  model download with visible progress and Transcribe on received voice
+  messages — and confirmed it works (and, after the warmup/phase fixes,
+  that it is fast).
 
 ## Notes
 

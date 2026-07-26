@@ -42,3 +42,7 @@
 - [x] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
 - [x] [STT: audio decode to 16 kHz mono PCM in dcvm](issues/stt-audio-decode.md)
 - [x] [STT: transcribe.cpp engine + model management](issues/stt-engine-parakeet.md)
+- [x] [Voice message transcription (on-demand)](issues/voice-message-transcription.md)
+- [x] [STT: transcription FFI + Swift UI](issues/stt-ffi-ui.md)
+- [x] [STT: transcription latency — measure and fix](issues/stt-performance.md)
+- [x] [Show duration on audio bubbles that core reports as 0](issues/audio-duration-display.md)

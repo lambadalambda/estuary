@@ -1236,3 +1236,37 @@ line in-bubble in ~20 s on 4 vCPUs (CPU inference — no Metal in the VM
 path). stt-audio-decode + stt-engine-parakeet archived; stt-ffi-ui stays
 open for two real-app checks (first-use download progress UX, received
 Voice-kind message via the local relay).
+
+## 2026-07-26 — STT latency: measured, explained, amortized (issue: stt-performance)
+
+User-reported "transcription takes quite some time". Bench (stt_bench
+example, host M-series, dev profile, Q8_0, 11 s jfk.wav):
+backend MTL0 (Metal — no CPU fallback), warm model load 0.44 s,
+inference 0.3–0.8 s → RTF 0.03–0.07 (~15–35x realtime). Decode ~0 s.
+The slowness is entirely the FIRST-EVER cold start: 700 MB page-in +
+first-run Metal pipeline compile ≈ 90 s (the ignored smoke test's 92.77 s
+body drops to 0.93 s warm — same machine, same code). Q8→Q4 would not
+help (quant is not the bottleneck on Metal); Q8 kept for accuracy.
+Fixes: TranscriptionPhase::LoadingModel so the spinner says "Preparing
+transcription engine…" instead of lying with "Transcribing…", and
+DcApp::warm_transcription — fired once per launch when the first audio
+bubble renders (loads only an already-downloaded model; never downloads),
+so the cold start runs while the user is still reading. Skipped (noted per
+TDD rule): Swift unit test for the once-per-launch warm guard — trivial
+flag; covered implicitly by e2e.
+
+Review catch before commit: Double→Int64 conversion TRAPS (not clamps)
+past Int64.max — a corrupt container whose CMTime decodes to ~9.2e18 s
+would crash the app while rendering the bubble. Guard added in
+durationMs(fromSeconds:) with a test at 9.2e18.
+
+## 2026-07-26 — Audio duration on every bubble (issue: audio-duration-display)
+
+Core only knows durations for real Voice messages (Chat-Duration header);
+plain audio attachments showed nothing. AudioMessageView now always
+renders the duration line ("–:––" placeholder), with AVURLAsset probing
++ per-path cache filling in when core reports 0. Always-rendered keeps
+row height stable when the async probe lands (no invalidation needed).
+Core's value stays authoritative when nonzero (pure helpers
+durationMs(fromSeconds:)/effectiveDurationMs, unit-tested incl. NaN /
+infinity / overflow-trap edges).

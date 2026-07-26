@@ -1504,3 +1504,21 @@ async fn transcribe_message_without_audio_fails() {
     let err = app.transcribe_message(id, msg_id).await.unwrap_err();
     assert!(err.to_string().contains("no audio"), "got: {err}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn warm_transcription_never_downloads() {
+    // No model on disk: warmup must be a cheap no-op, not a 700 MB download
+    // (it must also not error — the shell fires it blind on bubble render).
+    let (app, _collector, dir) = make_app().await;
+    app.warm_transcription().await.expect("warm without model");
+
+    // With an engine already present AND a size-correct model file (sparse —
+    // makes model_ready true), warmup must hit the engine-loaded early
+    // return, not try to load garbage bytes as a GGUF.
+    let model = dcvm::stt::model::model_path(dir.path());
+    std::fs::create_dir_all(model.parent().unwrap()).unwrap();
+    let file = std::fs::File::create(&model).unwrap();
+    file.set_len(dcvm::stt::model::MODEL_SIZE).unwrap();
+    app.set_stt_engine_for_test(Arc::new(FakeEngine::default()));
+    app.warm_transcription().await.expect("warm with engine loaded");
+}

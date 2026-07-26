@@ -484,6 +484,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_transcribe_message(uint64_t ptr, uint32_t a
 uint64_t uniffi_dcvm_fn_method_dcapp_unread_count(uint64_t ptr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_WARM_TRANSCRIPTION
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_WARM_TRANSCRIPTION
+uint64_t uniffi_dcvm_fn_method_dcapp_warm_transcription(uint64_t ptr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_CLONE_EVENTLISTENER
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_CLONE_EVENTLISTENER
 uint64_t uniffi_dcvm_fn_clone_eventlistener(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -1025,6 +1030,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_transcribe_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_UNREAD_COUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_UNREAD_COUNT
 uint16_t uniffi_dcvm_checksum_method_dcapp_unread_count(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_WARM_TRANSCRIPTION
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_WARM_TRANSCRIPTION
+uint16_t uniffi_dcvm_checksum_method_dcapp_warm_transcription(void
     
 );
 #endif

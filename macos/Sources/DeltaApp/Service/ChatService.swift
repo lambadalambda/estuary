@@ -135,6 +135,9 @@ enum ServiceEvent: Equatable, Sendable {
 /// Mirrors Rust `TranscriptionPhase`.
 enum TranscriptionPhase: Equatable, Sendable {
     case downloadingModel
+    /// Engine cold start (model page-in + Metal pipeline compile) — can take
+    /// tens of seconds on the first-ever run; inference is ~35x realtime.
+    case loadingModel
     case transcribing
 }
 
@@ -240,6 +243,10 @@ protocol ChatService: Sendable {
     /// download the ASR model — `.transcriptionProgress` events report it;
     /// results are cached below the FFI for the session.
     func transcribeMessage(accountId: UInt32, msgId: UInt32) async throws -> String
+    /// Fire-and-forget engine warmup (loads an already-downloaded model
+    /// into memory; never downloads). Called when an audio bubble renders
+    /// so the cold start happens before the user clicks Transcribe.
+    func warmTranscription() async throws
 
     // MARK: Chat management
 

@@ -543,6 +543,10 @@ actor MockChatService: ChatService {
         return text
     }
 
+    func warmTranscription() {
+        // No engine in mock mode; the real one preloads an on-disk model.
+    }
+
     func markSeen(accountId: UInt32, msgIds: [UInt32]) {
         for (key, messages) in messagesByChat
         where key.accountId == accountId && messages.contains(where: { msgIds.contains($0.id) }) {

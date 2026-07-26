@@ -23,6 +23,12 @@ impl ParakeetEngine {
             .map_err(|e| SttError::Engine(format!("model load: {e}")))?;
         Ok(Self { model })
     }
+
+    /// Resolved compute backend, e.g. "metal" or "cpu" — the way to detect
+    /// a silent CPU fallback after Backend::Auto.
+    pub fn backend_name(&self) -> String {
+        self.model.backend()
+    }
 }
 
 impl SttEngine for ParakeetEngine {

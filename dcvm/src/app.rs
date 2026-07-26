@@ -1215,6 +1215,33 @@ impl DcApp {
         .await
     }
 
+    /// Fire-and-forget engine warmup: loads the ASR model into memory when
+    /// it is already downloaded — never downloads. The shell calls this when
+    /// an audio bubble becomes visible so the cold start (model page-in +
+    /// Metal pipeline compile, potentially tens of seconds on first ever
+    /// run) happens while the user is still reading, not after the click.
+    pub async fn warm_transcription(&self) -> Result<(), VmError> {
+        let stt = self.stt.clone();
+        on_rt(async move {
+            if !crate::stt::model::model_ready(&stt.data_dir) {
+                return Ok(());
+            }
+            let mut engine_slot = stt.engine.lock().await;
+            if engine_slot.is_some() {
+                return Ok(());
+            }
+            let path = crate::stt::model::model_path(&stt.data_dir);
+            let loaded = tokio::task::spawn_blocking(move || crate::stt::ParakeetEngine::load(&path))
+                .await
+                .map_err(|e| VmError::Core {
+                    msg: format!("model load task: {e}"),
+                })??;
+            *engine_slot = Some(Arc::new(loaded));
+            Ok(())
+        })
+        .await
+    }
+
     /// On-demand transcription of a voice/audio message. Downloads the ASR
     /// model on first use (TranscriptionProgress events report permille),
     /// then decodes the blob and runs on-device inference. Results are
@@ -1285,6 +1312,16 @@ impl DcApp {
                     let _ = forwarder.await;
                     result?
                 };
+                dispatch_listener(
+                    listener.clone(),
+                    account_id,
+                    VmEvent::TranscriptionProgress {
+                        msg_id,
+                        phase: TranscriptionPhase::LoadingModel,
+                        permille: 0,
+                    },
+                )
+                .await;
                 let loaded =
                     tokio::task::spawn_blocking(move || crate::stt::ParakeetEngine::load(&model_path))
                         .await

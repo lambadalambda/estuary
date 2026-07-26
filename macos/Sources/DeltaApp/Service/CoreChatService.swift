@@ -231,6 +231,11 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
+    func warmTranscription() async throws {
+        do { try await app().warmTranscription() }
+        catch { throw mapError(error) }
+    }
+
     // MARK: Chat management
 
     func acceptChat(accountId: UInt32, chatId: UInt32) async throws {
@@ -440,6 +445,7 @@ private func mapEvent(_ e: VmEvent) -> ServiceEvent {
 private func mapPhase(_ p: DeltaCore.TranscriptionPhase) -> TranscriptionPhase {
     switch p {
     case .downloadingModel: .downloadingModel
+    case .loadingModel: .loadingModel
     case .transcribing: .transcribing
     }
 }

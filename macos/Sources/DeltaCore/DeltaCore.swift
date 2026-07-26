@@ -795,6 +795,15 @@ public protocol DcAppProtocol: AnyObject, Sendable {
      */
     func unreadCount() async throws  -> UInt32
     
+    /**
+     * Fire-and-forget engine warmup: loads the ASR model into memory when
+     * it is already downloaded — never downloads. The shell calls this when
+     * an audio bubble becomes visible so the cold start (model page-in +
+     * Metal pipeline compile, potentially tens of seconds on first ever
+     * run) happens while the user is still reading, not after the click.
+     */
+    func warmTranscription() async throws 
+    
 }
 open class DcApp: DcAppProtocol, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -1649,6 +1658,29 @@ open func unreadCount()async throws  -> UInt32  {
             completeFunc: ffi_dcvm_rust_future_complete_u32,
             freeFunc: ffi_dcvm_rust_future_free_u32,
             liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * Fire-and-forget engine warmup: loads the ASR model into memory when
+     * it is already downloaded — never downloads. The shell calls this when
+     * an audio bubble becomes visible so the cold start (model page-in +
+     * Metal pipeline compile, potentially tens of seconds on first ever
+     * run) happens while the user is still reading, not after the click.
+     */
+open func warmTranscription()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_warm_transcription(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_void,
+            completeFunc: ffi_dcvm_rust_future_complete_void,
+            freeFunc: ffi_dcvm_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -2926,6 +2958,11 @@ public func FfiConverterTypeQrKind_lower(_ value: QrKind) -> RustBuffer {
 public enum TranscriptionPhase: Equatable, Hashable {
     
     case downloadingModel
+    /**
+     * Engine cold start: model page-in + first-run Metal pipeline compile
+     * can take tens of seconds; inference itself is ~35x realtime.
+     */
+    case loadingModel
     case transcribing
 
 
@@ -2950,7 +2987,9 @@ public struct FfiConverterTypeTranscriptionPhase: FfiConverterRustBuffer {
         
         case 1: return .downloadingModel
         
-        case 2: return .transcribing
+        case 2: return .loadingModel
+        
+        case 3: return .transcribing
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -2964,8 +3003,12 @@ public struct FfiConverterTypeTranscriptionPhase: FfiConverterRustBuffer {
             writeInt(&buf, Int32(1))
         
         
-        case .transcribing:
+        case .loadingModel:
             writeInt(&buf, Int32(2))
+        
+        
+        case .transcribing:
+            writeInt(&buf, Int32(3))
         
         }
     }
@@ -3709,6 +3752,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_unread_count() != 61136) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_warm_transcription() != 23629) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_eventlistener_on_event() != 27472) {

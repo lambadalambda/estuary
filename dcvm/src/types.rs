@@ -167,6 +167,9 @@ pub enum VmEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum TranscriptionPhase {
     DownloadingModel,
+    /// Engine cold start: model page-in + first-run Metal pipeline compile
+    /// can take tens of seconds; inference itself is ~35x realtime.
+    LoadingModel,
     Transcribing,
 }
 

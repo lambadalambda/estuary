@@ -131,6 +131,16 @@ final class AppModel {
         transcripts.mapValues(\.heightClass)
     }
 
+    /// One engine warmup per launch, fired when the first audio bubble
+    /// renders: the model cold start (tens of seconds on the first-ever
+    /// run) happens while the user is still reading, not after the click.
+    private var transcriptionWarmRequested = false
+    func warmTranscriptionIfNeeded() {
+        guard !transcriptionWarmRequested else { return }
+        transcriptionWarmRequested = true
+        Task { try? await service.warmTranscription() }
+    }
+
     func transcribeMessage(_ msgId: UInt32) {
         guard transcriptionCanStart(transcripts[msgId]) else { return }
         guard let accountId = selectedAccountId else { return }

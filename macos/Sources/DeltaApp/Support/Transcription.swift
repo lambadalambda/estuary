@@ -37,3 +37,21 @@ func applyTranscriptionProgress(
     guard case .working = state else { return state }
     return .working(phase: phase, permille: permille)
 }
+
+/// Milliseconds from an AVFoundation seconds value; NaN/negative/infinite
+/// (live streams, corrupt files) mean unknown.
+func durationMs(fromSeconds seconds: Double) -> UInt32? {
+    guard seconds.isFinite, seconds > 0 else { return nil }
+    // Compare in Double before converting: Double → Int64 TRAPS (doesn't
+    // clamp) past Int64.max, and corrupt containers can decode there.
+    guard seconds < Double(UInt32.max) / 1000 else { return UInt32.max }
+    return UInt32(clamping: Int64((seconds * 1000).rounded()))
+}
+
+/// Which duration an audio bubble shows: core's value (Chat-Duration header)
+/// is authoritative when nonzero; otherwise a shell-side probe fills in.
+func effectiveDurationMs(core: UInt32, probed: UInt32?) -> UInt32? {
+    if core > 0 { return core }
+    if let probed, probed > 0 { return probed }
+    return nil
+}

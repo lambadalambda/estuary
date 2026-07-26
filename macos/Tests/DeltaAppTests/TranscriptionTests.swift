@@ -37,6 +37,32 @@ import Testing
         #expect(applyTranscriptionProgress(failed, phase: .downloadingModel, permille: 5) == failed)
     }
 
+    @Test func loadingModelPhaseFlowsThroughWorkingState() {
+        let moved = applyTranscriptionProgress(
+            .working(phase: .downloadingModel, permille: 1000),
+            phase: .loadingModel, permille: 0)
+        #expect(moved == .working(phase: .loadingModel, permille: 0))
+    }
+
+    @Test func probedDurationsRejectGarbageAndClamp() {
+        #expect(durationMs(fromSeconds: 1.234) == 1234)
+        #expect(durationMs(fromSeconds: 0) == nil)
+        #expect(durationMs(fromSeconds: -3) == nil)
+        #expect(durationMs(fromSeconds: .nan) == nil)
+        #expect(durationMs(fromSeconds: .infinity) == nil)
+        #expect(durationMs(fromSeconds: 1e12) == UInt32.max)
+        // A corrupt container can decode to CMTime seconds near 9.2e18;
+        // conversion must clamp, not trap, while merely rendering a bubble.
+        #expect(durationMs(fromSeconds: 9.2e18) == UInt32.max)
+    }
+
+    @Test func coreDurationStaysAuthoritative() {
+        #expect(effectiveDurationMs(core: 5000, probed: 9000) == 5000)
+        #expect(effectiveDurationMs(core: 0, probed: 9000) == 9000)
+        #expect(effectiveDurationMs(core: 0, probed: 0) == nil)
+        #expect(effectiveDurationMs(core: 0, probed: nil) == nil)
+    }
+
     @Test func heightClassSeparatesHeightsNotTicks() {
         let a = TranscriptState.working(phase: .downloadingModel, permille: 1)
         let b = TranscriptState.working(phase: .transcribing, permille: 999)

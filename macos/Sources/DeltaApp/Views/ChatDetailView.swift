@@ -1004,12 +1004,44 @@ final class AudioPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 }
 
+/// Duration probe for audio files core reports as 0 ms (attachments without
+/// a Chat-Duration header). Cached per blob path; the probe is async and the
+/// duration line is always rendered, so row height never changes when the
+/// value lands.
+@MainActor
+final class AudioDurationCache: ObservableObject {
+    static let shared = AudioDurationCache()
+    /// path → probed ms; 0 = probed but unknown (stops re-probing).
+    @Published private(set) var probedMs: [String: UInt32] = [:]
+    private var inFlight: Set<String> = []
+
+    func duration(path: String) -> UInt32? {
+        if let known = probedMs[path] { return known }
+        if !inFlight.contains(path) {
+            inFlight.insert(path)
+            Task {
+                let seconds = try? await AVURLAsset(url: URL(fileURLWithPath: path))
+                    .load(.duration).seconds
+                probedMs[path] = durationMs(fromSeconds: seconds ?? 0) ?? 0
+            }
+        }
+        return nil
+    }
+}
+
 struct AudioMessageView: View {
     let message: MessageItem
     let model: AppModel
     @ObservedObject private var player = AudioPlayerController.shared
+    @ObservedObject private var durations = AudioDurationCache.shared
 
     private var isPlaying: Bool { player.playingPath == message.file }
+
+    private var shownDurationMs: UInt32? {
+        effectiveDurationMs(
+            core: message.durationMs,
+            probed: message.file.flatMap { durations.duration(path: $0) })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1024,16 +1056,18 @@ struct AudioMessageView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(message.kind == .voice ? "Voice message" : (message.fileName ?? "Audio"))
                         .font(.callout.weight(.medium))
-                    if message.durationMs > 0 {
-                        Text(durationLabel(ms: message.durationMs))
-                            .font(.caption2)
-                            .opacity(0.7)
-                    }
+                    // Always rendered (placeholder while probing): users see
+                    // 0:05 vs 5:00 before pressing play, and the row height
+                    // stays put when the async probe lands.
+                    Text(shownDurationMs.map { durationLabel(ms: $0) } ?? "–:––")
+                        .font(.caption2)
+                        .opacity(0.7)
                 }
             }
             transcriptSection
         }
         .foregroundStyle(message.isOutgoing ? .white : .primary)
+        .onAppear { model.warmTranscriptionIfNeeded() }
     }
 
     /// On-demand transcription (issue: stt-ffi-ui): idle button → progress
@@ -1052,11 +1086,16 @@ struct AudioMessageView: View {
             .opacity(0.75)
         case .working(let phase, let permille):
             HStack(spacing: 6) {
-                if phase == .downloadingModel {
+                switch phase {
+                case .downloadingModel:
                     ProgressView(value: Double(permille), total: 1000)
                         .frame(width: 96)
                     Text("Downloading model…")
-                } else {
+                case .loadingModel:
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Preparing transcription engine…")
+                case .transcribing:
                     ProgressView()
                         .controlSize(.small)
                     Text("Transcribing…")

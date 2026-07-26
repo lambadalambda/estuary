@@ -120,6 +120,40 @@ final class AppModel {
         }
     }
 
+    /// Voice transcription state per message (issue: stt-ffi-ui). Per-visit
+    /// like `expandedMessageIds`; dcvm caches finished transcripts, so a
+    /// revisit re-fetches instantly.
+    var transcripts: [UInt32: TranscriptState] = [:]
+
+    /// Row-height fingerprint for the AppKit table: changes exactly when a
+    /// transcript changes rendered height (state kind), not on progress ticks.
+    var transcriptHeightClasses: [UInt32: String] {
+        transcripts.mapValues(\.heightClass)
+    }
+
+    func transcribeMessage(_ msgId: UInt32) {
+        guard transcriptionCanStart(transcripts[msgId]) else { return }
+        guard let accountId = selectedAccountId else { return }
+        let chatId = selectedChatId
+        // Optimistic: a model download would overwrite via its first event.
+        transcripts[msgId] = .working(phase: .transcribing, permille: 0)
+        Task {
+            do {
+                let text = try await service.transcribeMessage(
+                    accountId: accountId, msgId: msgId)
+                // Stale-await: the user may have switched away meanwhile —
+                // transcripts was reset and belongs to another chat now.
+                guard selectedAccountId == accountId, selectedChatId == chatId
+                else { return }
+                transcripts[msgId] = .done(text)
+            } catch {
+                guard selectedAccountId == accountId, selectedChatId == chatId
+                else { return }
+                transcripts[msgId] = .failed(error.localizedDescription)
+            }
+        }
+    }
+
     /// Mirror of the composer field's focus, kept fresh by the view: the
     /// paste monitor gates on it so Cmd+V aimed at the search field or a
     /// sheet's text field is never hijacked (FocusState itself can't be
@@ -1207,6 +1241,7 @@ final class AppModel {
     func chatSelectionChanged() async {
         replyTo = nil
         expandedMessageIds.removeAll()
+        transcripts.removeAll()
         if let selectedChatId {
             if let row = chats.first(where: { $0.id == selectedChatId }) {
                 selectedChatCache = row
@@ -1462,6 +1497,12 @@ final class AppModel {
         case .connectivityChanged:
             if showSettings {
                 await refreshConnectivity()
+            }
+
+        case .transcriptionProgress(let msgId, let phase, let permille):
+            if accountId == selectedAccountId {
+                transcripts[msgId] = applyTranscriptionProgress(
+                    transcripts[msgId], phase: phase, permille: permille)
             }
         }
     }

@@ -11,3 +11,4 @@
 - [ ] [STT: audio decode to 16 kHz mono PCM in dcvm](issues/stt-audio-decode.md)
 - [ ] [STT: transcribe.cpp engine + model management](issues/stt-engine-parakeet.md)
 - [ ] [STT: transcription FFI + Swift UI](issues/stt-ffi-ui.md)
+- [ ] [STT: evict the idle ASR engine](issues/stt-engine-eviction.md)

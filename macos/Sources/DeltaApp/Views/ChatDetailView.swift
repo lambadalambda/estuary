@@ -581,7 +581,7 @@ struct MessageBubbleView: View {
                 fileRow(icon: "photo")
             }
         case .audio, .voice:
-            AudioMessageView(message: message)
+            AudioMessageView(message: message, model: model)
         case .video:
             fileRow(icon: "video.fill")
         case .file, .vcard, .webxdc, .unknown:
@@ -1006,30 +1006,85 @@ final class AudioPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
 struct AudioMessageView: View {
     let message: MessageItem
+    let model: AppModel
     @ObservedObject private var player = AudioPlayerController.shared
 
     private var isPlaying: Bool { player.playingPath == message.file }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                if let file = message.file { player.toggle(path: file) }
-            } label: {
-                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title)
-            }
-            .buttonStyle(.plain)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(message.kind == .voice ? "Voice message" : (message.fileName ?? "Audio"))
-                    .font(.callout.weight(.medium))
-                if message.durationMs > 0 {
-                    Text(durationLabel(ms: message.durationMs))
-                        .font(.caption2)
-                        .opacity(0.7)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    if let file = message.file { player.toggle(path: file) }
+                } label: {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.title)
+                }
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(message.kind == .voice ? "Voice message" : (message.fileName ?? "Audio"))
+                        .font(.callout.weight(.medium))
+                    if message.durationMs > 0 {
+                        Text(durationLabel(ms: message.durationMs))
+                            .font(.caption2)
+                            .opacity(0.7)
+                    }
                 }
             }
+            transcriptSection
         }
         .foregroundStyle(message.isOutgoing ? .white : .primary)
+    }
+
+    /// On-demand transcription (issue: stt-ffi-ui): idle button → progress
+    /// (model download is determinate, inference is not) → transcript or a
+    /// readable error with retry.
+    @ViewBuilder private var transcriptSection: some View {
+        switch model.transcripts[message.id] {
+        case nil:
+            Button {
+                model.transcribeMessage(message.id)
+            } label: {
+                Label("Transcribe", systemImage: "text.quote")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .opacity(0.75)
+        case .working(let phase, let permille):
+            HStack(spacing: 6) {
+                if phase == .downloadingModel {
+                    ProgressView(value: Double(permille), total: 1000)
+                        .frame(width: 96)
+                    Text("Downloading model…")
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Transcribing…")
+                }
+            }
+            .font(.caption2)
+            .opacity(0.75)
+        case .done(let text):
+            Text(text)
+                .font(.callout)
+                .italic()
+                .opacity(0.9)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        case .failed(let reason):
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                Text(reason)
+                    .lineLimit(3)
+                Button("Retry") {
+                    model.transcribeMessage(message.id)
+                }
+                .buttonStyle(.plain)
+                .underline()
+            }
+            .font(.caption2)
+            .opacity(0.8)
+        }
     }
 
     private func durationLabel(ms: UInt32) -> String {

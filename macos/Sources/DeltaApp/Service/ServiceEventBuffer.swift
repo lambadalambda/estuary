@@ -13,6 +13,7 @@ final class ServiceEventBuffer: @unchecked Sendable {
         case configure(UInt32)
         case imex(UInt32)
         case connectivity(UInt32)
+        case transcription(UInt32, UInt32)
     }
 
     private let condition = NSCondition()
@@ -188,6 +189,9 @@ final class ServiceEventBuffer: @unchecked Sendable {
         case .configureProgress: .configure(accountId)
         case .imexProgress: .imex(accountId)
         case .connectivityChanged: .connectivity(accountId)
+        // Progress ticks coalesce latest-wins per message; terminal states
+        // (done/failed) travel on the call's return value, not events.
+        case .transcriptionProgress(let msgId, _, _): .transcription(accountId, msgId)
         case .incomingMessage:
             preconditionFailure("incoming messages use the lossless queue")
         }

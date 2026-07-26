@@ -25,7 +25,7 @@ use crate::mapping::{
 };
 use crate::types::{
     AccountInfo, ChatItem, ContactItem, MessageItem, QrKind, QuoteInfo, ReactionContact,
-    ReactionItem, VmError, VmEvent,
+    ReactionItem, TranscriptionPhase, VmError, VmEvent,
 };
 
 /// Default chatmail relay used for instant account creation. A client-side
@@ -74,6 +74,19 @@ pub struct DcApp {
     accounts: Arc<RwLock<Accounts>>,
     /// Cache so `selected_account()` can stay sync (contract: "sync ok").
     selected: Arc<Mutex<Option<u32>>>,
+    /// Kept for out-of-pump events (transcription progress).
+    listener: Arc<dyn EventListener>,
+    stt: Arc<SttState>,
+}
+
+/// On-demand voice transcription state. The engine mutex serializes model
+/// download + load + inference (concurrent runs would only queue on the
+/// crate's internal compute lock while pinning blocking threads).
+struct SttState {
+    data_dir: PathBuf,
+    engine: tokio::sync::Mutex<Option<Arc<dyn crate::stt::SttEngine>>>,
+    /// Session cache: transcribing the same message twice is instant.
+    transcripts: Mutex<HashMap<(u32, u32), String>>,
 }
 
 #[cfg(test)]
@@ -393,7 +406,9 @@ impl DcApp {
             // cycle, a dropped DcApp leaks every Context and holds the
             // accounts.lock, so no new DcApp could ever open the data dir.
             let pump_accounts = Arc::downgrade(&accounts);
+            let pump_listener = listener.clone();
             RT.spawn(async move {
+                let listener = pump_listener;
                 while let Some(event) = emitter.recv().await {
                     match event.typ {
                         // Core's broadcast channel dropped events (capacity
@@ -423,7 +438,16 @@ impl DcApp {
                 }
             });
 
-            Ok(Arc::new(Self { accounts, selected }))
+            Ok(Arc::new(Self {
+                accounts,
+                selected,
+                listener,
+                stt: Arc::new(SttState {
+                    data_dir: PathBuf::from(&data_dir),
+                    engine: tokio::sync::Mutex::new(None),
+                    transcripts: Mutex::new(HashMap::new()),
+                }),
+            }))
         })
         .await
     }
@@ -1190,6 +1214,112 @@ impl DcApp {
         })
         .await
     }
+
+    /// On-demand transcription of a voice/audio message. Downloads the ASR
+    /// model on first use (TranscriptionProgress events report permille),
+    /// then decodes the blob and runs on-device inference. Results are
+    /// cached for the session, so repeat calls return instantly.
+    pub async fn transcribe_message(
+        &self,
+        account_id: u32,
+        msg_id: u32,
+    ) -> Result<String, VmError> {
+        let accounts = self.accounts.clone();
+        let stt = self.stt.clone();
+        let listener = self.listener.clone();
+        on_rt(async move {
+            // Concurrent calls for the same message both miss here and run
+            // inference twice (serialized on the engine mutex, identical
+            // result) — wasteful but correct; the UI debounces via
+            // transcriptionCanStart.
+            if let Some(text) = stt.transcripts.lock().unwrap().get(&(account_id, msg_id)) {
+                return Ok(text.clone());
+            }
+
+            let ctx = get_ctx(&accounts, account_id).await?;
+            let msg = Message::load_from_db(&ctx, MsgId::new(msg_id)).await?;
+            let path = msg.get_file(&ctx).ok_or_else(|| VmError::Core {
+                msg: "message has no audio file".into(),
+            })?;
+
+            // Decode off the async workers; it is CPU-bound.
+            let pcm = tokio::task::spawn_blocking(move || crate::stt::decode_to_pcm_16k(&path))
+                .await
+                .map_err(|e| VmError::Core {
+                    msg: format!("decode task: {e}"),
+                })??;
+
+            // One transcription at a time: engine load and inference are
+            // both heavyweight; the guard is held across the whole run.
+            let mut engine_slot = stt.engine.lock().await;
+            if engine_slot.is_none() {
+                let model_path = {
+                    // Forward throttled download progress to the UI without
+                    // blocking the byte stream on listener dispatch.
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
+                    let fwd_listener = listener.clone();
+                    let forwarder = RT.spawn(async move {
+                        while let Some(permille) = rx.recv().await {
+                            dispatch_listener(
+                                fwd_listener.clone(),
+                                account_id,
+                                VmEvent::TranscriptionProgress {
+                                    msg_id,
+                                    phase: TranscriptionPhase::DownloadingModel,
+                                    permille,
+                                },
+                            )
+                            .await;
+                        }
+                    });
+                    let mut last = u32::MAX;
+                    let result = crate::stt::model::ensure_model(&stt.data_dir, |done, total| {
+                        let permille = ((done as u128 * 1000) / total.max(1) as u128) as u32;
+                        if permille != last {
+                            last = permille;
+                            let _ = tx.send(permille);
+                        }
+                    })
+                    .await;
+                    drop(tx);
+                    let _ = forwarder.await;
+                    result?
+                };
+                let loaded =
+                    tokio::task::spawn_blocking(move || crate::stt::ParakeetEngine::load(&model_path))
+                        .await
+                        .map_err(|e| VmError::Core {
+                            msg: format!("model load task: {e}"),
+                        })??;
+                *engine_slot = Some(Arc::new(loaded));
+            }
+            let engine = engine_slot.as_ref().expect("engine just ensured").clone();
+
+            dispatch_listener(
+                listener.clone(),
+                account_id,
+                VmEvent::TranscriptionProgress {
+                    msg_id,
+                    phase: TranscriptionPhase::Transcribing,
+                    permille: 0,
+                },
+            )
+            .await;
+
+            let text = tokio::task::spawn_blocking(move || engine.transcribe(&pcm))
+                .await
+                .map_err(|e| VmError::Core {
+                    msg: format!("transcribe task: {e}"),
+                })??;
+
+            stt.transcripts
+                .lock()
+                .unwrap()
+                .insert((account_id, msg_id), text.clone());
+            Ok(text)
+        })
+        .await
+    }
 }
 
 /// Non-FFI helpers (used by integration tests; not exported through UniFFI).
@@ -1197,6 +1327,13 @@ impl DcApp {
     /// Raw core context for an account, for tests and debugging.
     pub async fn context(&self, account_id: u32) -> Option<Context> {
         self.accounts.read().await.get_account(account_id)
+    }
+
+    /// Inject a fake ASR engine so offline tests never touch the real model.
+    pub fn set_stt_engine_for_test(&self, engine: Arc<dyn crate::stt::SttEngine>) {
+        // try_lock: callers inject before transcribing, when it's free
+        // (blocking_lock would panic inside the tests' async context).
+        *self.stt.engine.try_lock().expect("engine busy") = Some(engine);
     }
 }
 

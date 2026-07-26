@@ -1190,3 +1190,28 @@ the test accepts DCVM_TEST_STT_AUDIO/_EXPECT overrides; kept the `say` path
 for normal terminals. Honest TDD note: download-manager tests were written
 alongside the implementation (local test server design drove the API), not
 strictly red-first; review + five error-path tests compensate.
+
+## 2026-07-26 — STT stage 3: transcription FFI + Swift UI (issue: stt-ffi-ui)
+
+`DcApp::transcribe_message` (cache → decode via spawn_blocking → engine
+mutex → model download w/ throttled permille events → inference) +
+`VmEvent::TranscriptionProgress {msg_id, phase, permille}`. DcApp now keeps
+the listener for out-of-pump events. Offline vm tests use an injected fake
+engine (`set_stt_engine_for_test`, non-FFI helper block).
+
+Swift: TranscriptState machine in Support/Transcription.swift (pure reducer;
+late events never downgrade done/failed — that guard is what makes the
+event-vs-return race benign), AppModel.transcripts per-visit like
+expandedMessageIds with stale-await guards, AudioMessageView grows a
+Transcribe button → progress → italic transcript / readable error + retry.
+Row heights: heightKey now composes `+expanded` × `+t:<class>` variants;
+applyTranscriptChanges mirrors applyExpansionChanges (invalidate on every
+class change — a retry's failure text can differ under the same key).
+ServiceEventBuffer coalesces progress latest-wins per (account, msg).
+Mock: bundled 1.2s voice fixture + honest transcribe (audio-only error,
+session cache, visible delay).
+
+Build finding: once libdcvm.a contains transcribe.cpp/GGML objects, the
+Swift link needs `-lc++` + Metal/Foundation/Accelerate — added to both
+Package.swift targets. Review carry-over filed as stt-engine-eviction
+(engine stays ~700 MB resident after first use).

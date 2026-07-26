@@ -782,6 +782,14 @@ public protocol DcAppProtocol: AnyObject, Sendable {
     func stopIo() async throws 
     
     /**
+     * On-demand transcription of a voice/audio message. Downloads the ASR
+     * model on first use (TranscriptionProgress events report permille),
+     * then decodes the blob and runs on-device inference. Results are
+     * cached for the session, so repeat calls return instantly.
+     */
+    func transcribeMessage(accountId: UInt32, msgId: UInt32) async throws  -> String
+    
+    /**
      * Fresh, unmuted messages across every configured account. This is
      * independent of the selected account and any shell-side list filter.
      */
@@ -1599,6 +1607,28 @@ open func stopIo()async throws   {
             completeFunc: ffi_dcvm_rust_future_complete_void,
             freeFunc: ffi_dcvm_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeVmError_lift
+        )
+}
+    
+    /**
+     * On-demand transcription of a voice/audio message. Downloads the ASR
+     * model on first use (TranscriptionProgress events report permille),
+     * then decodes the blob and runs on-device inference. Results are
+     * cached for the session, so repeat calls return instantly.
+     */
+open func transcribeMessage(accountId: UInt32, msgId: UInt32)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_dcvm_fn_method_dcapp_transcribe_message(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(accountId),FfiConverterUInt32.lower(msgId)
+                )
+            },
+            pollFunc: ffi_dcvm_rust_future_poll_rust_buffer,
+            completeFunc: ffi_dcvm_rust_future_complete_rust_buffer,
+            freeFunc: ffi_dcvm_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeVmError_lift
         )
 }
@@ -2890,6 +2920,75 @@ public func FfiConverterTypeQrKind_lower(_ value: QrKind) -> RustBuffer {
 
 
 /**
+ * Where a transcription request currently is.
+ */
+
+public enum TranscriptionPhase: Equatable, Hashable {
+    
+    case downloadingModel
+    case transcribing
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TranscriptionPhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranscriptionPhase: FfiConverterRustBuffer {
+    typealias SwiftType = TranscriptionPhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptionPhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .downloadingModel
+        
+        case 2: return .transcribing
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TranscriptionPhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .downloadingModel:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .transcribing:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionPhase_lift(_ buf: RustBuffer) throws -> TranscriptionPhase {
+    return try FfiConverterTypeTranscriptionPhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionPhase_lower(_ value: TranscriptionPhase) -> RustBuffer {
+    return FfiConverterTypeTranscriptionPhase.lower(value)
+}
+
+
+
+/**
  * Errors crossing the FFI boundary.
  */
 public 
@@ -2998,6 +3097,13 @@ public enum VmEvent: Equatable, Hashable {
     case imexProgress(permille: UInt32
     )
     case connectivityChanged
+    /**
+     * On-demand voice transcription: model download reports determinate
+     * permille; inference has no mid-run callback, so Transcribing arrives
+     * once with permille 0 (UI shows an indeterminate spinner).
+     */
+    case transcriptionProgress(msgId: UInt32, phase: TranscriptionPhase, permille: UInt32
+    )
 
 
 
@@ -3036,6 +3142,9 @@ public struct FfiConverterTypeVmEvent: FfiConverterRustBuffer {
         )
         
         case 7: return .connectivityChanged
+        
+        case 8: return .transcriptionProgress(msgId: try FfiConverterUInt32.read(from: &buf), phase: try FfiConverterTypeTranscriptionPhase.read(from: &buf), permille: try FfiConverterUInt32.read(from: &buf)
+        )
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -3078,6 +3187,13 @@ public struct FfiConverterTypeVmEvent: FfiConverterRustBuffer {
         case .connectivityChanged:
             writeInt(&buf, Int32(7))
         
+        
+        case let .transcriptionProgress(msgId,phase,permille):
+            writeInt(&buf, Int32(8))
+            FfiConverterUInt32.write(msgId, into: &buf)
+            FfiConverterTypeTranscriptionPhase.write(phase, into: &buf)
+            FfiConverterUInt32.write(permille, into: &buf)
+            
         }
     }
 }
@@ -3587,6 +3703,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_stop_io() != 48976) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_dcvm_checksum_method_dcapp_transcribe_message() != 34474) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_dcvm_checksum_method_dcapp_unread_count() != 61136) {

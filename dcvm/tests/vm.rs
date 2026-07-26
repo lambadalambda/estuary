@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dcvm::{DcApp, EventListener, MessageState, VmError, VmEvent};
+use dcvm::{DcApp, EventListener, MessageState, TranscriptionPhase, VmError, VmEvent};
 
 /// Test listener collecting every event the pump forwards.
 #[derive(Default)]
@@ -1401,4 +1401,106 @@ async fn group_invite_generation_and_classification() {
             group_name: "Hiking Buddies".into()
         }
     );
+}
+
+// ---------------------------------------------------------------------------
+// Voice message transcription (issue: stt-ffi-ui)
+
+/// Fake ASR engine: counts calls so tests can assert the transcript cache.
+#[derive(Default)]
+struct FakeEngine {
+    calls: Mutex<u32>,
+}
+
+impl dcvm::stt::SttEngine for FakeEngine {
+    fn transcribe(&self, pcm: &[f32]) -> Result<String, dcvm::stt::SttError> {
+        *self.calls.lock().unwrap() += 1;
+        assert!(!pcm.is_empty(), "engine must receive decoded PCM");
+        Ok("fake transcript".into())
+    }
+}
+
+fn fixture_path(name: &str) -> String {
+    format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transcribe_message_decodes_caches_and_reports_progress() {
+    let (app, collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    let msg_id = app
+        .send_message(id, chat, None, Some(fixture_path("voice.m4a")), None)
+        .await
+        .expect("send audio message");
+
+    let fake = Arc::new(FakeEngine::default());
+    app.set_stt_engine_for_test(fake.clone());
+
+    let text = app.transcribe_message(id, msg_id).await.expect("transcribe");
+    assert_eq!(text, "fake transcript");
+
+    // Second call must hit the session cache, not the engine.
+    let again = app.transcribe_message(id, msg_id).await.expect("cached");
+    assert_eq!(again, "fake transcript");
+    assert_eq!(*fake.calls.lock().unwrap(), 1, "cache miss on second call");
+
+    // The Transcribing phase must have been announced to the listener.
+    wait_for_event(&collector.events, "transcription progress", |acc, ev| {
+        acc == id
+            && matches!(
+                ev,
+                VmEvent::TranscriptionProgress { msg_id: m, phase: TranscriptionPhase::Transcribing, .. }
+                if *m == msg_id
+            )
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transcribe_message_unsupported_codec_is_readable() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    // Core classifies .ogg as Audio; the blob carries Opus, which the
+    // decoder rejects with a typed, human-readable error.
+    let msg_id = app
+        .send_message(id, chat, None, Some(fixture_path("voice-opus.ogg")), None)
+        .await
+        .expect("send ogg message");
+
+    app.set_stt_engine_for_test(Arc::new(FakeEngine::default()));
+    let err = app.transcribe_message(id, msg_id).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported audio format"),
+        "unhelpful error: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transcribe_message_without_audio_fails() {
+    let (app, _collector, _dir) = make_app().await;
+    let id = app.add_account().await.unwrap();
+    pseudo_configure(&app, id, "alice@example.org").await;
+    let chat = app
+        .create_chat(id, "bob@example.net".into(), "Bob".into())
+        .await
+        .unwrap();
+    let msg_id = app
+        .send_message(id, chat, Some("just text".into()), None, None)
+        .await
+        .unwrap();
+
+    app.set_stt_engine_for_test(Arc::new(FakeEngine::default()));
+    let err = app.transcribe_message(id, msg_id).await.unwrap_err();
+    assert!(err.to_string().contains("no audio"), "got: {err}");
 }

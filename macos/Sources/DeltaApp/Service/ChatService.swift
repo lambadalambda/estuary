@@ -127,6 +127,15 @@ enum ServiceEvent: Equatable, Sendable {
     /// Backup transfer progress ("add second device"): 0 = error, 1000 = done.
     case imexProgress(permille: UInt32)
     case connectivityChanged
+    /// Voice transcription: determinate permille while the model downloads;
+    /// `.transcribing` arrives once with permille 0 (indeterminate spinner).
+    case transcriptionProgress(msgId: UInt32, phase: TranscriptionPhase, permille: UInt32)
+}
+
+/// Mirrors Rust `TranscriptionPhase`.
+enum TranscriptionPhase: Equatable, Sendable {
+    case downloadingModel
+    case transcribing
 }
 
 /// Mirrors Rust `QrKind`.
@@ -227,6 +236,10 @@ protocol ChatService: Sendable {
     func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) async throws
     /// Marks messages seen: drives MDN read receipts + cross-device read sync.
     func markSeen(accountId: UInt32, msgIds: [UInt32]) async throws
+    /// On-demand voice/audio transcription (on-device). First call may
+    /// download the ASR model — `.transcriptionProgress` events report it;
+    /// results are cached below the FFI for the session.
+    func transcribeMessage(accountId: UInt32, msgId: UInt32) async throws -> String
 
     // MARK: Chat management
 

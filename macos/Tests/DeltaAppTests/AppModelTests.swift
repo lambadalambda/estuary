@@ -1904,6 +1904,7 @@ private actor ScriptedChatService: ChatService {
     func sendReaction(accountId: UInt32, msgId: UInt32, emoji: String) throws { throw unused() }
     func deleteMessages(accountId: UInt32, msgIds: [UInt32]) throws { throw unused() }
     func forwardMessages(accountId: UInt32, msgIds: [UInt32], chatId: UInt32) throws { throw unused() }
+    func transcribeMessage(accountId: UInt32, msgId: UInt32) throws -> String { throw unused() }
     func markSeen(accountId: UInt32, msgIds: [UInt32]) throws {
         markSeenCalls += 1
         if markSeenFailuresRemaining > 0 {

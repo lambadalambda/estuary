@@ -29,6 +29,8 @@ actor MockChatService: ChatService {
     private var echoChats: Set<ChatKey> = []
     private var seenMessages: Set<MessageKey> = []
     private var freshMessages: Set<MessageKey> = []
+    /// Session transcript cache, mirroring dcvm's (repeat calls instant).
+    private var transcripts: [MessageKey: String] = [:]
     private var nextAccountId: UInt32 = 1
     private var nextChatIdByAccount: [UInt32: UInt32] = [:]
     private var nextMsgIdByAccount: [UInt32: UInt32] = [:]
@@ -517,6 +519,30 @@ actor MockChatService: ChatService {
         }
     }
 
+    /// Mirrors real semantics: audio/voice only, first run "transcribes"
+    /// with a visible delay + progress event, repeats are instant (dcvm
+    /// caches transcripts for the session).
+    func transcribeMessage(accountId: UInt32, msgId: UInt32) async throws -> String {
+        let all = messagesByChat
+            .filter { $0.key.accountId == accountId }
+            .values.flatMap { $0 }
+        guard let message = all.first(where: { $0.id == msgId }),
+              message.kind == .audio || message.kind == .voice,
+              message.file != nil
+        else { throw ServiceError.core(msg: "message has no audio file") }
+
+        let key = MessageKey(accountId: accountId, chatId: message.chatId, msgId: msgId)
+        if let cached = transcripts[key] { return cached }
+
+        emit(accountId, .transcriptionProgress(
+            msgId: msgId, phase: .transcribing, permille: 0))
+        try? await Task.sleep(for: .milliseconds(900))
+        let text = "This is the mock transcript: a short voice note about "
+            + "meeting at the pier at sunset."
+        transcripts[key] = text
+        return text
+    }
+
     func markSeen(accountId: UInt32, msgIds: [UInt32]) {
         for (key, messages) in messagesByChat
         where key.accountId == accountId && messages.contains(where: { msgIds.contains($0.id) }) {
@@ -848,6 +874,19 @@ actor MockChatService: ChatService {
                                 name: "Me", color: Self.selfColor, avatarPath: nil)
                         ]),
                 ]))
+        }
+        // Voice note before the photo: the photo stays newest so the
+        // sidebar preview keeps meaningful text (voice notes have none).
+        if let voicePath = AppResources.bundle.url(
+            forResource: "mock-voice", withExtension: "m4a")?.path {
+            let id = allocateMessageId(accountId: accountId)
+            messagesByChat[elenaKey]?.append(MessageItem(
+                id: id, chatId: elenaChat, text: "",
+                timestamp: now - 75,
+                isOutgoing: false, isInfo: false,
+                senderName: elena.name, senderColor: elena.color, state: .noState,
+                kind: .voice, file: voicePath, fileName: "voice.m4a",
+                fileSize: 5_874, durationMs: 1_200))
         }
         if let imagePath = AppResources.bundle.url(
             forResource: "mock-sunset", withExtension: "jpg")?.path {

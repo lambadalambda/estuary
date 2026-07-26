@@ -42,7 +42,8 @@ struct ChatTableView: NSViewRepresentable {
         context.coordinator.apply(
             entries: model.messageListEntries,
             followGeneration: model.followBottomGeneration,
-            expandedIds: model.expandedMessageIds)
+            expandedIds: model.expandedMessageIds,
+            transcriptClasses: model.transcriptHeightClasses)
     }
 
     @MainActor
@@ -61,6 +62,7 @@ struct ChatTableView: NSViewRepresentable {
         private var cachedWidth: CGFloat = 0
         private var visibleReported: Set<String> = []
         private var expandedIds: Set<UInt32> = []
+        private var transcriptClasses: [UInt32: String] = [:]
         private var loadingOlder = false
         private var applying = false
 
@@ -129,7 +131,8 @@ struct ChatTableView: NSViewRepresentable {
 
         func apply(
             entries newEntries: [MessageListEntry], followGeneration: UInt64,
-            expandedIds newExpanded: Set<UInt32>
+            expandedIds newExpanded: Set<UInt32>,
+            transcriptClasses newTranscripts: [UInt32: String]
         ) {
             let newIds = newEntries.map(\.id)
             let transition = entriesTransition(from: ids, to: newIds)
@@ -147,6 +150,7 @@ struct ChatTableView: NSViewRepresentable {
             // entries on a chat switch would invalidate rows the reset is
             // about to reload anyway.
             applyExpansionChanges(newExpanded)
+            applyTranscriptChanges(newTranscripts)
             if followRequested || transition == .initial {
                 scrollToBottom()
             }
@@ -396,26 +400,37 @@ struct ChatTableView: NSViewRepresentable {
             return height
         }
 
+        /// Every cached height variant of a message row: 2 expansion
+        /// states × 4 transcript states.
+        private static let transcriptSuffixes = ["", "+t:working", "+t:done", "+t:failed"]
+
         /// Keyed on the LIVE model set (not the coordinator mirror): the
         /// measured content reads the same set, so key and measurement
         /// can never disagree — a mirror-keyed cache could file an
         /// expanded height under the collapsed key in the window between
         /// the toggle and the next apply().
         private func heightKey(_ entry: MessageListEntry) -> String {
-            if case .message(let message, _) = entry,
-                model.expandedMessageIds.contains(message.id)
-            {
-                return entry.id + "+expanded"
+            guard case .message(let message, _) = entry else { return entry.id }
+            var key = entry.id
+            if model.expandedMessageIds.contains(message.id) {
+                key += "+expanded"
             }
-            return entry.id
+            if let heightClass = model.transcripts[message.id]?.heightClass {
+                key += "+t:\(heightClass)"
+            }
+            return key
         }
 
-        /// Both expansion variants of a row's height: an entry change
-        /// (reaction arriving, edit) invalidates the OTHER variant too, or
-        /// the next toggle would restore a stale height.
+        /// Every variant of a row's height: an entry change (reaction
+        /// arriving, edit) invalidates the OTHER variants too, or the next
+        /// toggle would restore a stale height. Transcript variants matter
+        /// doubly: a retry's failure text can differ from the cached one.
         private func invalidateHeights(for entry: MessageListEntry) {
-            heightCache.removeValue(forKey: entry.id)
-            heightCache.removeValue(forKey: entry.id + "+expanded")
+            for expansion in ["", "+expanded"] {
+                for transcript in Self.transcriptSuffixes {
+                    heightCache.removeValue(forKey: entry.id + expansion + transcript)
+                }
+            }
         }
 
         /// Long-message expand/collapse changes a row's height without
@@ -442,6 +457,39 @@ struct ChatTableView: NSViewRepresentable {
             let anchor = saveAnchor()
             table.noteHeightOfRows(withIndexesChanged: changed)
             if !expanding && wasAtBottom {
+                scrollToBottom()
+            } else {
+                restoreAnchor(anchor)
+            }
+        }
+
+        /// Transcript state changes a row's height without changing its
+        /// entry — same mechanism as expand/collapse. Cached variants are
+        /// dropped on every state change because a retry's failure text can
+        /// differ while landing on the same "+t:failed" key. Scroll policy:
+        /// growth happens below the anchor, so keep the reading position;
+        /// re-pin only when the user was at the bottom (the transcript of
+        /// the newest voice message should be visible as it appears).
+        private func applyTranscriptChanges(_ newClasses: [UInt32: String]) {
+            let changedIds = Set(transcriptClasses.keys)
+                .union(newClasses.keys)
+                .filter { transcriptClasses[$0] != newClasses[$0] }
+            transcriptClasses = newClasses
+            guard !changedIds.isEmpty, table != nil else { return }
+            var rows = IndexSet()
+            for (row, entry) in entries.enumerated() {
+                if case .message(let message, _) = entry,
+                    changedIds.contains(message.id)
+                {
+                    invalidateHeights(for: entry)
+                    rows.insert(row)
+                }
+            }
+            guard !rows.isEmpty else { return }
+            let wasAtBottom = isAtBottom()
+            let anchor = saveAnchor()
+            table.noteHeightOfRows(withIndexesChanged: rows)
+            if wasAtBottom {
                 scrollToBottom()
             } else {
                 restoreAnchor(anchor)

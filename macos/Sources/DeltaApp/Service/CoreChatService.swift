@@ -226,6 +226,11 @@ actor CoreChatService: ChatService {
         catch { throw mapError(error) }
     }
 
+    func transcribeMessage(accountId: UInt32, msgId: UInt32) async throws -> String {
+        do { return try await app().transcribeMessage(accountId: accountId, msgId: msgId) }
+        catch { throw mapError(error) }
+    }
+
     // MARK: Chat management
 
     func acceptChat(accountId: UInt32, chatId: UInt32) async throws {
@@ -427,6 +432,15 @@ private func mapEvent(_ e: VmEvent) -> ServiceEvent {
         .imexProgress(permille: permille)
     case .connectivityChanged:
         .connectivityChanged
+    case .transcriptionProgress(let msgId, let phase, let permille):
+        .transcriptionProgress(msgId: msgId, phase: mapPhase(phase), permille: permille)
+    }
+}
+
+private func mapPhase(_ p: DeltaCore.TranscriptionPhase) -> TranscriptionPhase {
+    switch p {
+    case .downloadingModel: .downloadingModel
+    case .transcribing: .transcribing
     }
 }
 

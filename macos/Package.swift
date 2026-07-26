@@ -34,6 +34,7 @@ let package = Package(
             resources: [
                 .copy("Resources/estuary-logo.png"),
                 .copy("Resources/mock-sunset.jpg"),
+                .copy("Resources/mock-voice.m4a"),
                 .copy("Resources/chat-tile-light.png"),
                 .copy("Resources/chat-tile-dark.png"),
             ],
@@ -42,7 +43,12 @@ let package = Package(
                 .unsafeFlags(["-L\(rustLibDir)"]),
                 // Required by the Rust dependency tree (added as linker
                 // errors dictated): netwatch/system-configuration.
-                .linkedFramework("SystemConfiguration")
+                .linkedFramework("SystemConfiguration"),
+                // transcribe.cpp (GGML) in libdcvm.a: C++ runtime + Metal.
+                .linkedLibrary("c++"),
+                .linkedFramework("Metal"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("Accelerate")
             ]
         ),
 
@@ -53,7 +59,11 @@ let package = Package(
             linkerSettings: [
                 .linkedLibrary("dcvm"),
                 .unsafeFlags(["-L\(rustLibDir)"]),
-                .linkedFramework("SystemConfiguration")
+                .linkedFramework("SystemConfiguration"),
+                .linkedLibrary("c++"),
+                .linkedFramework("Metal"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("Accelerate")
             ]
         )
     ]

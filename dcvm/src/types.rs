@@ -153,6 +153,21 @@ pub enum VmEvent {
         permille: u32,
     },
     ConnectivityChanged,
+    /// On-demand voice transcription: model download reports determinate
+    /// permille; inference has no mid-run callback, so Transcribing arrives
+    /// once with permille 0 (UI shows an indeterminate spinner).
+    TranscriptionProgress {
+        msg_id: u32,
+        phase: TranscriptionPhase,
+        permille: u32,
+    },
+}
+
+/// Where a transcription request currently is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum TranscriptionPhase {
+    DownloadingModel,
+    Transcribing,
 }
 
 /// Classification of a scanned/pasted QR payload (subset the UI cares about).
@@ -196,5 +211,12 @@ impl From<anyhow::Error> for VmError {
 impl From<uniffi::UnexpectedUniFFICallbackError> for VmError {
     fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::Callback { msg: e.reason }
+    }
+}
+
+/// STT errors carry user-explainable messages by construction; surface them.
+impl From<crate::stt::SttError> for VmError {
+    fn from(e: crate::stt::SttError) -> Self {
+        Self::Core { msg: e.to_string() }
     }
 }

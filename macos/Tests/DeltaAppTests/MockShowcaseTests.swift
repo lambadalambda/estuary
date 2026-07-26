@@ -68,6 +68,30 @@ import Testing
         #expect(first.timestamp == newest)
     }
 
+    @Test func voiceMessageTranscribesWithMockSemantics() async throws {
+        let mock = MockChatService()
+        let id = await mock.addDemoAccount()
+        let chats = try await mock.chatList(accountId: id)
+        let first = try #require(chats.first)
+        let msgs = try await mock.messages(
+            accountId: id, chatId: first.id, limit: 0, beforeMsgId: nil)
+        let voice = try #require(msgs.first { $0.kind == .voice })
+        // Real playable file (bundled 1.2 s fixture), duration on the bubble.
+        #expect(FileManager.default.fileExists(atPath: voice.file ?? ""))
+        #expect(voice.durationMs > 0)
+
+        let text = try await mock.transcribeMessage(accountId: id, msgId: voice.id)
+        #expect(!text.isEmpty)
+        // Session cache: repeat call returns the identical transcript.
+        let again = try await mock.transcribeMessage(accountId: id, msgId: voice.id)
+        #expect(again == text)
+        // Non-audio messages fail with a readable error, like dcvm.
+        let plain = try #require(msgs.first { $0.kind == .text })
+        await #expect(throws: ServiceError.self) {
+            _ = try await mock.transcribeMessage(accountId: id, msgId: plain.id)
+        }
+    }
+
     @Test func seedHasGroupWithMultipleSendersAndUnread() async throws {
         let mock = MockChatService()
         let id = await mock.addDemoAccount()

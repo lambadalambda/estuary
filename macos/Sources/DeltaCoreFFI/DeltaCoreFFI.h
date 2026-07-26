@@ -474,6 +474,11 @@ uint64_t uniffi_dcvm_fn_method_dcapp_start_io(uint64_t ptr
 uint64_t uniffi_dcvm_fn_method_dcapp_stop_io(uint64_t ptr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_TRANSCRIBE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_TRANSCRIBE_MESSAGE
+uint64_t uniffi_dcvm_fn_method_dcapp_transcribe_message(uint64_t ptr, uint32_t account_id, uint32_t msg_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_UNREAD_COUNT
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_FN_METHOD_DCAPP_UNREAD_COUNT
 uint64_t uniffi_dcvm_fn_method_dcapp_unread_count(uint64_t ptr
@@ -1008,6 +1013,12 @@ uint16_t uniffi_dcvm_checksum_method_dcapp_start_io(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_STOP_IO
 #define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_STOP_IO
 uint16_t uniffi_dcvm_checksum_method_dcapp_stop_io(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_TRANSCRIBE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_DCVM_CHECKSUM_METHOD_DCAPP_TRANSCRIBE_MESSAGE
+uint16_t uniffi_dcvm_checksum_method_dcapp_transcribe_message(void
     
 );
 #endif

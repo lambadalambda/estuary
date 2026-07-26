@@ -1165,3 +1165,28 @@ rubato → 16 kHz mono f32 for the ASR engine. Findings:
 - Opus-in-Ogg → typed Unsupported (no symphonia decoder); core never
   classifies bare .opus as Voice/Audio, so realistic voice blobs are
   m4a/aac/mp3/wav. 30-min decode cap (TooLong) guards memory.
+
+## 2026-07-26 — STT stage 2: Parakeet engine + model manager (issue: stt-engine-parakeet)
+
+transcribe-cpp pinned =0.1.3 (crates.io latest; repo's 0.2.0 unpublished).
+C++/GGML build via cmake in build.rs worked first try (cmake 4.4, Metal on).
+Adding the dep flipped the socket2 trio AGAIN — third occurrence; flip-back
+now routine (see stage 1 entry).
+
+`stt::engine`: SttEngine trait (fake-able for offline tests) + ParakeetEngine
+(session-per-call; Model verified Send+Sync in vendored source, sessions are
+Send-only). `stt::model`: ensure_model → `<data_dir>/stt-models/`, streaming
+download with sha256-before-rename, private .part.<pid>.<seq> temp files,
+connect (30s) + stall (60s) timeouts after review flagged hung-FFI risk of
+the default reqwest client. Offline tests run against a one-shot local TCP
+server (happy/checksum/truncated/oversized/stalled).
+
+Real-model smoke test (`--ignored`, DCVM_TEST_STT env): Parakeet Q8_0
+(739,508,576 bytes, sha256 5859f779…, HF handy-computer repo) transcribed
+whisper.cpp's jfk.wav verbatim incl. punctuation. ~90 s total = model load +
+first-run Metal warmup; inference itself seconds for 11 s audio. macOS `say`
+synthesizes zero audio bytes in this agent session (even unsandboxed), so
+the test accepts DCVM_TEST_STT_AUDIO/_EXPECT overrides; kept the `say` path
+for normal terminals. Honest TDD note: download-manager tests were written
+alongside the implementation (local test server design drove the API), not
+strictly red-first; review + five error-path tests compensate.

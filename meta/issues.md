@@ -8,7 +8,5 @@
 - [ ] [AppModel account and stale-result state isolation](issues/appmodel-state-isolation.md)
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [Voice message transcription (on-demand)](issues/voice-message-transcription.md)
-- [ ] [STT: audio decode to 16 kHz mono PCM in dcvm](issues/stt-audio-decode.md)
-- [ ] [STT: transcribe.cpp engine + model management](issues/stt-engine-parakeet.md)
 - [ ] [STT: transcription FFI + Swift UI](issues/stt-ffi-ui.md)
 - [ ] [STT: evict the idle ASR engine](issues/stt-engine-eviction.md)

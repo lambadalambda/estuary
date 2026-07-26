@@ -36,6 +36,23 @@ transcript display to voice/audio bubbles in the macOS shell.
   cases (no network on first download, ogg-opus blob) show a readable error,
   not a crash.
 
+## Verification status (2026-07-26)
+
+Implemented and mostly verified; kept open for two remaining real-app checks:
+
+- DONE: Rust offline tests (fake engine: transcribe/cache/typed errors/event),
+  Swift TranscriptState reducer tests, MockShowcase voice fixture + mock
+  transcribe test, 166 Swift tests green.
+- DONE (e2e, lume VM `cua-driver-dev-26.5.2`): real app + real core + real
+  Parakeet Q8_0 transcribed jfk.wav; transcript rendered in the audio bubble
+  (screenshot verified via cua-driver). Model was pre-planted in
+  `<data_dir>/stt-models/`.
+- REMAINING: first-use model download in the real app UI (progress bar over
+  the FFI event path — unit/mock tested only), and a *received* Voice-kind
+  message (e2e used an outgoing Audio-kind wav; same code path, but the
+  acceptance names a received voice message — needs the local chatmail relay
+  and a second account).
+
 ## Notes
 
 - Review carry-over from stt-engine-parakeet: `ParakeetEngine::load` (~700 MB

@@ -40,3 +40,5 @@
 - [x] [QR invite contact flow (first contact on chatmail)](issues/qr-invite-contact-flow.md)
 - [x] [Encrypted group member discovery and safe creation](issues/encrypted-group-creation-correctness.md)
 - [x] [Build, CI, and release reproducibility](issues/build-ci-reproducibility.md)
+- [x] [STT: audio decode to 16 kHz mono PCM in dcvm](issues/stt-audio-decode.md)
+- [x] [STT: transcribe.cpp engine + model management](issues/stt-engine-parakeet.md)

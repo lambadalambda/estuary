@@ -1215,3 +1215,24 @@ Build finding: once libdcvm.a contains transcribe.cpp/GGML objects, the
 Swift link needs `-lc++` + Metal/Foundation/Accelerate — added to both
 Package.swift targets. Review carry-over filed as stt-engine-eviction
 (engine stays ~700 MB resident after first use).
+
+## 2026-07-26 — STT e2e in a lume VM (host session cannot touch the GUI)
+
+Host agent session is contained beyond its own seatbelt (no WindowServer,
+no ~/.lume writes, no `ps`; `say` synthesizes 0 bytes) — GUI verification
+moved into the `cua-driver-dev-26.5.2` lume VM per user request. Recipe
+that worked: stage binary + DeltaApp_DeltaApp.bundle + seeded data dir in
+a host dir; start the VM via the lume HTTP API on :7777 (the daemon runs
+outside the containment; the CLI does not) with that dir as
+--shared-dir; ssh (paramiko, lume/lume) to copy VM-local and launch with
+DCNATIVE_DATA_DIR; drive clicks/AX/screenshots with the in-VM
+CuaDriver.app (`cua-driver call get_window_state/click …` — start the
+.app, not the raw binary, for TCC identity). Data dir seeded by
+dcvm/examples/seed_stt_e2e.rs (demo account + jfk.wav send); model
+pre-planted under <data_dir>/stt-models/ to skip the 700 MB download.
+
+Result: Transcribe button on the jfk.wav bubble produced the exact JFK
+line in-bubble in ~20 s on 4 vCPUs (CPU inference — no Metal in the VM
+path). stt-audio-decode + stt-engine-parakeet archived; stt-ffi-ui stays
+open for two real-app checks (first-use download progress UX, received
+Voice-kind message via the local relay).

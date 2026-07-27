@@ -1522,3 +1522,42 @@ async fn warm_transcription_never_downloads() {
     app.set_stt_engine_for_test(Arc::new(FakeEngine::default()));
     app.warm_transcription().await.expect("warm with engine loaded");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transcripts_persist_across_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_string_lossy().into_owned();
+    let (id, chat, msg) = {
+        let app = DcApp::new(path.clone(), Arc::new(Collector::default()))
+            .await
+            .expect("first DcApp");
+        let id = app.add_account().await.unwrap();
+        pseudo_configure(&app, id, "alice@example.org").await;
+        let chat = app
+            .create_chat(id, "bob@example.net".into(), "Bob".into())
+            .await
+            .unwrap();
+        let msg = app
+            .send_message(id, chat, None, Some(fixture_path("voice.m4a")), None)
+            .await
+            .unwrap();
+        app.set_stt_engine_for_test(Arc::new(FakeEngine::default()));
+        let text = app.transcribe_message(id, msg).await.unwrap();
+        assert_eq!(text, "fake transcript");
+        (id, chat, msg)
+        // app dropped here: pump holds only a Weak, dir becomes reopenable
+    };
+
+    let app = DcApp::new(path, Arc::new(Collector::default()))
+        .await
+        .expect("second DcApp on same dir");
+    // Saved transcript rides the message snapshot into the UI…
+    let items = app.messages(id, chat, 0, None).await.unwrap();
+    let item = items.iter().find(|m| m.id == msg).expect("message");
+    assert_eq!(item.transcript.as_deref(), Some("fake transcript"));
+    // …and transcribing again is a store hit, never an engine run.
+    let fake = Arc::new(FakeEngine::default());
+    app.set_stt_engine_for_test(fake.clone());
+    assert_eq!(app.transcribe_message(id, msg).await.unwrap(), "fake transcript");
+    assert_eq!(*fake.calls.lock().unwrap(), 0, "engine must not run for stored transcript");
+}

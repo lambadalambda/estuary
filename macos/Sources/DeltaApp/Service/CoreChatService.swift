@@ -375,6 +375,7 @@ private func mapMessage(_ m: DeltaCore.MessageItem) -> MessageItem {
         width: m.width,
         height: m.height,
         durationMs: m.durationMs,
+        transcript: m.transcript,
         quote: m.quote.map {
             QuoteInfo(text: $0.text, senderName: $0.senderName, senderColor: $0.senderColor)
         },

@@ -2259,6 +2259,11 @@ public struct MessageItem: Equatable, Hashable {
      * Milliseconds; 0 if not applicable.
      */
     public let durationMs: UInt32
+    /**
+     * Saved voice/audio transcript from the durable store, if this message
+     * was ever transcribed (any session).
+     */
+    public let transcript: String?
     public let quote: QuoteInfo?
     public let reactions: [ReactionItem]
 
@@ -2282,7 +2287,11 @@ public struct MessageItem: Equatable, Hashable {
          */width: UInt32, height: UInt32, 
         /**
          * Milliseconds; 0 if not applicable.
-         */durationMs: UInt32, quote: QuoteInfo?, reactions: [ReactionItem]) {
+         */durationMs: UInt32, 
+        /**
+         * Saved voice/audio transcript from the durable store, if this message
+         * was ever transcribed (any session).
+         */transcript: String?, quote: QuoteInfo?, reactions: [ReactionItem]) {
         self.id = id
         self.chatId = chatId
         self.text = text
@@ -2300,6 +2309,7 @@ public struct MessageItem: Equatable, Hashable {
         self.width = width
         self.height = height
         self.durationMs = durationMs
+        self.transcript = transcript
         self.quote = quote
         self.reactions = reactions
     }
@@ -2337,6 +2347,7 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
                 width: FfiConverterUInt32.read(from: &buf), 
                 height: FfiConverterUInt32.read(from: &buf), 
                 durationMs: FfiConverterUInt32.read(from: &buf), 
+                transcript: FfiConverterOptionString.read(from: &buf), 
                 quote: FfiConverterOptionTypeQuoteInfo.read(from: &buf), 
                 reactions: FfiConverterSequenceTypeReactionItem.read(from: &buf)
         )
@@ -2360,6 +2371,7 @@ public struct FfiConverterTypeMessageItem: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.width, into: &buf)
         FfiConverterUInt32.write(value.height, into: &buf)
         FfiConverterUInt32.write(value.durationMs, into: &buf)
+        FfiConverterOptionString.write(value.transcript, into: &buf)
         FfiConverterOptionTypeQuoteInfo.write(value.quote, into: &buf)
         FfiConverterSequenceTypeReactionItem.write(value.reactions, into: &buf)
     }

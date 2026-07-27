@@ -27,6 +27,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg = app
         .send_message(account, chat, None, Some(wav), None)
         .await?;
+    // Filler below the voice note so the chat scrolls: reaching the audio
+    // bubble requires scrolling up, which exercises paging, scroll memory,
+    // and transcript persistence in one chat.
+    for i in 1..=80 {
+        app.send_message(account, chat, Some(format!("filler message {i}")), None, None)
+            .await?;
+    }
     println!("seeded: account={account} chat={chat} msg={msg}");
     Ok(())
 }

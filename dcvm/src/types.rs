@@ -117,6 +117,9 @@ pub struct MessageItem {
     pub height: u32,
     /// Milliseconds; 0 if not applicable.
     pub duration_ms: u32,
+    /// Saved voice/audio transcript from the durable store, if this message
+    /// was ever transcribed (any session).
+    pub transcript: Option<String>,
     pub quote: Option<QuoteInfo>,
     pub reactions: Vec<ReactionItem>,
 }

@@ -540,6 +540,12 @@ actor MockChatService: ChatService {
         let text = "This is the mock transcript: a short voice note about "
             + "meeting at the pier at sunset."
         transcripts[key] = text
+        // Persisted below the FFI in the real service: future message
+        // snapshots carry the transcript, so it survives chat switches.
+        let chatKey = ChatKey(accountId: accountId, chatId: message.chatId)
+        if let index = messagesByChat[chatKey]?.firstIndex(where: { $0.id == msgId }) {
+            messagesByChat[chatKey]?[index].transcript = text
+        }
         return text
     }
 

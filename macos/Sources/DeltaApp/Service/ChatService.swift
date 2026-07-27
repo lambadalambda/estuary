@@ -103,6 +103,9 @@ struct MessageItem: Identifiable, Equatable, Sendable {
     var height: UInt32 = 0
     /// Milliseconds; 0 if not applicable.
     var durationMs: UInt32 = 0
+    /// Saved voice/audio transcript (durable store below the FFI), if this
+    /// message was ever transcribed in any session.
+    var transcript: String? = nil
     var quote: QuoteInfo?
     var reactions: [ReactionItem] = []
 }

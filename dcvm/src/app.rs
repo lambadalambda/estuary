@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use deltachat::accounts::Accounts;
@@ -85,8 +85,8 @@ pub struct DcApp {
 struct SttState {
     data_dir: PathBuf,
     engine: tokio::sync::Mutex<Option<Arc<dyn crate::stt::SttEngine>>>,
-    /// Session cache: transcribing the same message twice is instant.
-    transcripts: Mutex<HashMap<(u32, u32), String>>,
+    /// Durable transcript store (read-through cache; survives restarts).
+    transcripts: Mutex<crate::stt::store::TranscriptStore>,
 }
 
 #[cfg(test)]
@@ -381,6 +381,9 @@ async fn message_item(
         width: msg.get_width().max(0) as u32,
         height: msg.get_height().max(0) as u32,
         duration_ms: msg.get_duration().max(0) as u32,
+        // Filled by DcApp callers from the durable store (message_item has
+        // no account-scoped state).
+        transcript: None,
         quote,
         reactions,
     })
@@ -445,7 +448,9 @@ impl DcApp {
                 stt: Arc::new(SttState {
                     data_dir: PathBuf::from(&data_dir),
                     engine: tokio::sync::Mutex::new(None),
-                    transcripts: Mutex::new(HashMap::new()),
+                    transcripts: Mutex::new(crate::stt::store::TranscriptStore::load(
+                        Path::new(&data_dir),
+                    )),
                 }),
             }))
         })
@@ -647,6 +652,7 @@ impl DcApp {
         query: String,
     ) -> Result<Vec<MessageItem>, VmError> {
         let accounts = self.accounts.clone();
+        let stt = self.stt.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
             let ids = ctx.search_msgs(None, &query).await?;
@@ -655,7 +661,9 @@ impl DcApp {
             let mut avatars = HashMap::new();
             for msg_id in ids.into_iter().take(100).rev() {
                 if let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? {
-                    out.push(message_item(&ctx, &msg, &mut senders, &mut avatars).await?);
+                    let mut item = message_item(&ctx, &msg, &mut senders, &mut avatars).await?;
+                    item.transcript = stt.transcripts.lock().unwrap().get(account_id, item.id);
+                    out.push(item);
                 }
             }
             Ok(out)
@@ -671,6 +679,7 @@ impl DcApp {
         msg_id: u32,
     ) -> Result<Option<MessageItem>, VmError> {
         let accounts = self.accounts.clone();
+        let stt = self.stt.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
             let Some(msg) = Message::load_from_db_optional(&ctx, MsgId::new(msg_id)).await? else {
@@ -678,9 +687,9 @@ impl DcApp {
             };
             let mut senders = HashMap::new();
             let mut avatars = HashMap::new();
-            Ok(Some(
-                message_item(&ctx, &msg, &mut senders, &mut avatars).await?,
-            ))
+            let mut item = message_item(&ctx, &msg, &mut senders, &mut avatars).await?;
+            item.transcript = stt.transcripts.lock().unwrap().get(account_id, item.id);
+            Ok(Some(item))
         })
         .await
     }
@@ -696,6 +705,7 @@ impl DcApp {
         before_msg_id: Option<u32>,
     ) -> Result<Vec<MessageItem>, VmError> {
         let accounts = self.accounts.clone();
+        let stt = self.stt.clone();
         on_rt(async move {
             let ctx = get_ctx(&accounts, account_id).await?;
             // Ids only — cheap; the expensive per-message loading below is
@@ -728,7 +738,9 @@ impl DcApp {
                 let Some(msg) = Message::load_from_db_optional(&ctx, msg_id).await? else {
                     continue;
                 };
-                out.push(message_item(&ctx, &msg, &mut senders, &mut avatars).await?);
+                let mut item = message_item(&ctx, &msg, &mut senders, &mut avatars).await?;
+                item.transcript = stt.transcripts.lock().unwrap().get(account_id, item.id);
+                out.push(item);
             }
             Ok(out)
         })
@@ -1259,8 +1271,8 @@ impl DcApp {
             // inference twice (serialized on the engine mutex, identical
             // result) — wasteful but correct; the UI debounces via
             // transcriptionCanStart.
-            if let Some(text) = stt.transcripts.lock().unwrap().get(&(account_id, msg_id)) {
-                return Ok(text.clone());
+            if let Some(text) = stt.transcripts.lock().unwrap().get(account_id, msg_id) {
+                return Ok(text);
             }
 
             let ctx = get_ctx(&accounts, account_id).await?;
@@ -1349,10 +1361,12 @@ impl DcApp {
                     msg: format!("transcribe task: {e}"),
                 })??;
 
-            stt.transcripts
+            // A failed persist only loses durability, never the result.
+            let _ = stt
+                .transcripts
                 .lock()
                 .unwrap()
-                .insert((account_id, msg_id), text.clone());
+                .insert(account_id, msg_id, text.clone());
             Ok(text)
         })
         .await

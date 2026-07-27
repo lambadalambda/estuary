@@ -1968,3 +1968,56 @@ private actor ScriptedChatService: ChatService {
 private enum GateError: Error {
     case timedOut(String)
 }
+
+/// Reading-position memory (issue: chat-scroll-position-memory).
+@MainActor
+@Suite struct ScrollMemoryTests {
+    @Test func scrolledUpPositionIsRememberedPerConversation() {
+        let model = AppModel(service: ScriptedChatService())
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: "msg-5", offsetInViewport: 12.5, atBottom: false)
+        #expect(model.scrollMemento(accountId: 1, chatId: 2)
+            == AppModel.ScrollMemento(anchorEntryId: "msg-5", offsetInViewport: 12.5))
+        // Other conversations (and accounts) are unaffected.
+        #expect(model.scrollMemento(accountId: 1, chatId: 3) == nil)
+        #expect(model.scrollMemento(accountId: 2, chatId: 2) == nil)
+    }
+
+    @Test func reachingTheBottomForgetsThePosition() {
+        let model = AppModel(service: ScriptedChatService())
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: "msg-5", offsetInViewport: 0, atBottom: false)
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: nil, offsetInViewport: 0, atBottom: true)
+        #expect(model.scrollMemento(accountId: 1, chatId: 2) == nil)
+    }
+
+    @Test func newerScrollOverwritesOlder() {
+        let model = AppModel(service: ScriptedChatService())
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: "msg-5", offsetInViewport: 3, atBottom: false)
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: "msg-9", offsetInViewport: 7, atBottom: false)
+        #expect(model.scrollMemento(accountId: 1, chatId: 2)
+            == AppModel.ScrollMemento(anchorEntryId: "msg-9", offsetInViewport: 7))
+    }
+
+    @Test func missingAnchorWhileScrolledUpKeepsLastKnown() {
+        // Transient report with no resolvable anchor (mid-layout) must not
+        // wipe a real position.
+        let model = AppModel(service: ScriptedChatService())
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: "msg-5", offsetInViewport: 3, atBottom: false)
+        model.recordScrollPosition(
+            accountId: 1, chatId: 2,
+            anchorEntryId: nil, offsetInViewport: 0, atBottom: false)
+        #expect(model.scrollMemento(accountId: 1, chatId: 2)
+            == AppModel.ScrollMemento(anchorEntryId: "msg-5", offsetInViewport: 3))
+    }
+}

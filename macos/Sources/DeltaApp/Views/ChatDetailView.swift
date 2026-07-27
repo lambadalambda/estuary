@@ -1034,6 +1034,8 @@ struct AudioMessageView: View {
     let model: AppModel
     @ObservedObject private var player = AudioPlayerController.shared
     @ObservedObject private var durations = AudioDurationCache.shared
+    @State private var transcribeHovered = false
+    @State private var retryHovered = false
 
     private var isPlaying: Bool { player.playingPath == message.file }
 
@@ -1075,6 +1077,9 @@ struct AudioMessageView: View {
     /// readable error with retry.
     @ViewBuilder private var transcriptSection: some View {
         switch model.transcripts[message.id] {
+        case nil where message.transcript != nil:
+            // Saved in a previous visit/session: show it, no re-request.
+            transcriptText(message.transcript ?? "")
         case nil:
             Button {
                 model.transcribeMessage(message.id)
@@ -1084,6 +1089,23 @@ struct AudioMessageView: View {
             }
             .buttonStyle(.plain)
             .opacity(0.75)
+            .onHover { hovering in
+                transcribeHovered = hovering
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            // The button vanishes mid-hover when the click flips the state
+            // to .working: onHover(false) never fires then, which would
+            // leak the pushed cursor (same caveat as reaction pills).
+            .onDisappear {
+                if transcribeHovered {
+                    transcribeHovered = false
+                    NSCursor.pop()
+                }
+            }
         case .working(let phase, let permille):
             HStack(spacing: 6) {
                 switch phase {
@@ -1104,12 +1126,7 @@ struct AudioMessageView: View {
             .font(.caption2)
             .opacity(0.75)
         case .done(let text):
-            Text(text)
-                .font(.callout)
-                .italic()
-                .opacity(0.9)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            transcriptText(text)
         case .failed(let reason):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle")
@@ -1120,10 +1137,33 @@ struct AudioMessageView: View {
                 }
                 .buttonStyle(.plain)
                 .underline()
+                .onHover { hovering in
+                    retryHovered = hovering
+                    if hovering {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+                .onDisappear {
+                    if retryHovered {
+                        retryHovered = false
+                        NSCursor.pop()
+                    }
+                }
             }
             .font(.caption2)
             .opacity(0.8)
         }
+    }
+
+    private func transcriptText(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .italic()
+            .opacity(0.9)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func durationLabel(ms: UInt32) -> String {

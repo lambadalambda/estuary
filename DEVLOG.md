@@ -1270,3 +1270,46 @@ row height stable when the async probe lands (no invalidation needed).
 Core's value stays authoritative when nonzero (pure helpers
 durationMs(fromSeconds:)/effectiveDurationMs, unit-tested incl. NaN /
 infinity / overflow-trap edges).
+
+## 2026-07-27 — Transcript persistence + audio-button cursor (issues: transcript-persistence, transcribe-button-cursor)
+
+TranscriptStore: transcripts.json under the data dir ("account:msg" keys,
+tmp+rename, corrupt files start empty — transcripts are regenerable, so
+tolerance beats integrity). transcribe_message reads through it;
+MessageItem gains `transcript` filled in messages()/message_by_id()/
+search_messages(), so revisits render saved transcripts with zero extra
+round trips (`case nil where message.transcript != nil` in the bubble).
+vm.rs proves restart persistence AND that a stored transcript never
+re-runs the engine. Mock updates its stored items (honest switch-back).
+Cursor: pointing-hand hover on Transcribe/Retry via the reaction-pill
+pattern incl. the vanish-mid-hover pop guard. Verified live in the lume
+VM: transcribe → switch chat → return → transcript still in the bubble.
+
+## 2026-07-27 — Per-chat scroll memory (issue: chat-scroll-position-memory)
+
+Session mementos (anchor entry id + viewport offset) recorded from the
+coordinator's scroll funnel, restored on .initial; window cache keeps up
+to 300 messages when a memento exists (at-bottom chats keep the newest-
+page trim that prevents the old switch-back hang). Three review catches
+pre-commit (reload shrinking the restored window via forced
+viewIsAtBottom; cache-miss opens wiping mementos from an empty table;
+pre-layout restores against 44pt fallback heights → pendingRestore
+re-restores on first valid-width frameChanged) and two more found ONLY by
+driving the real app in the lume VM:
+- SwiftUI update storm: recordScrollPosition wrote an observed dict that
+  apply() reads inside updateNSView → write→invalidate→update loop pinned
+  the main thread (app froze; AX walks empty; sample() showed
+  NSHostingView.beginTransaction spinning). @ObservationIgnored is
+  load-bearing on scrollMementos + no-op writes guarded. Same class as
+  the DEVLOG's per-bubble-closure trap: NEVER let an NSViewRepresentable
+  coordinator write observed state it also reads during apply.
+- Teardown wipe: the dying coordinator fires a parting follow-generation
+  scrollToBottom whose syncDerivedState reported atBottom and erased the
+  memento right when it became valuable (debug trace: "record chat=15
+  atBottom=true" between the switch clicks). Only the live (selected)
+  conversation may clear its memento now; store-side writes from stale
+  coordinators stay allowed.
+Verified in the VM with title-checked chat switches: scroll to top, away,
+back → position restored; transcript + 0:11 probed duration visible in
+the same run. Unit tests cover the memento dictionary semantics; the
+AppKit restore paths are VM/user-verified per project rules.

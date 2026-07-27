@@ -4,6 +4,7 @@
 pub mod decode;
 pub mod engine;
 pub mod model;
+pub mod store;
 
 pub use decode::{decode_to_pcm_16k, SttError};
 pub use engine::{ParakeetEngine, SttEngine};

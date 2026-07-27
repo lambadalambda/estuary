@@ -46,3 +46,5 @@
 - [x] [STT: transcription FFI + Swift UI](issues/stt-ffi-ui.md)
 - [x] [STT: transcription latency — measure and fix](issues/stt-performance.md)
 - [x] [Show duration on audio bubbles that core reports as 0](issues/audio-duration-display.md)
+- [x] [Persist transcripts across chat switches and restarts](issues/transcript-persistence.md)
+- [x] [Remember scroll position per chat](issues/chat-scroll-position-memory.md)

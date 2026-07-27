@@ -9,5 +9,3 @@
 - [ ] [dcvm data-access performance and real pagination](issues/dcvm-data-access-performance.md)
 - [ ] [STT: evict the idle ASR engine](issues/stt-engine-eviction.md)
 - [ ] [Transcribe button: pointer cursor on hover](issues/transcribe-button-cursor.md)
-- [ ] [Persist transcripts across chat switches and restarts](issues/transcript-persistence.md)
-- [ ] [Remember scroll position per chat](issues/chat-scroll-position-memory.md)

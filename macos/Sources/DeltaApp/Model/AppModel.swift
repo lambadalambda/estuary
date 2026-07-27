@@ -43,6 +43,14 @@ final class AppModel {
                 // generation-guarded reload refreshes it right after (see
                 // meta/issues/chat-switch-window-cache.md).
                 restoreCachedMessageWindow()
+                // Restoring a reading position: reloadMessages shrinks the
+                // window to the newest page when viewIsAtBottom (reset just
+                // forced it true), which would drop the restored anchor's
+                // rows and defeat the restore. We are, in fact, not at the
+                // bottom — say so before the reload computes its limit.
+                if let key = selectedConversationKey, scrollMementos[key] != nil {
+                    viewIsAtBottom = false
+                }
             }
         }
     }
@@ -59,6 +67,59 @@ final class AppModel {
     private var messageWindowCache: [ConversationKey: CachedMessageWindow] = [:]
     private var messageWindowCacheOrder: [ConversationKey] = []
     private static let messageWindowCacheLimit = 16
+
+    /// Reading position per conversation (issue: chat-scroll-position-memory).
+    /// Session-scoped; being at the bottom clears it, so restore-to-bottom
+    /// stays the default for fresh and caught-up chats.
+    struct ScrollMemento: Equatable {
+        var anchorEntryId: String
+        var offsetInViewport: Double
+    }
+    /// @ObservationIgnored is load-bearing: the coordinator WRITES this on
+    /// every scroll settle and READS it inside updateNSView's apply() — an
+    /// observed property there is a self-sustaining SwiftUI update storm
+    /// (write → invalidate → updateNSView → write …) that hangs the main
+    /// thread. Nothing renders from mementos; observation buys nothing.
+    @ObservationIgnored private var scrollMementos: [ConversationKey: ScrollMemento] = [:]
+    /// Cap on how deep a remembered window may grow (render cost on
+    /// switch-back is proportional; see the switch-back-hang note in
+    /// storeMessageWindowCache).
+    static let scrollMemoryDepthLimit: UInt32 = 300
+
+    /// Called by the table coordinator on every scroll settle. Keyed by the
+    /// coordinator's own conversation so late reports from a superseded
+    /// coordinator can never clobber another chat's position.
+    func recordScrollPosition(
+        accountId: UInt32, chatId: UInt32,
+        anchorEntryId: String?, offsetInViewport: Double, atBottom: Bool
+    ) {
+        let key = ConversationKey(accountId: accountId, chatId: chatId)
+        if atBottom {
+            // Only the LIVE coordinator may forget a position: a superseded
+            // one fires a parting "at bottom" during chat-switch teardown
+            // (follow-generation scrollToBottom) that would erase the
+            // memento at the exact moment it becomes valuable. Teardown
+            // always runs after the new selection is set, so comparing
+            // against the selection identifies it; nil selection (no chat
+            // open) has no teardown race and trusts the report.
+            let isCurrent = selectedChatId == nil
+                || (accountId == selectedAccountId && chatId == selectedChatId)
+            if isCurrent, scrollMementos[key] != nil {
+                scrollMementos.removeValue(forKey: key)
+            }
+        } else if let anchorEntryId {
+            let memento = ScrollMemento(
+                anchorEntryId: anchorEntryId, offsetInViewport: offsetInViewport)
+            // No-op writes stay no-ops (see the observation note above).
+            if scrollMementos[key] != memento {
+                scrollMementos[key] = memento
+            }
+        }
+    }
+
+    func scrollMemento(accountId: UInt32, chatId: UInt32) -> ScrollMemento? {
+        scrollMementos[ConversationKey(accountId: accountId, chatId: chatId)]
+    }
     private var visibleMessages: [VisibleMessageKey: MessageItem] = [:]
     private var seenReceiptRequests: Set<VisibleMessageKey> = []
     private(set) var messageListEntries: [MessageListEntry] = []
@@ -796,12 +857,18 @@ final class AppModel {
 
     private func storeMessageWindowCache() {
         guard let key = selectedConversationKey else { return }
-        // Newest page only: switching back always lands at the bottom, so
-        // a deeper cached window is pure render cost with no reader
-        // benefit — restoring a bloated one was the switch-back hang.
-        let trimmed = Array(messages.suffix(Int(Self.messagePageSize)))
+        // Newest page only while the reader is at the bottom: a deeper
+        // cached window is pure render cost then — restoring a bloated one
+        // was the switch-back hang. With a scroll memento the depth IS the
+        // feature (the anchor must be inside the restored window), bounded
+        // by scrollMemoryDepthLimit against pathological deep-scrolls.
+        let keep = scrollMementos[key] != nil
+            ? Int(Self.scrollMemoryDepthLimit)
+            : Int(Self.messagePageSize)
+        let trimmed = Array(messages.suffix(keep))
         messageWindowCache[key] = CachedMessageWindow(
-            messages: trimmed, loadedLimit: Self.messagePageSize,
+            messages: trimmed,
+            loadedLimit: max(Self.messagePageSize, UInt32(trimmed.count)),
             hasMoreMessages: hasMoreMessages || trimmed.count < messages.count,
             historyExhausted: historyExhausted && trimmed.count == messages.count)
         messageWindowCacheOrder.removeAll { $0 == key }

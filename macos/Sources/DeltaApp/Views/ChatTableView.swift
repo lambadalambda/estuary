@@ -63,6 +63,12 @@ struct ChatTableView: NSViewRepresentable {
         private var visibleReported: Set<String> = []
         private var expandedIds: Set<UInt32> = []
         private var transcriptClasses: [UInt32: String] = [:]
+        /// Anchor restore requested before the table had real width: the
+        /// first apply runs pre-layout, where heightOfRow returns the 44pt
+        /// fallback and any restore positions against fake geometry. Kept
+        /// until a valid-width frameChanged re-restores (the same
+        /// self-correction the bottom-pin gets via its wasAtBottom re-pin).
+        private var pendingRestore: Anchor?
         private var loadingOlder = false
         private var applying = false
 
@@ -151,7 +157,31 @@ struct ChatTableView: NSViewRepresentable {
             // about to reload anyway.
             applyExpansionChanges(newExpanded)
             applyTranscriptChanges(newTranscripts)
-            if followRequested || transition == .initial {
+            if transition == .initial {
+                // .initial already pinned the bottom; override only when
+                // this chat has a remembered reading position whose anchor
+                // is still present (deleted anchor → bottom stands, and
+                // syncDerivedState below clears the stale memento).
+                let memento = model.scrollMemento(accountId: accountId, chatId: chat.id)
+                model.scrollDebug(
+                    "memory: initial chat=\(chat.id) memento=\(memento?.anchorEntryId ?? "-") "
+                        + "present=\(memento.map { ids.contains($0.anchorEntryId) } ?? false) "
+                        + "width=\(Int(scroll.contentView.bounds.width))")
+                if let memento, ids.contains(memento.anchorEntryId) {
+                    let anchor = Anchor(
+                        id: memento.anchorEntryId,
+                        offsetInViewport: CGFloat(memento.offsetInViewport))
+                    if scroll.contentView.bounds.width > 0 {
+                        restoreAnchor(anchor)
+                    } else {
+                        // Pre-layout: heights are the 44pt fallback; defer
+                        // to the first valid-width frameChanged.
+                        pendingRestore = anchor
+                    }
+                } else {
+                    scrollToBottom()
+                }
+            } else if followRequested {
                 scrollToBottom()
             }
             syncDerivedState()
@@ -303,7 +333,14 @@ struct ChatTableView: NSViewRepresentable {
                 heightCache.removeAll()
                 table.noteHeightOfRows(
                     withIndexesChanged: IndexSet(integersIn: 0 ..< entries.count))
-                if wasAtBottom { scrollToBottom() }
+                if let pending = pendingRestore {
+                    // First real layout after a deferred reading-position
+                    // restore: heights are measurable now.
+                    pendingRestore = nil
+                    restoreAnchor(pending)
+                } else if wasAtBottom {
+                    scrollToBottom()
+                }
             }
         }
 
@@ -314,6 +351,27 @@ struct ChatTableView: NSViewRepresentable {
             if model.viewIsAtBottom != atBottom {
                 model.scrollDebug("table: at-bottom=\(atBottom)")
                 model.viewIsAtBottom = atBottom
+            }
+            // Reading-position memory (issue: chat-scroll-position-memory).
+            // Never record from an empty table (a cache-miss open reports
+            // "at bottom" for zero content and would wipe the memento
+            // before data arrives), while a restore is still pending
+            // (pre-layout geometry would record a bogus offset), or from a
+            // dying view (teardown on chat switch collapses the clip bounds
+            // to zero → bogus "at bottom" → memento wiped right as it's
+            // about to be used).
+            if !entries.isEmpty, pendingRestore == nil,
+                table.window != nil, scroll.contentView.bounds.height > 0
+            {
+                let anchor = atBottom ? nil : saveAnchor()
+                model.scrollDebug(
+                    "memory: record chat=\(chat.id) atBottom=\(atBottom) "
+                        + "anchor=\(anchor?.id ?? "-")")
+                model.recordScrollPosition(
+                    accountId: accountId, chatId: chat.id,
+                    anchorEntryId: anchor?.id,
+                    offsetInViewport: Double(anchor?.offsetInViewport ?? 0),
+                    atBottom: atBottom)
             }
             if AppModel.scrollDebugEnabled {
                 let clip = scroll.contentView.bounds
